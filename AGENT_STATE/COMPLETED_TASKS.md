@@ -140,3 +140,8 @@ documentation commit `0491c63` also passed run 45489360135.
 - T-056 — Native enum construction and match benchmark (2026-11-24; 464-test
   gate; `enum_ops` native 3.646 ms vs C 3.766 ms and Rust 4.529 ms; CI run
   45380623770).
+- T-075 — Result-enum propagation with postfix `?` (2026-11-24; 621-test gate;
+  statement-position `let`/assignment/expression use, positional
+  first-success/second-failure convention, `E0319` rejections, interpreter and
+  native `Try` lowering, ninth fuzzer shape, 180/180 on seeds 1, 500, and
+  1000; specification §5.10; ADR-0038).

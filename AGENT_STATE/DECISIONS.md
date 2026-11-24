@@ -342,3 +342,21 @@ file records operational choices.
   `break`/`continue` stops the walk without counting as a return.
 - Keep the formatter as separate future work because the lexer discards
   comments; do not build a rewrite-based formatter that loses user source.
+
+## 2026-11-24 — Result-enum propagation with `?`
+
+- Use a positional two-variant convention instead of a built-in generic
+  `Result[T, E]`. The language has no generics, and globally unique variant
+  constructors would otherwise limit a program to one `Ok`/`Err` pair.
+- Restrict `?` to statement positions: a whole `let` initializer, a plain
+  assignment value, or an expression statement. `eval_expr` returns only
+  `Value` or `RuntimeError`, so general expression-position propagation would
+  require a control-flow-aware evaluator. A statement-position MVP is small,
+  honest, and fully testable.
+- Require the enclosing function to have an explicit return type equal to the
+  operand's enum, so the failure value can be returned unchanged.
+- Lower `?` as a dedicated native `Try` statement, not as an IR match
+  expression. `match_arm_expr` only accepts expression arms, and block arms
+  with `return` would panic or require a larger match-lowering change.
+- Keep `R0017` as a defensive runtime error for operands that bypass the
+  checker; the checker normally rejects invalid placements and shapes first.

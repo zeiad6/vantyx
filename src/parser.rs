@@ -1397,6 +1397,16 @@ impl<'a> Parser<'a> {
                         span,
                     );
                 }
+                TokenKind::Question => {
+                    let question = self.advance();
+                    let span = expr.span.merge(question.span);
+                    expr = self.new_expr(
+                        ExprKind::Try {
+                            expr: Box::new(expr),
+                        },
+                        span,
+                    );
+                }
                 _ => break,
             }
         }
@@ -1774,6 +1784,7 @@ fn expr_depth(kind: &ExprKind) -> usize {
             1 + max_child(&mut entries.iter().flat_map(|(key, value)| [key.depth, value.depth]))
         }
         ExprKind::Unary { expr, .. } => 1 + expr.depth,
+        ExprKind::Try { expr } => 1 + expr.depth,
         ExprKind::Binary { lhs, rhs, .. } => 1 + lhs.depth.max(rhs.depth),
         ExprKind::Call { callee, args } => {
             1 + max_child(

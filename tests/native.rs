@@ -3943,3 +3943,72 @@ fn recursive_copy_non_utf8_names_match_in_both_engines() {
         b"raw"
     );
 }
+
+#[test]
+fn try_propagation_matches() {
+    assert_same(
+        "try-propagation",
+        "enum Outcome:\n    Ok(value: Int)\n    Err(message: Str)\n\n\
+         fn parse(n: Int) -> Outcome:\n\
+         \x20   if n < 0:\n        return Err(\"negative\")\n\
+         \x20   return Ok(n * 2)\n\n\
+         fn compute(n: Int) -> Outcome:\n\
+         \x20   let value = parse(n)?\n\
+         \x20   return Ok(value + 1)\n\n\
+         fn accumulate(items: List[Int]) -> Outcome:\n\
+         \x20   var total = 0\n\
+         \x20   for n in items:\n\
+         \x20       let value = parse(n)?\n\
+         \x20       total += value\n\
+         \x20   return Ok(total)\n\n\
+         fn assign(n: Int) -> Outcome:\n\
+         \x20   var value = 0\n\
+         \x20   value = parse(n)?\n\
+         \x20   return Ok(value)\n\n\
+         fn discard(n: Int) -> Outcome:\n\
+         \x20   parse(n)?\n\
+         \x20   return Ok(0)\n\n\
+         fn main():\n\
+         \x20   print(compute(3))\n\
+         \x20   print(compute(-1))\n\
+         \x20   print(accumulate([1, 2, 3]))\n\
+         \x20   print(accumulate([1, -2, 3]))\n\
+         \x20   print(assign(4))\n\
+         \x20   print(discard(-5))\n",
+    );
+}
+
+#[test]
+fn try_nested_error_payload_matches() {
+    assert_same(
+        "try-nested-error",
+        "enum Outcome:\n    Ok(value: Int)\n    Err(code: Int)\n\n\
+         fn parse(n: Int) -> Outcome:\n\
+         \x20   if n < 0:\n        return Err(100 + n)\n\
+         \x20   return Ok(n * 3)\n\n\
+         fn nested(n: Int) -> Outcome:\n\
+         \x20   let value = parse(n)?\n\
+         \x20   return parse(value)\n\n\
+         fn main():\n\
+         \x20   print(nested(2))\n\
+         \x20   print(nested(-1))\n",
+    );
+}
+
+#[test]
+fn native_try_requires_a_result_enum() {
+    let Some(engines) = run_engines(
+        "try-shape-rejected",
+        "enum Three:\n    A(x: Int)\n    B(x: Int)\n    C(x: Int)\n\n\
+         fn use_three(n: Int) -> Three:\n\
+         \x20   let value = A(n)?\n\
+         \x20   return A(value)\n\n\
+         fn main():\n    print(1)\n",
+    ) else {
+        return;
+    };
+    assert_eq!(engines.build.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&engines.build.stderr);
+    assert!(stderr.contains("error[E0319]"), "{stderr}");
+    assert!(stderr.contains("exactly two variants"), "{stderr}");
+}

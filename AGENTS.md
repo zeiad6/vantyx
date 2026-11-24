@@ -79,21 +79,24 @@ python3 benchmarks/run.py --reps 5
   on `4982ab3` with 581 tests after run 45488152955 failed only a nonportable
   hard-link test that `4982ab3` fixed; the status documentation commit
   `0491c63` also passed run 45489360135; run 45493833079 passed on `a4fe86b`
-  with 584 tests and run 45496041422 passed on `5e1092f` with 613 tests). The
+  with 584 tests, run 45496041422 passed on `5e1092f` with 613 tests, and run
+  45499019615 passed on `53a8b82` with the expanded fuzzer). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 613 passed (348 library unit + 15 CLI unit + 32 AI integration +
-  96 e2e + 122 native).
+- `cargo test`: 621 passed (348 library unit + 15 CLI unit + 32 AI integration +
+  101 e2e + 125 native).
 - Clippy clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
 - Native condition and short-circuit lowering match the interpreter:
   statement-expression conditions are parenthesized and `and`/`or` skip the
   right operand when the left decides the result (T-070/T-071, ADR-0036).
   `tools/differential_fuzz.py` found both defects and is part of the gate
-  (T-072). It now generates eight program shapes (scalars/control flow,
+  (T-072). It now generates nine program shapes (scalars/control flow,
   collections, pattern matching, nested aliasing, typed functions, strings,
-  numerics, and runtime-error agreement); 160/160 cases agreed on each of
-  seeds 1, 500, and 1000. CI runs 80 iterations on seed 1.
+  numerics, result-enum `?` propagation, and runtime-error agreement);
+  160/160 cases agreed on each of seeds 1, 500, and 1000 for the first eight
+  shapes, and 180/180 on the same seeds with the ninth. CI runs 80 iterations
+  on seed 1.
 - Tooling: `vantyx lint` reports `L0001` unused binding, `L0002` `var` never
   reassigned, and `L0003` unreachable statement, with compile errors still
   exiting `1` and lint-only findings exiting `0` (T-073, ADR-0037). The
@@ -102,7 +105,8 @@ python3 benchmarks/run.py --reps 5
 - Native support: scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key
   hash index, structs, enums, `match` with nested payload patterns, top-level
   or-patterns, integer range patterns and guards, calls and short-circuit
-  expressions in `if`/`elif`/`while` conditions, imported modules, basic
+  expressions in `if`/`elif`/`while` conditions, statement-position result-enum
+  `?` propagation, imported modules, basic
   UTF-8 file I/O, file metadata probes, single-level directory operations,
   recursive directory creation and symlink-safe removal, lexical glob
   expansion, rename and byte-preserving file copy, recursive directory copy,
@@ -136,7 +140,7 @@ python3 benchmarks/run.py --reps 5
   rename/copy, recursive directory copy, metadata probes, text builtins, and
   lexical POSIX-style path helpers only (no escaping/braces/case folding in
   globs and no metadata objects or preservation, recursive move, streaming,
-  atomic copy/write, recoverable errors, or sandbox; glob materializes sorted
+  atomic copy/write, error conversion or expression-position `?`, or sandbox; glob materializes sorted
   results under candidate/depth/component caps; recursive removal refuses
   final `.`/`..` and the filesystem root but still has no confirmation,
   rollback, trash, depth limit, or entry-count limit and intermediate links

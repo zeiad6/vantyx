@@ -108,6 +108,7 @@ impl<'a> Lexer<'a> {
                 ')' | ']' | '}' => self.lex_close(ch),
                 ',' => self.single(TokenKind::Comma),
                 ':' => self.single(TokenKind::Colon),
+                '?' => self.single(TokenKind::Question),
                 '.' => {
                     let start = self.pos;
                     self.bump();

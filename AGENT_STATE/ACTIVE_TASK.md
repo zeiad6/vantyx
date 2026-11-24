@@ -1,259 +1,64 @@
 # Active Task
 
-## T-072 — Differential fuzzer expansion
+## T-075 — Result-enum propagation with postfix `?`
 
 - Status: VERIFIED locally; commit, push, and CI pending
-- Priority: P2 (tooling)
-- Dependencies: T-008, T-010, ADR-0036
+- Priority: P1 (language feature)
+- Dependencies: T-014, T-030, T-032, T-048, ADR-0001, ADR-0019, ADR-0038
 
 ### Implemented
 
-- `tools/differential_fuzz.py` now has eight program shapes: scalar
-  expressions/control flow, collections/structs/enums, guarded/range/or-pattern
-  matching, nested collections with aliasing, typed functions with early
-  returns/recursion/calls in conditions, string escapes/interpolation/UTF-8
-  builtins, numeric formatting/conversions, and runtime-error agreement.
-- The expansion fixed a coverage bug: the collection generator used `xs[-1]`,
-  which is an invalid negative index, so every collection program stopped
-  there and never ran its remaining statements. It now uses
-  `xs[len(xs) - 1]`.
-- Empty `replace` patterns were removed from the expression and string
-  generators because they are runtime errors; the expression generator also
-  bounds `**` bases so programs do not overflow early.
-- `.github/workflows/ci.yml` runs 80 iterations on seed 1 (was 50).
-- The fuzzer docstring documents the eight shapes and the coverage principle.
+- `TokenKind::Question`, lexer punctuation, and `ExprKind::Try`.
+- Postfix parsing at precedence level 1 with expression-depth accounting.
+- `?` is accepted only as the whole value of a `let` initializer, a plain
+  assignment value, or an expression statement. The checker sets a
+  `try_allowed` flag only for those positions; every nested expression clears
+  it.
+- The operand must be a nominal enum with exactly two variants, each with
+  exactly one payload field. The first declared variant is success and the
+  second is failure. The enclosing function must have an explicit return type
+  equal to the operand's enum. Invalid cases report `E0319`.
+- Interpreter: `eval_try` returns either the success payload or the failure
+  value; statement handling turns the failure into `Flow::Return`. A defensive
+  `R0017` covers operands that bypass the checker.
+- Native IR: a dedicated `IrStmtKind::Try` with `lower_try` and
+  `lower_try_assignment`. Codegen evaluates the operand once, returns it on the
+  failure tag (decrementing the call depth), and binds the success payload field
+  to a fresh local. It is not lowered as a match expression.
+- Lint traversal visits the `Try` child.
+- `tools/differential_fuzz.py` gained a ninth shape, `result_program`, covering
+  success, failure, loops, assignment, and bare-statement propagation.
+- Specification §5.10, the §11 native subset, §12 not-implemented wording,
+  runtime-error `R0017`, ADR-0038, `TASKS.md`, `PROJECT_STATUS.md`, `AGENTS.md`,
+  and `docs/PROJECT_BASELINE.md` are updated.
 
 ### Evidence
 
-- `python3 tools/differential_fuzz.py --iterations 160 --seed 1` — 160/160.
-- `python3 tools/differential_fuzz.py --iterations 160 --seed 500` — 160/160.
-- `python3 tools/differential_fuzz.py --iterations 160 --seed 1000` — 160/160.
+- `cargo test --test e2e try_` — 5 passed.
+- `cargo test --test native try_` — 3 passed.
+- Full `cargo test` — 348 library unit + 15 CLI unit + 32 AI integration +
+  101 end-to-end + 125 native = 621 passed.
+- `cargo clippy --all-targets -- -D warnings` — clean.
+- `cargo build` and `cargo build --release` — success.
+- `python3 tools/differential_fuzz.py --iterations 180 --seed 1` — 180/180.
+- Same tool on seeds 500 and 1000 — 180/180 each.
 - `python3 -m py_compile tools/differential_fuzz.py` — success.
-- Targeted probes confirmed interpreter/native agreement for nested
-  collections, struct/enum aliasing, argument evaluation order, float map keys
-  (`NaN`, `-0.0`), mutable structural keys, string escapes/interpolation, and
-  runtime-error exit codes.
+- All five `examples/*.vtx` matched interpreter/native output.
 
 ### Remaining
 
-- Commit, push, and record the CI run.
-- No shrinking, sanitizer integration, or coverage measurement; the error-path
-  generator compares exit code and the stdout prefix, not diagnostic text.
+- Commit, push, watch CI, and record the run ID.
+- Scope limits: statement-position only; no generic `Result`, error
+  conversion, `try` block, or expression-position `?`; positional
+  first-success/second-failure convention; variant constructors stay globally
+  unique; native allocations still leak.
 
-## T-073/T-074 — Static linter plus reachability-aware return checking
+## Recently completed
 
-- Status: VERIFIED, committed in `5e1092f`, pushed, and CI-green (run
-  45496041422)
-- Priority: P2 (T-073), P1 (T-074)
-- Dependencies: T-003, T-005, T-007, T-019, ADR-0037
-
-### Implemented
-
-- `src/lint.rs`: read-only AST pass with scope stacks and read/write tracking.
-  `L0001` reports an unread local or global binding; `L0002` reports a `var`
-  read but never written after declaration; `L0003` reports the first statement
-  after a direct `return`, `break`, or `continue` in a block. Names starting
-  with `_`, parameters, loop variables, and match bindings are ignored.
-- `src/main.rs`: `vantyx lint <file>` compiles first and then prints lint
-  diagnostics; lint-only findings exit `0`, compile errors exit `1`.
-- `src/lib.rs`: registers the `lint` module.
-- `src/checker.rs::block_returns`: walks reachable statements instead of
-  inspecting only the last statement, so dead code after `return` no longer
-  causes a false `E0309`.
-- `tests/e2e.rs`: four lint tests plus dead-code check/run tests.
-- `tests/native.rs::dead_code_after_return_matches`: interpreter/native
-  agreement on dead code after a returning `if`/`else`.
-- `docs/linting.md`, specification §14, and ADR-0037.
-
-### Evidence
-
-- `cargo test --lib lint::tests` — 19 passed.
-- `cargo test --test e2e lint_` — 4 passed.
-- `cargo test --lib checker::tests::dead_code` — 2 passed.
-- `cargo test --lib checker::tests::break_before` — 1 passed.
-- `cargo test --test e2e dead_code` — 2 passed.
-- `cargo test --test native dead_code_after_return_matches` — 1 passed.
-- Full gate: 613 tests (348 library + 15 CLI + 32 AI + 96 e2e + 122 native),
-  clippy clean, debug and release builds succeed.
-- `python3 tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100.
-- All five examples matched interpreter/native output; fuzz smoke produced
-  controlled diagnostics.
-
-### Remaining
-
-- No suppression attributes, configuration, machine-readable output, or
-  automatic fixes; `L0003` does not analyze all-terminating `if`/`match`.
-- The formatter remains open (the lexer discards comments).
-
-## T-070/T-071/T-072 — Native condition and short-circuit fixes plus differential fuzzer
-
-- Status: VERIFIED, committed in `a4fe86b`, pushed, and CI-green (run
-  45493833079)
-- Priority: P0 (T-070, T-071), P2 (T-072)
-- Dependencies: T-010, T-033, ADR-0008, ADR-0036
-
-### Implemented
-
-- `src/codegen_c.rs::condition`: wraps a rendered condition in one extra pair
-  of parentheses only when it starts with the GNU statement-expression prefix
-  `({`; ordinary comparisons keep their existing parenthesization and do not
-  trigger clang's `-Wparentheses-equality`.
-- `src/codegen_c.rs::binary_expr`: special-cases `and`/`or`. An effectful right
-  operand is evaluated lazily through a `bool` statement expression with a
-  conditional expression; an effect-free right operand uses ordinary
-  `&&`/`||`.
-- `tests/native.rs`: `conditions_with_calls_match`,
-  `short_circuit_operands_match`, and
-  `effectful_binary_operands_keep_left_to_right_order`.
-- `tools/differential_fuzz.py`: deterministic, standard-library-only
-  differential fuzzer with three typed program shapes, failure saving, and a
-  compiler-availability skip; `.github/workflows/ci.yml` runs 50 iterations on
-  seed 1.
-- ADR-0036 and synchronized specification, README, status, baseline, and task
-  documentation.
-
-### Evidence
-
-- `cargo test --test native conditions_with_calls_match` — 1 passed.
-- `cargo test --test native short_circuit_operands_match` — 1 passed.
-- `cargo test --test native effectful_binary_operands_keep_left_to_right_order`
-  — 1 passed.
-- Full gate: 584 tests (326 library + 15 CLI + 32 AI + 90 e2e + 121 native),
-  clippy clean, debug and release builds succeed.
-- `python3 tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100.
-- `python3 tools/differential_fuzz.py --iterations 200 --seed 500` — 200/200.
-- All five examples matched interpreter/native output; fuzz smoke produced
-  controlled diagnostics.
-
-### Remaining
-
-- Commit, push, and record the CI run.
-- The fuzzer has no shrinking, sanitizer integration, or coverage measurement.
-- The backend still depends on GNU C11 statement expressions.
-
-## T-069 — Refuse destructive recursive-removal roots
-
-- Status: VERIFIED, committed, pushed, and CI-green
-- Priority: P0
-- Dependencies: T-063, ADR-0031, ADR-0035
-
-### Implemented
-
-- `src/fs_safety.rs`: lexical `refused_removal_root` classifier with stable
-  `RemovalRefusal` messages and five unit tests.
-- `src/interp.rs`: `remove_dir_all` refuses destructive roots before any
-  filesystem access.
-- `src/codegen_c.rs`: `vantyx_remove_root_refusal` mirrors the rule and is
-  called by `vantyx_remove_dir_all` before `vantyx_remove_tree`.
-- `src/lib.rs`: module registration.
-- Two e2e tests and two differential native tests; the previous test that
-  locked the destructive `remove_dir_all(".")` behavior was replaced.
-- ADR-0035 and synchronized specification/security/status documentation.
-
-### Evidence
-
-- `cargo test fs_safety` — 5 passed.
-- `cargo test --test e2e recursive_removal` — 2 passed.
-- `cargo test --test native recursive_removal` — 2 passed.
-- Full gate: 581 tests (326 library + 15 CLI + 32 AI + 90 e2e + 118 native),
-  clippy clean, debug and release builds succeed.
-- CI run 45488725812 is green on `4982ab3` with 581 tests.
-- All five examples matched interpreter/native output; fuzz smoke produced
-  controlled diagnostics.
-
-### Remaining
-
-- CI run 45488725812 is green on `4982ab3`; run 45488152955 failed only the
-  glob result-cap test because ext4 caps hard links per inode, fixed by
-  spreading links across four anchors.
-- Retry independent QA verification when subagent capacity is available.
-- The check is lexical: intermediate links, `link/sub`, check-then-act races,
-  Windows `\` spellings, and the absence of a sandbox remain documented limits.
-
-## T-068 — Curl timeout error mapping
-
-- Status: VERIFIED, committed, pushed, and CI-green
-- Priority: P1
-- Dependencies: T-039, T-052
-
-### Implemented
-
-- `src/ai/http.rs`: a shared `curl_failure` helper maps system-curl exit code
-  28 (operation timeout) to retryable `AI_E_TIMEOUT`; other transport failures
-  such as exit 7 remain `AI_E_CONNECT`.
-- Both buffered (`send_curl`) and streaming (`stream_curl`) HTTPS paths use the
-  same mapping. Loopback HTTP behavior is unchanged.
-- Two unit tests: `curl_timeout_maps_to_a_retryable_timeout` and
-  `curl_connect_failure_stays_a_connect_error`.
-
-### Evidence
-
-- `cargo test curl_` — 2 passed.
-- Full gate: 573 tests (321 library + 15 CLI + 32 AI + 88 e2e + 117 native),
-  clippy clean, debug and release builds succeed.
-- Failure harness: 16 checks across 7 loopback scenarios, including 401, 429,
-  and timeout.
-
-## T-067 — Live cloud OpenAI-compatible verification
-
-- Status: VERIFIED for the cloud path and re-verified at 20:59Z; committed,
-  pushed, and CI-green
-- Priority: P1
-- Dependencies: T-038, T-039, T-043, T-045, T-046, T-052
-
-### Evidence
-
-- Endpoint: `https://generativelanguage.googleapis.com/v1beta/openai`.
-- Chat model: `gemini-3.1-flash-lite`; embedding model:
-  `gemini-embedding-001` at 768 dimensions.
-- `doctor`: `status: ok`, 65 models.
-- Chat: `VANTYX LIVE`, usage 22/4/26 in the first run and 13/4/17 in the
-  20:59Z re-run.
-- Streaming: counted words in both runs; first byte 1,976 ms in the first run
-  and 14,958 ms in the re-run.
-- Extraction: validated Ada Lovelace record after one repair, usage 237/105/342
-  in both successful runs.
-- Embeddings: two 768-component vectors, 28 prompt tokens.
-- RAG: 3 documents, 3 chunks, 3 vectors, 206 prompt tokens; semantic search
-  ranked `vantyx.md` first; evaluation recall@2 = 1.0, precision@2 = 0.5,
-  MRR = 1.0.
-- Failure harness: 16 checks across 7 scenarios (`AI_E_AUTH`,
-  `AI_E_RATE_LIMIT`, `AI_E_TIMEOUT`).
-- A retry returned HTTP 400 `User location is not supported`; a later full
-  re-run at 20:58Z hit a transient HTTP 503 on extraction, and the 20:59Z run
-  passed all 21 checks using `MY_API_KEY`; no bypass was attempted.
-- Evidence files: `docs/ai/LIVE_VERIFICATION.md`,
-  `docs/ai/live-evidence-2026-11-24.json`,
-  `docs/ai/live-evidence-2026-11-24-retry.json`, and
-  `docs/ai/live-evidence-2026-11-24-retry2.json`; no key value is stored.
-
-## T-066 — Recursive directory copy
-
-- Status: VERIFIED locally; committed, pushed, and CI-green
-- Priority: P1
-- Dependencies: T-058, T-059, T-061, T-063, ADR-0034
-
-### Implemented
-
-- `src/copy_tree.rs`: new-target validation, resolved self-containment,
-  byte-preserving traversal, inner-symlink/special-file rejection, and
-  100,000-entry / 128-depth caps.
-- Interpreter, checker, IR, and C backend integration with `E0301`/`R0005`/
-  `E0401` boundaries.
-- Seven library unit tests, seven e2e tests, and seven differential native
-  tests, including Unix link/special-file/non-UTF-8 cases.
-- ADR-0034 and synchronized specification/status documentation.
-
-### Evidence
-
-- T-066 gate: 571 tests (319 + 15 + 32 + 88 + 117); seven native tests passed
-  under ASan/UBSan with leak detection disabled.
-- Current gate after T-069 and the T-067 re-verification: 581 tests
-  (326 + 15 + 32 + 90 + 118).
-
-### Remaining
-
-- CI run 45488725812 is green on `4982ab3`.
-- Retry independent QA verification when subagent capacity is available.
-- T-040 remains blocked for the local-model half: no Ollama/llama.cpp server or
-  model is installed.
+- T-072 fuzzer expansion: committed in `53a8b82`; CI run 45499019615 passed
+  with the expanded fuzzer. 160/160 on seeds 1, 500, and 1000 before the ninth
+  shape.
+- T-073/T-074 linter and reachability-aware returns: committed in `5e1092f`;
+  CI run 45496041422 passed with 613 tests.
+- T-070/T-071 native condition and short-circuit fixes: committed in
+  `a4fe86b`; CI run 45493833079 passed with 584 tests.

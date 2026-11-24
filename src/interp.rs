@@ -155,6 +155,14 @@ enum Flow {
     Continue,
 }
 
+/// Result of evaluating a postfix `?` operand.
+enum TryOutcome {
+    /// The success payload, ready to be used as the expression value.
+    Value(Value),
+    /// The failure variant, which the enclosing function must return.
+    Propagate(Value),
+}
+
 enum Place {
     Var {
         scope: usize,
@@ -454,10 +462,85 @@ impl<'a> Interpreter<'a> {
     /// statement. The REPL uses this to echo expression values exactly once.
     fn exec_stmt_echo(&mut self, stmt: &Stmt) -> Result<(Flow, Option<Value>), RuntimeError> {
         if let StmtKind::Expr(expr) = &stmt.kind {
+            // A bare `expr?` propagates on failure and never echoes a value.
+            if matches!(expr.kind, ExprKind::Try { .. }) {
+                return Ok((self.exec_stmt(stmt)?, None));
+            }
             let value = self.eval_expr(expr)?;
             return Ok((Flow::Normal, Some(value)));
         }
         Ok((self.exec_stmt(stmt)?, None))
+    }
+
+    /// Evaluates the operand of a postfix `?`. `Value` is the success
+    /// payload; `Propagate` is the failure enum value that the enclosing
+    /// function must return unchanged.
+    fn eval_try(&mut self, operand: &Expr, span: Span) -> Result<TryOutcome, RuntimeError> {
+        let value = self.eval_expr(operand)?;
+        let Value::Enum(instance) = &value else {
+            return Err(self.rt(
+                "R0017",
+                format!(
+                    "`?` requires a two-variant enum value, found `{}`",
+                    value.type_name()
+                ),
+                span,
+            ));
+        };
+        let Some(info) = self.model.enums.get(&instance.enum_name) else {
+            return Err(self.rt(
+                "R0010",
+                format!("unknown enum `{}`", instance.enum_name),
+                span,
+            ));
+        };
+        if info.variants.len() != 2 {
+            return Err(self.rt(
+                "R0017",
+                format!(
+                    "`?` requires an enum with exactly two variants, but `{}` has {}",
+                    instance.enum_name,
+                    info.variants.len()
+                ),
+                span,
+            ));
+        }
+        let success = &info.variants[0];
+        let failure = &info.variants[1];
+        if success.fields.len() != 1 || failure.fields.len() != 1 {
+            return Err(self.rt(
+                "R0017",
+                format!(
+                    "`?` requires one payload field on each variant of `{}`",
+                    instance.enum_name
+                ),
+                span,
+            ));
+        }
+        if instance.variant == failure.name {
+            return Ok(TryOutcome::Propagate(value));
+        }
+        if instance.variant != success.name {
+            return Err(self.rt(
+                "R0017",
+                format!(
+                    "`?` received unknown variant `{}` of enum `{}`",
+                    instance.variant, instance.enum_name
+                ),
+                span,
+            ));
+        }
+        match instance.fields.first() {
+            Some(field) => Ok(TryOutcome::Value(field.value.clone())),
+            None => Err(self.rt(
+                "R0017",
+                format!(
+                    "success variant `{}` of `{}` has no payload",
+                    instance.variant, instance.enum_name
+                ),
+                span,
+            )),
+        }
     }
 
     fn exec_stmt(&mut self, stmt: &Stmt) -> Result<Flow, RuntimeError> {
@@ -473,7 +556,15 @@ impl<'a> Interpreter<'a> {
                     Some(expr) => Some(self.resolve_runtime_type(expr)?),
                     None => None,
                 };
-                let value = self.eval_expr(init)?;
+                let value = match &init.kind {
+                    ExprKind::Try { expr: operand } => {
+                        match self.eval_try(operand, init.span)? {
+                            TryOutcome::Value(value) => value,
+                            TryOutcome::Propagate(value) => return Ok(Flow::Return(value)),
+                        }
+                    }
+                    _ => self.eval_expr(init)?,
+                };
                 let binding_ty = match &declared {
                     Some(ty) => ty.clone(),
                     None => self
@@ -493,7 +584,17 @@ impl<'a> Interpreter<'a> {
                 match op {
                     None => {
                         // Python-style: the right-hand side is evaluated first.
-                        let rhs = self.eval_expr(value)?;
+                        let rhs = match &value.kind {
+                            ExprKind::Try { expr: operand } => {
+                                match self.eval_try(operand, value.span)? {
+                                    TryOutcome::Value(value) => value,
+                                    TryOutcome::Propagate(value) => {
+                                        return Ok(Flow::Return(value));
+                                    }
+                                }
+                            }
+                            _ => self.eval_expr(value)?,
+                        };
                         let place = self.eval_place(target)?;
                         self.write_place(&place, rhs, stmt.span)?;
                     }
@@ -508,7 +609,13 @@ impl<'a> Interpreter<'a> {
                 Ok(Flow::Normal)
             }
             StmtKind::Expr(expr) => {
-                self.eval_expr(expr)?;
+                if let ExprKind::Try { expr: operand } = &expr.kind {
+                    if let TryOutcome::Propagate(value) = self.eval_try(operand, expr.span)? {
+                        return Ok(Flow::Return(value));
+                    }
+                } else {
+                    self.eval_expr(expr)?;
+                }
                 Ok(Flow::Normal)
             }
             StmtKind::If {
@@ -1104,6 +1211,11 @@ impl<'a> Interpreter<'a> {
                 }
                 Ok(Value::map(values))
             }
+            ExprKind::Try { .. } => Err(self.rt(
+                "R0017",
+                "`?` is only valid as a `let` initializer, a plain assignment value, or an expression statement",
+                expr.span,
+            )),
             ExprKind::Unary { op, expr: inner } => {
                 let value = self.eval_expr(inner)?;
                 match op {

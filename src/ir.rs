@@ -150,6 +150,16 @@ pub enum IrStmtKind {
         ty: IrType,
         init: IrExpr,
     },
+    /// Evaluates a result-enum operand. When the failure variant is present,
+    /// the enclosing function returns it unchanged; otherwise the success
+    /// payload is bound to `bind` (when requested).
+    Try {
+        operand: IrExpr,
+        bind: Option<(String, IrType)>,
+        ok_variant: String,
+        ok_field: String,
+        err_tag: usize,
+    },
     Assign {
         target: IrPlace,
         value: IrExpr,
@@ -826,7 +836,21 @@ impl<'a> Builder<'a> {
     fn lower_stmt(&mut self, stmt: &Stmt, top_level: bool) -> Result<Vec<IrStmt>, IrError> {
         match &stmt.kind {
             StmtKind::Let { name, ty, init, .. } => {
-                let init = self.lower_expr(init)?;
+                let mut prelude = Vec::new();
+                let init = match &init.kind {
+                    ExprKind::Try { expr: operand } => {
+                        let (try_stmt, binding) = self.lower_try(operand, init.span, true)?;
+                        let (temp, temp_ty) =
+                            binding.expect("a `?` binding always requests a payload");
+                        prelude.push(try_stmt);
+                        IrExpr {
+                            kind: IrExprKind::Var(temp),
+                            ty: temp_ty,
+                            span: init.span,
+                        }
+                    }
+                    _ => self.lower_expr(init)?,
+                };
                 let declared = match ty {
                     Some(expr) => Some(self.resolve_type(expr)?),
                     None => None,
@@ -842,28 +866,39 @@ impl<'a> Builder<'a> {
                 if top_level && self.local_scopes.is_empty() {
                     // Top-level bindings are file-scope globals.
                     self.declare_global_use(name);
-                    return Ok(vec![IrStmt {
+                    prelude.push(IrStmt {
                         kind: IrStmtKind::Assign {
                             target: IrPlace::Global(name.clone()),
                             value: init,
                         },
                         span: stmt.span,
-                    }]);
+                    });
+                    return Ok(prelude);
                 }
                 self.declare_local(name, ty.clone());
-                Ok(vec![IrStmt {
+                prelude.push(IrStmt {
                     kind: IrStmtKind::Let {
                         name: name.clone(),
                         ty,
                         init,
                     },
                     span: stmt.span,
-                }])
+                });
+                Ok(prelude)
             }
             StmtKind::Assign { target, op, value } => {
+                if op.is_none()
+                    && let ExprKind::Try { expr: operand } = &value.kind
+                {
+                    return self.lower_try_assignment(stmt, target, operand, value.span);
+                }
                 self.lower_assignment(stmt, target, *op, value)
             }
             StmtKind::Expr(expr) => {
+                if let ExprKind::Try { expr: operand } = &expr.kind {
+                    let (try_stmt, _) = self.lower_try(operand, expr.span, false)?;
+                    return Ok(vec![try_stmt]);
+                }
                 let expr = self.lower_expr(expr)?;
                 Ok(vec![IrStmt {
                     kind: IrStmtKind::Expr(expr),
@@ -967,6 +1002,196 @@ impl<'a> Builder<'a> {
     fn declare_global_use(&mut self, _name: &str) {
         // Globals were collected in the first pass. This hook documents that
         // top-level bindings are resolved through `global_names`.
+    }
+
+    /// Lowers a postfix `?` operand into a statement that returns the failure
+    /// variant or binds the success payload. `bind` requests a fresh local for
+    /// the payload; a bare `expr?` evaluates for effects only.
+    fn lower_try(
+        &mut self,
+        operand: &Expr,
+        span: Span,
+        bind: bool,
+    ) -> Result<(IrStmt, Option<(String, IrType)>), IrError> {
+        let operand = self.lower_expr(operand)?;
+        let (payload_ty, ok_variant, ok_field, err_tag) = self.result_info(&operand, span)?;
+        let binding = if bind {
+            let temp = self.fresh_temp();
+            self.declare_local(&temp, payload_ty.clone());
+            Some((temp, payload_ty))
+        } else {
+            None
+        };
+        let statement = IrStmt {
+            kind: IrStmtKind::Try {
+                operand,
+                bind: binding.clone(),
+                ok_variant,
+                ok_field,
+                err_tag,
+            },
+            span,
+        };
+        Ok((statement, binding))
+    }
+
+    /// Reads the positional result-enum convention from the checked IR: the
+    /// first variant is success, the second is failure, and each has exactly
+    /// one payload field. The checker enforces this before lowering.
+    fn result_info(
+        &self,
+        operand: &IrExpr,
+        span: Span,
+    ) -> Result<(IrType, String, String, usize), IrError> {
+        let IrType::Enum(name) = &operand.ty else {
+            return Err(IrError::internal(
+                "`?` operand is not an enum after checking",
+                span,
+            ));
+        };
+        if self.current_return != operand.ty {
+            return Err(IrError::internal(
+                format!(
+                    "`?` propagates `{}`, but the enclosing function returns `{}`",
+                    operand.ty.name(),
+                    self.current_return.name()
+                ),
+                span,
+            ));
+        }
+        let Some(info) = self.enum_map.get(name) else {
+            return Err(IrError::internal(
+                format!("missing enum info for `{name}`"),
+                span,
+            ));
+        };
+        if info.variants.len() != 2 {
+            return Err(IrError::internal(
+                format!(
+                    "`?` requires two variants, but `{name}` has {}",
+                    info.variants.len()
+                ),
+                span,
+            ));
+        }
+        let success = &info.variants[0];
+        let failure = &info.variants[1];
+        if success.fields.len() != 1 || failure.fields.len() != 1 {
+            return Err(IrError::internal(
+                format!("`?` requires one payload field on each variant of `{name}`"),
+                span,
+            ));
+        }
+        Ok((
+            success.fields[0].ty.clone(),
+            success.name.clone(),
+            success.fields[0].name.clone(),
+            failure.tag,
+        ))
+    }
+
+    /// Lowers a plain `target = operand?` assignment. The operand is evaluated
+    /// before the target's base/index expressions, matching the interpreter's
+    /// right-hand-side-first order.
+    fn lower_try_assignment(
+        &mut self,
+        stmt: &Stmt,
+        target: &Expr,
+        operand: &Expr,
+        span: Span,
+    ) -> Result<Vec<IrStmt>, IrError> {
+        let (try_stmt, binding) = self.lower_try(operand, span, true)?;
+        let (temp, temp_ty) = binding.expect("a `?` binding always requests a payload");
+        let rhs = IrExpr {
+            kind: IrExprKind::Var(temp),
+            ty: temp_ty,
+            span,
+        };
+        let assignment = match &target.kind {
+            ExprKind::Var(name) => {
+                let (place, target_ty) = self.lower_var_place(name, target.span)?;
+                self.expect_assignable(&rhs.ty, &target_ty, span)?;
+                IrStmt {
+                    kind: IrStmtKind::Assign {
+                        target: place,
+                        value: rhs,
+                    },
+                    span: stmt.span,
+                }
+            }
+            ExprKind::Field { base, name, .. } => {
+                let base_expr = self.lower_expr(base)?;
+                let field_ty = self.field_type(&base_expr.ty, name, target.span)?;
+                self.expect_assignable(&rhs.ty, &field_ty, span)?;
+                IrStmt {
+                    kind: IrStmtKind::Assign {
+                        target: IrPlace::Field {
+                            base: base_expr,
+                            field: name.clone(),
+                        },
+                        value: rhs,
+                    },
+                    span: stmt.span,
+                }
+            }
+            ExprKind::Index { base, index } => {
+                let base_expr = self.lower_expr(base)?;
+                let index_expr = self.lower_expr(index)?;
+                match base_expr.ty.clone() {
+                    IrType::List(inner) => {
+                        if index_expr.ty != IrType::Int {
+                            return Err(IrError::internal(
+                                "list index expression is not an Int",
+                                index.span,
+                            ));
+                        }
+                        self.expect_assignable(&rhs.ty, &inner, span)?;
+                        IrStmt {
+                            kind: IrStmtKind::Assign {
+                                target: IrPlace::Index {
+                                    base: base_expr,
+                                    index: index_expr,
+                                },
+                                value: rhs,
+                            },
+                            span: stmt.span,
+                        }
+                    }
+                    IrType::Map(key, value_ty) => {
+                        self.expect_assignable(&index_expr.ty, &key, index.span)?;
+                        self.expect_assignable(&rhs.ty, &value_ty, span)?;
+                        IrStmt {
+                            kind: IrStmtKind::Assign {
+                                target: IrPlace::Index {
+                                    base: base_expr,
+                                    index: index_expr,
+                                },
+                                value: rhs,
+                            },
+                            span: stmt.span,
+                        }
+                    }
+                    other => {
+                        return Err(IrError::unsupported(
+                            format!(
+                                "native index assignment requires a List or Map, found `{}`",
+                                other.name()
+                            ),
+                            target.span,
+                            "string index assignment is not supported; build a new string instead",
+                        ))
+                    }
+                }
+            }
+            _ => {
+                return Err(IrError::unsupported(
+                    "invalid assignment target",
+                    target.span,
+                    "the native backend assigns to variables, struct fields, and list elements",
+                ))
+            }
+        };
+        Ok(vec![try_stmt, assignment])
     }
 
     fn lower_assignment(
@@ -1791,6 +2016,11 @@ impl<'a> Builder<'a> {
                     span: expr.span,
                 })
             }
+            ExprKind::Try { .. } => Err(IrError::unsupported(
+                "`?` is only lowered as a `let` initializer, a plain assignment value, or an expression statement",
+                expr.span,
+                "bind the result first, for example `let value = call()?`",
+            )),
             ExprKind::Unary { op, expr: operand } => {
                 let operand = self.lower_expr(operand)?;
                 let result_ty = match op {

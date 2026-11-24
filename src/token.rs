@@ -69,6 +69,7 @@ pub enum TokenKind {
     SlashEq,
     SlashSlashEq,
     PercentEq,
+    Question,
 
     // Structure
     Newline,
@@ -140,6 +141,7 @@ impl TokenKind {
             TokenKind::SlashEq => "`/=`".to_string(),
             TokenKind::SlashSlashEq => "`//=`".to_string(),
             TokenKind::PercentEq => "`%=`".to_string(),
+            TokenKind::Question => "`?`".to_string(),
             TokenKind::Newline => "end of line".to_string(),
             TokenKind::Indent => "indentation".to_string(),
             TokenKind::Dedent => "dedentation".to_string(),

@@ -1039,6 +1039,39 @@ impl<'a> Emitter<'a> {
                     value
                 ));
             }
+            IrStmtKind::Try {
+                operand,
+                bind,
+                ok_variant,
+                ok_field,
+                err_tag,
+            } => {
+                let value = self.expr(operand);
+                let value_name = self.fresh("try");
+                self.line(&format!(
+                    "{} {} = {};",
+                    self.ctype(&operand.ty),
+                    value_name,
+                    value
+                ));
+                self.line(&format!("if ({value_name}->tag == {err_tag}) {{"));
+                self.indent += 1;
+                if self.in_function {
+                    self.line("vantyx_call_depth--;");
+                }
+                self.line(&format!("return {value_name};"));
+                self.indent -= 1;
+                self.line("}");
+                if let Some((name, ty)) = bind {
+                    self.line(&format!(
+                        "{} {} = {value_name}->payload.{}.{};",
+                        self.ctype(ty),
+                        self.local(name),
+                        self.variant_member(ok_variant),
+                        self.field(ok_field)
+                    ));
+                }
+            }
             IrStmtKind::Assign { target, value } => match target {
                 IrPlace::Var(name) => {
                     let value = self.expr(value);
@@ -2160,6 +2193,7 @@ fn collect_stmt_desc_types(stmt: &IrStmt, out: &mut Vec<IrType>) {
             register_desc_type(ty, out);
             collect_expr_desc_types(init, out);
         }
+        IrStmtKind::Try { operand, .. } => collect_expr_desc_types(operand, out),
         IrStmtKind::Assign { target, value } => {
             collect_place_desc_types(target, out);
             collect_expr_desc_types(value, out);

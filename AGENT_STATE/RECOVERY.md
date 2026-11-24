@@ -13,26 +13,22 @@
 
 ## Last recorded repository state (2026-11-24)
 
-- `origin/main` is at `5e1092f`; local `main` is one commit ahead at `806a822`
-  (initial repository audit plus the T-073 CI record), and the expanded
-  differential fuzzer is uncommitted in the working tree. `e6ec597` contains
-  the T-058–T-069 change set, `4982ab3` fixes the glob result-cap test
-  portability, `0491c63`/`dfaad9b` record CI verification, `a4fe86b` contains
-  the T-070–T-072 native fixes plus the original fuzzer, and `5e1092f`
-  contains the T-073–T-074 linter and return-path fix.
-- CI run 45496041422 passed on `5e1092f` with 613 tests and the differential
-  fuzz step. CI run 45493833079 passed on `a4fe86b` with 584 tests. CI run
-  45488725812 passed on `4982ab3` with 581 tests; the status documentation
-  commit `0491c63` also passed run 45489360135.
-- The T-073–T-074 change set is committed and CI-green. The T-072 expansion is
-  verified locally: eight program shapes, 160/160 on each of seeds 1, 500, and
-  1000, `py_compile` success. It is pending commit, push, and CI. The prior
-  local gate passed 613 tests (348 library + 15 CLI + 32 AI + 96 e2e + 122
-  native), clippy clean, debug and release builds, all five examples, and fuzz
-  smoke.
-- If the fuzzer expansion commit is not present, inspect `git status --short`,
-  re-run `python3 tools/differential_fuzz.py --iterations 160 --seed 1`, and
-  commit rather than discarding the changes.
+- `origin/main` is at `53a8b82`; the T-075 result-propagation change set is
+  uncommitted in the working tree. `e6ec597` contains the T-058–T-069 change
+  set, `4982ab3` fixes the glob result-cap test portability, `0491c63`/
+  `dfaad9b` record CI verification, `a4fe86b` contains the T-070–T-072 native
+  fixes plus the original fuzzer, `5e1092f` contains the T-073–T-074 linter and
+  return-path fix, and `53a8b82` contains the expanded differential fuzzer.
+- CI run 45499019615 passed on `53a8b82` with the expanded fuzzer. CI run
+  45496041422 passed on `5e1092f` with 613 tests. CI run 45493833079 passed on
+  `a4fe86b` with 584 tests. CI run 45488725812 passed on `4982ab3` with 581
+  tests; the status documentation commit `0491c63` also passed run
+  45489360135.
+- The T-075 change set is verified locally: 621 tests (348 library + 15 CLI +
+  32 AI + 101 e2e + 125 native), clippy clean, debug and release builds, five
+  examples, and 180/180 fuzzer cases on each of seeds 1, 500, and 1000.
+- If the T-075 commit is not present, inspect `git status --short`, re-run
+  `cargo test`, and commit rather than discarding the changes.
 
 ## If the network or a provider is unavailable
 

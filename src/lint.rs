@@ -325,6 +325,7 @@ impl Linter {
                 }
             }
             ExprKind::Unary { expr, .. } => self.expr(expr),
+            ExprKind::Try { expr } => self.expr(expr),
             ExprKind::Binary { lhs, rhs, .. } => {
                 self.expr(lhs);
                 self.expr(rhs);

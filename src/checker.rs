@@ -241,6 +241,10 @@ struct Checker<'a> {
     current_fn: Option<FnCheck>,
     loop_depth: usize,
     has_top_level_stmts: bool,
+    /// Set by `check_statement_expr` immediately before the one expression
+    /// position where postfix `?` is allowed. Nested expressions consume and
+    /// clear it, so `?` cannot hide inside a larger expression.
+    try_allowed: bool,
 }
 
 impl<'a> Checker<'a> {
@@ -260,6 +264,7 @@ impl<'a> Checker<'a> {
             current_fn: None,
             loop_depth: 0,
             has_top_level_stmts,
+            try_allowed: false,
         }
     }
 
@@ -734,7 +739,7 @@ impl<'a> Checker<'a> {
                 init,
             } => {
                 let expected = ty.as_ref().map(|t| self.resolve_type(t));
-                let init_ty = self.check_expr(init, expected.as_ref());
+                let init_ty = self.check_statement_expr(init, expected.as_ref());
                 if let Some(expected) = &expected {
                     self.expect(
                         &init_ty,
@@ -758,13 +763,13 @@ impl<'a> Checker<'a> {
                         " in compound assignment",
                     );
                 } else {
-                    let value_ty = self.check_expr(value, Some(&target_ty));
+                    let value_ty = self.check_statement_expr(value, Some(&target_ty));
                     self.expect(&value_ty, &target_ty, value.span, " in assignment");
                 }
                 self.expr_types.insert(target.id, target_ty);
             }
             StmtKind::Expr(expr) => {
-                self.check_expr(expr, None);
+                self.check_statement_expr(expr, None);
             }
             StmtKind::If {
                 cond,
@@ -1743,12 +1748,26 @@ impl<'a> Checker<'a> {
     // ---- expressions ----
 
     fn check_expr(&mut self, expr: &Expr, expected: Option<&Type>) -> Type {
-        let ty = self.check_expr_inner(expr, expected);
+        // Only the outermost expression of a statement position may be `?`.
+        // Every recursive check starts with the flag cleared.
+        let try_allowed = std::mem::take(&mut self.try_allowed);
+        let ty = self.check_expr_inner(expr, expected, try_allowed);
         self.expr_types.insert(expr.id, ty.clone());
         ty
     }
 
-    fn check_expr_inner(&mut self, expr: &Expr, expected: Option<&Type>) -> Type {
+    /// Checks an expression that may be a postfix `?` propagation.
+    fn check_statement_expr(&mut self, expr: &Expr, expected: Option<&Type>) -> Type {
+        self.try_allowed = true;
+        self.check_expr(expr, expected)
+    }
+
+    fn check_expr_inner(
+        &mut self,
+        expr: &Expr,
+        expected: Option<&Type>,
+        try_allowed: bool,
+    ) -> Type {
         match &expr.kind {
             ExprKind::Int(_) => Type::Int,
             ExprKind::Float(_) => Type::Float,
@@ -1859,6 +1878,24 @@ impl<'a> Checker<'a> {
                     Box::new(expected_key.or(key_ty).unwrap_or(Type::Any)),
                     Box::new(expected_value.or(value_ty).unwrap_or(Type::Any)),
                 )
+            }
+            ExprKind::Try { expr: inner } => {
+                if !try_allowed {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E0319",
+                            "`?` is only valid as a `let` initializer, a plain assignment value, or an expression statement",
+                            expr.span,
+                        )
+                        .with_help(
+                            "bind the result first, for example `let value = call()?`",
+                        ),
+                    );
+                    self.check_expr(inner, None);
+                    return Type::Any;
+                }
+                let operand = self.check_expr(inner, None);
+                self.check_try_operand(&operand, expr.span)
             }
             ExprKind::Unary { op, expr: inner } => {
                 let ty = self.check_expr(inner, None);
@@ -2105,6 +2142,97 @@ impl<'a> Checker<'a> {
                 self.check_match(scrutinee, arms, expected, true)
             }
         }
+    }
+
+    /// Validates the operand of postfix `?` and returns the success payload
+    /// type. The convention is positional: the enum must have exactly two
+    /// variants with one payload field each. The first declared variant is the
+    /// success case and the second is the failure case. The enclosing function
+    /// must return the same enum, so a failure value can be returned unchanged.
+    fn check_try_operand(&mut self, operand: &Type, span: Span) -> Type {
+        let Type::Enum(name) = operand else {
+            if !matches!(operand, Type::Any) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E0319",
+                        format!("`?` requires a two-variant enum, found `{operand}`"),
+                        span,
+                    )
+                    .with_help(
+                        "declare a result enum such as `enum Outcome: Ok(Int), Err(Str)`",
+                    ),
+                );
+            }
+            return Type::Any;
+        };
+        let Some(info) = self.enums.get(name).cloned() else {
+            return Type::Any;
+        };
+        if info.variants.len() != 2 {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0319",
+                    format!(
+                        "`?` requires an enum with exactly two variants, but `{name}` has {}",
+                        info.variants.len()
+                    ),
+                    span,
+                )
+                .with_help(
+                    "the first variant is the success case and the second is the failure case",
+                ),
+            );
+            return Type::Any;
+        }
+        let success = &info.variants[0];
+        let failure = &info.variants[1];
+        if success.fields.len() != 1 || failure.fields.len() != 1 {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0319",
+                    format!("`?` requires one payload field on each variant of `{name}`"),
+                    span,
+                )
+                .with_help("declare both variants with exactly one field"),
+            );
+            return Type::Any;
+        }
+        let Some((function, returns, annotated)) = self
+            .current_fn
+            .as_ref()
+            .map(|context| (context.name.clone(), context.ret.clone(), context.ret_annotated))
+        else {
+            self.diagnostics.push(
+                Diagnostic::error("E0319", "`?` is only valid inside a function", span)
+                    .with_help("top-level code has nowhere to propagate the failure value"),
+            );
+            return Type::Any;
+        };
+        if !annotated {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0319",
+                    format!("`?` requires an explicit return type on `{function}`"),
+                    span,
+                )
+                .with_help(format!("annotate it as `-> {name}`")),
+            );
+            return Type::Any;
+        }
+        if returns != *operand {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0319",
+                    format!(
+                        "`?` propagates `{name}`, but `{function}` returns `{returns}`"
+                    ),
+                    span,
+                )
+                .with_help("the enclosing function must return the same enum type"),
+            );
+            return Type::Any;
+        }
+        success.fields[0].ty.clone()
     }
 
     fn binary_type(&mut self, op: BinOp, lhs: &Type, rhs: &Type, span: Span) -> Type {

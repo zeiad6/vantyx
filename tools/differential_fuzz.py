@@ -6,13 +6,14 @@ programs from fixed grammars, runs each one through `vantyx run` and
 `vantyx build`, and compares the exit code and stdout. A mismatch is a
 failure; the program is printed and can be saved for a regression test.
 
-The eight program shapes cover scalar expressions and control flow,
+The nine program shapes cover scalar expressions and control flow,
 collections/structs/enums, guarded/range/or-pattern matching, nested
 collections with aliasing, typed functions with early returns and recursion,
 string escapes/interpolation/UTF-8 builtins, numeric formatting and
-conversions, and runtime-error agreement. Every generated program is designed
-to run to completion or fail at the same point in both engines; a program that
-only prints its prefix before a runtime error has little differential value.
+conversions, result-enum `?` propagation, and runtime-error agreement. Every
+generated program is designed to run to completion or fail at the same point
+in both engines; a program that only prints its prefix before a runtime error
+has little differential value.
 
 The generator is deterministic for a given seed, so CI failures are
 reproducible:
@@ -570,6 +571,53 @@ def numeric_program(rng: random.Random) -> str:
     return "\n".join(lines) + "\n\nmain()\n"
 
 
+def result_program(rng: random.Random) -> str:
+    """Result-enum propagation: `?` unwraps or returns the same value."""
+    threshold = rng.choice(["0", "1", "2", "3", "5"])
+    scale = rng.choice(["1", "2", "3", "7"])
+    error_base = rng.choice(["100", "200", "500", "-10"])
+    values = [rng.choice(SAFE_INTS) for _ in range(6)]
+    items = ", ".join(values)
+    return f"""enum Outcome:
+    Ok(value: Int)
+    Err(code: Int)
+
+fn parse(n: Int) -> Outcome:
+    if n < {threshold}:
+        return Err({error_base} + n)
+    return Ok(n * {scale})
+
+fn compute(n: Int) -> Outcome:
+    let value = parse(n)?
+    return Ok(value + 1)
+
+fn accumulate() -> Outcome:
+    var total = 0
+    for n in [{items}]:
+        let value = parse(n)?
+        total += value
+    return Ok(total)
+
+fn assign(n: Int) -> Outcome:
+    var value = 0
+    value = parse(n)?
+    return Ok(value)
+
+fn discard(n: Int) -> Outcome:
+    parse(n)?
+    return Ok(-1)
+
+fn main():
+    print(compute({values[0]}))
+    print(compute({values[1]}))
+    print(accumulate())
+    print(assign({values[2]}))
+    print(discard({values[3]}))
+    print(compute({values[4]}))
+    print(compute({values[5]}))
+"""
+
+
 def error_program(rng: random.Random) -> str:
     """Runtime-error agreement: both engines must fail at the same point."""
     cases = [
@@ -606,6 +654,7 @@ GENERATORS = [
     functions_program,
     string_program,
     numeric_program,
+    result_program,
     error_program,
 ]
 

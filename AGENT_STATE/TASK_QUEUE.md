@@ -4,9 +4,10 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-072 — Commit and push the expanded differential fuzzer (eight program
-  shapes, 160/160 on seeds 1, 500, and 1000, CI at 80 iterations); watch CI and
-  record the run ID. Also include the local audit commit `806a822`.
+- T-075 — Commit and push result-enum propagation with postfix `?` (five e2e
+  tests, three differential native tests, a ninth fuzzer shape, 180/180 on
+  seeds 1, 500, and 1000, 621-test gate, ADR-0038); watch CI and record the
+  run ID.
 
 ## Ready
 

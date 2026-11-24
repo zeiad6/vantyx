@@ -293,7 +293,7 @@ match shape:
 ### 5.1 Precedence (highest to lowest)
 | Level | Operators | Associativity |
 | --- | --- | --- |
-| 1 | call `f(...)`, index `x[i]`, field `x.f` | left |
+| 1 | call `f(...)`, index `x[i]`, field `x.f`, propagation `x?` | left |
 | 2 | unary `-`, `not` | right |
 | 3 | `**` | right |
 | 4 | `* / // %` | left |
@@ -376,6 +376,47 @@ fn classify(code: Int) -> Str:
   parentheses, brackets, or a one-line suite; newlines are suppressed there.
   Bind the result to a variable first. This case reports `E0101` with an
   actionable help message.
+
+### 5.10 Result-enum propagation (`?`)
+
+Postfix `?` unwraps the success payload of a nominal result enum, or returns the
+failure variant from the enclosing function. It is only valid as the whole value
+of a `let` initializer, a plain assignment (`=`, not `+=`), or an expression
+statement. Using it inside a larger expression, a condition, a `return` value, a
+call argument, or a match scrutinee is `E0319`.
+
+The operand must have an enum type with exactly two variants, each declaring
+exactly one payload field. The first declared variant is the success case and the
+second is the failure case. The enclosing function must have an explicit return
+type that is exactly the operand's enum. On success, the expression has the
+success payload's type. On failure, the function returns the failure enum value
+unchanged, skipping the rest of the block.
+
+```vantyx
+enum Outcome:
+    Ok(value: Int)
+    Err(message: Str)
+
+fn parse(n: Int) -> Outcome:
+    if n < 0:
+        return Err("negative")
+    return Ok(n * 2)
+
+fn compute(n: Int) -> Outcome:
+    let value = parse(n)?      # Int, or return Err(...)
+    return Ok(value + 1)
+```
+
+The convention is positional, not name-based: an enum whose first variant is
+`Err` would treat that variant as success. Variant constructor names are
+globally unique, so a program can use `Ok`/`Err` for one result type; additional
+result types need distinct variant names. `?` is rejected at top level
+(`E0319`), in functions without an explicit return type (`E0319`), when the
+operand is not a two-variant one-field enum (`E0319`), and when the enclosing
+function's return type differs (`E0319`). The interpreter and native backend
+implement the same rule; the native backend returns the failure pointer directly
+and binds the success payload field. See
+[ADR-0038](decisions/ADR-0038-result-enum-propagation.md).
 
 ## 6. Built-in functions (v0.1)
 
@@ -602,7 +643,7 @@ and 8 MiB of total module source. The entry file counts toward these limits.
 
 Runtime errors print `error[Rxxxx]`, a source span, a message, and a call stack, then exit with status 2. Compile errors exit with status 1. Usage errors exit with status 64.
 
-Dynamic match failures use `R0014` ("no match arm matched"). `R0005` remains the general dynamic type-boundary error, and `R0010` reports internal or unsupported runtime forms. `R0016` reports an invalid builtin argument value: an empty `replace` pattern, a malformed glob pattern (empty, unclosed or empty class, descending range), or a glob pattern with more than 1,024 components. File and directory I/O failures use `R0015`; this includes missing paths, permission errors, directories opened for reading, wrong file/directory kinds, non-regular copy sources, cross-device renames, non-empty directories, regular files blocking recursive creation, refused destructive recursive-removal roots, paths that cannot be removed recursively, non-UTF-8 entry names, invalid UTF-8 contents, NUL bytes, the 64 MiB read limit, glob listing or `**` `lstat` failures, glob result or depth caps, invalid or existing recursive-copy targets, recursive-copy self-containment, inner symbolic links, special files, and recursive-copy entry or depth caps.
+Dynamic match failures use `R0014` ("no match arm matched"). `R0005` remains the general dynamic type-boundary error, and `R0010` reports internal or unsupported runtime forms. `R0016` reports an invalid builtin argument value: an empty `replace` pattern, a malformed glob pattern (empty, unclosed or empty class, descending range), or a glob pattern with more than 1,024 components. `R0017` is a defensive error for a `?` operand that is not a two-variant one-field enum or is used outside a supported statement position; the checker normally rejects these cases first. File and directory I/O failures use `R0015`; this includes missing paths, permission errors, directories opened for reading, wrong file/directory kinds, non-regular copy sources, cross-device renames, non-empty directories, regular files blocking recursive creation, refused destructive recursive-removal roots, paths that cannot be removed recursively, non-UTF-8 entry names, invalid UTF-8 contents, NUL bytes, the 64 MiB read limit, glob listing or `**` `lstat` failures, glob result or depth caps, invalid or existing recursive-copy targets, recursive-copy self-containment, inner symbolic links, special files, and recursive-copy entry or depth caps.
 
 ## 10. Safety guarantees (v0.1)
 
@@ -645,7 +686,7 @@ Known limitations:
 
 `vantyx build file.vtx [-o output]` lowers the checked program to a typed IR and emits GNU C11, then invokes `clang` (override with `VANTYX_CC`) and links with libc/libm.
 
-Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals and integer ranges; `return`/`break`/`continue`; `print`, `len(Str/List/Map)`, `push`, `pop`, `contains(List/Str/Map)`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`, `read_file`, `write_file`, `append_file`, `file_exists`, `file_size`, `is_file`, `is_dir`, `is_symlink`, `list_dir`, `glob`, `make_dir`, `remove_file`, `remove_dir`, `make_dir_all`, `remove_dir_all`, `rename`, `copy_file`, `copy_dir_all`, `split`, `join`, `trim`, `starts_with`, `ends_with`, `replace`, `path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, `path_is_absolute`. Match guards, nested payload patterns, integer range patterns, and top-level or-patterns are supported. Native file and directory I/O validates UTF-8 and NUL bytes in C, sorts directory entries by byte order, and enforces the same 64 MiB read limit. Native recursive creation uses component-by-component `mkdir` with directory confirmation; native recursive removal uses the same lexical destructive-root refusal as the interpreter, then `lstat`, `opendir`/`readdir`, `unlink`, and `rmdir` without following symbolic links, and trims a trailing root separator before the link check. Native metadata probes use POSIX `stat`/`lstat` with the same follow-symlink rules, regular-file rule for `file_size`, and `R0015` failures as the interpreter. Native glob expansion uses POSIX `opendir`/`readdir`/`lstat`, a component matcher over Unicode scalar values, the same hidden and symlink rules, byte sorting, deduplication, limits, and `R0016`/`R0015` error split as the interpreter. Native `rename` delegates to POSIX `rename`; native `copy_file` copies regular-file bytes with libc streams and does not validate or preserve metadata. Native `copy_dir_all` resolves source and target parents with POSIX `realpath`, creates only a new target outside the source, walks with `opendir`/`readdir`/`lstat`, rejects inner symbolic links and special files, copies raw names and bytes with `mkdir` and libc streams, and does not preserve metadata. Native text builtins use the same UTF-8 decoder, Unicode `White_Space` table, literal split rules, and non-overlapping replacement as the interpreter, and evaluate multi-argument calls left to right. Native path builtins use byte-scanned C helpers with the same POSIX-style, non-normalizing rules and ordered `path_join` evaluation as the interpreter. Statically non-`Str` arguments are rejected by the checker with `E0301`; dynamically typed (`Any`) file, directory, glob, rename/copy, metadata, text, and path arguments reach the native boundary and are rejected with `E0401`.
+Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals and integer ranges; `return`/`break`/`continue`; statement-position `?` propagation for nominal two-variant enums; `print`, `len(Str/List/Map)`, `push`, `pop`, `contains(List/Str/Map)`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`, `read_file`, `write_file`, `append_file`, `file_exists`, `file_size`, `is_file`, `is_dir`, `is_symlink`, `list_dir`, `glob`, `make_dir`, `remove_file`, `remove_dir`, `make_dir_all`, `remove_dir_all`, `rename`, `copy_file`, `copy_dir_all`, `split`, `join`, `trim`, `starts_with`, `ends_with`, `replace`, `path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, `path_is_absolute`. Match guards, nested payload patterns, integer range patterns, and top-level or-patterns are supported. Native file and directory I/O validates UTF-8 and NUL bytes in C, sorts directory entries by byte order, and enforces the same 64 MiB read limit. Native recursive creation uses component-by-component `mkdir` with directory confirmation; native recursive removal uses the same lexical destructive-root refusal as the interpreter, then `lstat`, `opendir`/`readdir`, `unlink`, and `rmdir` without following symbolic links, and trims a trailing root separator before the link check. Native metadata probes use POSIX `stat`/`lstat` with the same follow-symlink rules, regular-file rule for `file_size`, and `R0015` failures as the interpreter. Native glob expansion uses POSIX `opendir`/`readdir`/`lstat`, a component matcher over Unicode scalar values, the same hidden and symlink rules, byte sorting, deduplication, limits, and `R0016`/`R0015` error split as the interpreter. Native `rename` delegates to POSIX `rename`; native `copy_file` copies regular-file bytes with libc streams and does not validate or preserve metadata. Native `copy_dir_all` resolves source and target parents with POSIX `realpath`, creates only a new target outside the source, walks with `opendir`/`readdir`/`lstat`, rejects inner symbolic links and special files, copies raw names and bytes with `mkdir` and libc streams, and does not preserve metadata. Native text builtins use the same UTF-8 decoder, Unicode `White_Space` table, literal split rules, and non-overlapping replacement as the interpreter, and evaluate multi-argument calls left to right. Native path builtins use byte-scanned C helpers with the same POSIX-style, non-normalizing rules and ordered `path_join` evaluation as the interpreter. Statically non-`Str` arguments are rejected by the checker with `E0301`; dynamically typed (`Any`) file, directory, glob, rename/copy, metadata, text, and path arguments reach the native boundary and are rejected with `E0401`.
 
 `if`/`elif`/`while` conditions that lower to a GNU C statement expression (for example a call) are wrapped in one extra pair of parentheses so the generated C satisfies the `if` grammar without adding redundant parentheses around comparisons (ADR-0036). `and`/`or` preserve the interpreter's short-circuit evaluation: the right operand is evaluated only when the left operand does not decide the result, even when both operands have side effects.
 
@@ -655,7 +696,7 @@ Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `
 
 ## 12. Explicitly not implemented yet
 
-Generic enums, explicit discriminants, traits, generics, closures, iterators, `Result`/`?`, async/concurrency, FFI, package manager, formatter, LSP. Basic file I/O is implemented in the interpreter and native backend (ADR-0026), single-level directory listing, creation, and removal (ADR-0027), recursive creation and removal (ADR-0031), rename plus byte-preserving regular-file copy (ADR-0029), metadata probes (ADR-0032), lexical glob expansion (ADR-0033), and recursive directory copy (ADR-0034), but recursive move, metadata objects or preservation, streaming I/O, atomic copies, and recoverable I/O errors are not. Basic UTF-8 text splitting, joining, trimming, affix tests, and literal replacement are implemented in both engines (ADR-0028), but regular expressions, case conversion, normalization, locale handling, and grapheme-cluster APIs are not. Lexical POSIX-style path join/parent/name/stem/extension/absolute helpers are implemented in both engines (ADR-0030), and `glob` performs lexical pattern expansion in both engines (ADR-0033), but there is no `Path` type, normalization, `..` confinement, or Windows path support. Nested payload patterns (T-048/T-049), top-level or-patterns (T-047/T-050), and integer range patterns (T-051) are implemented in the interpreter and native backend. See `TASKS.md`.
+Generic enums, explicit discriminants, traits, generics, closures, iterators, a built-in generic `Result[T, E]`, async/concurrency, FFI, package manager, formatter, LSP. Nominal result-enum propagation with `?` is implemented in both engines for `let` initializers, plain assignments, and expression statements (ADR-0038); there is no built-in `Result` type, general expression-position propagation, or error conversion. Basic file I/O is implemented in the interpreter and native backend (ADR-0026), single-level directory listing, creation, and removal (ADR-0027), recursive creation and removal (ADR-0031), rename plus byte-preserving regular-file copy (ADR-0029), metadata probes (ADR-0032), lexical glob expansion (ADR-0033), and recursive directory copy (ADR-0034), but recursive move, metadata objects or preservation, streaming I/O, atomic copies, and recoverable I/O errors are not. Basic UTF-8 text splitting, joining, trimming, affix tests, and literal replacement are implemented in both engines (ADR-0028), but regular expressions, case conversion, normalization, locale handling, and grapheme-cluster APIs are not. Lexical POSIX-style path join/parent/name/stem/extension/absolute helpers are implemented in both engines (ADR-0030), and `glob` performs lexical pattern expansion in both engines (ADR-0033), but there is no `Path` type, normalization, `..` confinement, or Windows path support. Nested payload patterns (T-048/T-049), top-level or-patterns (T-047/T-050), and integer range patterns (T-051) are implemented in the interpreter and native backend. See `TASKS.md`.
 
 ## 13. Interactive REPL (tooling)
 

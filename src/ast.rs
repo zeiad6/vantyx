@@ -169,6 +169,11 @@ pub enum ExprKind {
         op: UnOp,
         expr: Box<Expr>,
     },
+    /// Postfix `?`: unwrap the success payload of a two-variant result enum,
+    /// or return the failure variant from the enclosing function.
+    Try {
+        expr: Box<Expr>,
+    },
     Binary {
         op: BinOp,
         lhs: Box<Expr>,

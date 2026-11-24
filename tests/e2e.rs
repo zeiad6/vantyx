@@ -2352,3 +2352,130 @@ fn recursive_copy_preserves_non_utf8_names() {
     );
     assert!(tree.join(name).is_file());
 }
+
+#[test]
+fn try_unwraps_success_and_propagates_failure() {
+    let run = run_file(
+        "try-basic",
+        "enum Outcome:\n    Ok(value: Int)\n    Err(message: Str)\n\n\
+         fn parse(n: Int) -> Outcome:\n\
+         \x20   if n < 0:\n        return Err(\"negative\")\n\
+         \x20   return Ok(n * 2)\n\n\
+         fn compute(n: Int) -> Outcome:\n\
+         \x20   let value = parse(n)?\n\
+         \x20   return Ok(value + 1)\n\n\
+         fn main():\n    print(compute(3))\n    print(compute(-1))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "Ok(7)\nErr(\"negative\")\n");
+}
+
+#[test]
+fn try_assignment_loop_and_bare_statement_work() {
+    let run = run_file(
+        "try-positions",
+        "enum Outcome:\n    Ok(value: Int)\n    Err(code: Int)\n\n\
+         fn parse(n: Int) -> Outcome:\n\
+         \x20   if n < 0:\n        return Err(100 + n)\n\
+         \x20   return Ok(n * 3)\n\n\
+         fn accumulate(items: List[Int]) -> Outcome:\n\
+         \x20   var total = 0\n\
+         \x20   for n in items:\n\
+         \x20       let value = parse(n)?\n\
+         \x20       total += value\n\
+         \x20   return Ok(total)\n\n\
+         fn assign(n: Int) -> Outcome:\n\
+         \x20   var value = 0\n\
+         \x20   value = parse(n)?\n\
+         \x20   return Ok(value)\n\n\
+         fn discard(n: Int) -> Outcome:\n\
+         \x20   parse(n)?\n\
+         \x20   return Ok(0)\n\n\
+         fn main():\n\
+         \x20   print(accumulate([1, 2, 3]))\n\
+         \x20   print(accumulate([1, -2, 3]))\n\
+         \x20   print(assign(4))\n\
+         \x20   print(discard(-5))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "Ok(18)\nErr(98)\nOk(12)\nErr(95)\n");
+}
+
+#[test]
+fn try_rejects_nested_and_top_level_use() {
+    let run = check_file(
+        "try-placement",
+        "enum Outcome:\n    Ok(value: Int)\n    Err(message: Str)\n\n\
+         fn parse(n: Int) -> Outcome:\n    return Ok(n)\n\n\
+         fn nested(n: Int) -> Outcome:\n\
+         \x20   let value = 1 + parse(n)?\n\
+         \x20   return Ok(value)\n\n\
+         let top = parse(1)?\nprint(top)\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0319]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("only valid as a `let` initializer"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("only valid inside a function"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn try_requires_two_variants_with_one_field_each() {
+    let run = check_file(
+        "try-shape",
+        "enum Three:\n    A(x: Int)\n    B(x: Int)\n    C(x: Int)\n\n\
+         enum Pair:\n    Yes(x: Int)\n    No\n\n\
+         fn use_three(n: Int) -> Three:\n\
+         \x20   let value = A(n)?\n\
+         \x20   return A(value)\n\n\
+         fn use_pair(n: Int) -> Pair:\n\
+         \x20   let value = Yes(n)?\n\
+         \x20   return Yes(value)\n\n\
+         fn main():\n    print(1)\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(
+        run.stderr.contains("exactly two variants"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("one payload field on each variant"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn try_requires_matching_annotated_return_type() {
+    let run = check_file(
+        "try-return",
+        "enum Outcome:\n    Ok(value: Int)\n    Err(message: Str)\n\n\
+         fn parse(n: Int) -> Outcome:\n    return Ok(n)\n\n\
+         fn wrong(n: Int) -> Int:\n\
+         \x20   let value = parse(n)?\n\
+         \x20   return value\n\n\
+         fn unannotated(n: Int):\n\
+         \x20   let value = parse(n)?\n\
+         \x20   print(value)\n\n\
+         fn main():\n    print(wrong(1))\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(
+        run.stderr.contains("`?` propagates `Outcome`, but `wrong` returns `Int`"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("requires an explicit return type on `unannotated`"),
+        "{}",
+        run.stderr
+    );
+}
