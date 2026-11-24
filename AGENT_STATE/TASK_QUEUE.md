@@ -4,23 +4,20 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-076 — Commit and push the rustfmt baseline and CI formatting gate; watch
-  CI and record the run ID. T-075 is committed in `66b4efc` with CI run
-  45503321172 green.
+- T-077 — Finish the 200-iteration fuzzer runs on seeds 3, 500, and 1000,
+  commit the tenth shape and bounded shrinker, watch CI, and record the run ID.
+  T-076 is committed in `de0bac7` with CI run 45504177763 green.
 
 ## Ready
 
-- Differential-fuzzer follow-ups — Deterministic shrinking for failing
-  programs, optional sanitizer runs, and coverage measurement. Add each only
-  with a bounded, reproducible contract.
+- Differential-fuzzer follow-ups — Optional sanitizer runs and coverage
+  measurement. The bounded line-oriented shrinker shipped in T-077. Add each
+  only with a bounded, reproducible contract.
 - T-019b — Comment-preserving formatter. The lexer discards comments today, so
   this needs a lossless syntax representation and a separate ADR before code.
 - Linter follow-ups — Suppression/configuration, unused parameters and loop
   variables, all-terminating `if`/`match` reachability, and a deny mode. Add
   each only with a stable contract and tests.
-- Repository-wide rustfmt baseline — `cargo fmt --check` currently reports 224
-  pre-existing diff locations. Do this as a dedicated mechanical commit with a
-  CI check, separate from semantic changes.
 - T-070/T-071 follow-up — Consider replacing GNU statement expressions with a
   statement prelude only if benchmarks and review justify the larger codegen
   change; do not start without evidence.

@@ -35,6 +35,7 @@ cargo build
 cargo build --release
 cargo clippy --all-targets -- -D warnings
 cargo test
+python3 tools/test_differential_fuzz.py
 python3 tools/differential_fuzz.py --iterations 100 --seed 1
 for f in examples/*.vtx; do ./target/debug/vantyx run "$f"; done
 ```
@@ -81,7 +82,8 @@ python3 benchmarks/run.py --reps 5
   `0491c63` also passed run 45489360135; run 45493833079 passed on `a4fe86b`
   with 584 tests, run 45496041422 passed on `5e1092f` with 613 tests, and run
   45499019615 passed on `53a8b82` with the expanded fuzzer, and run
-  45503321172 passed on `66b4efc` with T-075). The
+  45503321172 passed on `66b4efc` with T-075, and run 45504177763 passed on
+  `de0bac7` with the rustfmt gate). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 621 passed (348 library unit + 15 CLI unit + 32 AI integration +
@@ -92,12 +94,16 @@ python3 benchmarks/run.py --reps 5
   statement-expression conditions are parenthesized and `and`/`or` skip the
   right operand when the left decides the result (T-070/T-071, ADR-0036).
   `tools/differential_fuzz.py` found both defects and is part of the gate
-  (T-072). It now generates nine program shapes (scalars/control flow,
+  (T-072). It now generates ten program shapes (scalars/control flow,
   collections, pattern matching, nested aliasing, typed functions, strings,
-  numerics, result-enum `?` propagation, and runtime-error agreement);
-  160/160 cases agreed on each of seeds 1, 500, and 1000 for the first eight
-  shapes, and 180/180 on the same seeds with the ninth. CI runs 80 iterations
-  on seed 1.
+  numerics, result-enum `?` propagation, runtime-error agreement, and
+  loop-heavy control flow with `break`/`continue`, match statements, map
+  iteration, early returns, and guard side effects added by T-077); 180/180
+  cases agreed on each of seeds 1, 500, and 1000 with nine shapes, the tenth
+  shape matched 20/20 generated programs on seeds 1–20, and the full ten-shape
+  run agreed 200/200 on seeds 1, 2, 3, 500, and 1000. `--shrink` performs bounded line-oriented
+  minimization, and `tools/test_differential_fuzz.py` covers the comparison
+  and shrink logic. CI runs the self-tests and 80 iterations on seed 1.
 - Tooling: `vantyx lint` reports `L0001` unused binding, `L0002` `var` never
   reassigned, and `L0003` unreachable statement, with compile errors still
   exiting `1` and lint-only findings exiting `0` (T-073, ADR-0037). The

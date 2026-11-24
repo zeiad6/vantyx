@@ -148,3 +148,8 @@ documentation commit `0491c63` also passed run 45489360135.
 - T-076 — Repository rustfmt baseline and CI formatting gate (2026-11-24;
   mechanical `cargo fmt` across the tree, `cargo fmt --check --all` added to CI,
   621-test gate and clippy/build clean; no semantic changes).
+- T-077 — Differential-fuzzer control-flow coverage and bounded shrinking
+  (2026-11-24; tenth `control_program` shape, opt-in `--shrink` with
+  `--shrink-budget`, timeout exit `124`, seven Python self-tests in CI, tenth
+  shape 20/20 on seeds 1–20, full ten-shape run 200/200 on seed 1; other seeds
+  and CI pending).

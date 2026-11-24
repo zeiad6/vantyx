@@ -6,19 +6,25 @@ programs from fixed grammars, runs each one through `vantyx run` and
 `vantyx build`, and compares the exit code and stdout. A mismatch is a
 failure; the program is printed and can be saved for a regression test.
 
-The nine program shapes cover scalar expressions and control flow,
+The ten program shapes cover scalar expressions and control flow,
 collections/structs/enums, guarded/range/or-pattern matching, nested
 collections with aliasing, typed functions with early returns and recursion,
 string escapes/interpolation/UTF-8 builtins, numeric formatting and
-conversions, result-enum `?` propagation, and runtime-error agreement. Every
-generated program is designed to run to completion or fail at the same point
-in both engines; a program that only prints its prefix before a runtime error
-has little differential value.
+conversions, result-enum `?` propagation, runtime-error agreement, and
+loop-heavy control flow with `break`/`continue`, match statements, map
+iteration, and guard side effects. Every generated program is designed to run
+to completion or fail at the same point in both engines; a program that only
+prints its prefix before a runtime error has little differential value.
 
 The generator is deterministic for a given seed, so CI failures are
 reproducible:
 
     python3 tools/differential_fuzz.py --iterations 100 --seed 1
+
+The optional `--shrink` flag minimizes a failing program with a bounded,
+line-oriented delta debugger. It preserves the failure's exit-code signature
+but cannot split a line, so its result is not guaranteed to be a global
+minimum. `--shrink-budget` caps the number of extra comparisons.
 
 Native checks are skipped when no C compiler is available (set VANTYX_CC to
 override the default `clang`). This tool uses only the Python standard library.
@@ -33,6 +39,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 INT_LITERALS = ["0", "1", "2", "3", "7", "-1", "-7", "42", "1000"]
 FLOAT_LITERALS = ["0.0", "1.0", "-1.0", "1.5", "0.1", "1e300", "5e-324", "3.14159"]
@@ -571,6 +578,164 @@ def numeric_program(rng: random.Random) -> str:
     return "\n".join(lines) + "\n\nmain()\n"
 
 
+def control_program(rng: random.Random) -> str:
+    """Loops, break/continue, early returns, match statements, and guards."""
+    n = rng.randint(3, 7)
+    values = [str(rng.randint(-5, 9)) for _ in range(n)]
+    target = rng.choice(values + ["99"])
+    while_limit = rng.randint(2, 6)
+    guard_limit = rng.randint(1, 4)
+    negative = rng.choice(["-3", "-2", "-1"])
+    left = rng.randint(-5, 9)
+    right = rng.randint(-5, 9)
+    delta = rng.randint(-3, 5)
+    return f"""struct Pair:
+    left: Int
+    right: Int
+
+enum Signal:
+    Stop(code: Int)
+    Go(step: Int)
+    Idle
+
+fn classify(n: Int) -> Str:
+    if n < 0:
+        return "negative"
+    elif n == 0:
+        return "zero"
+    elif n < 3:
+        return "small"
+    else:
+        return "large"
+
+fn find(xs: List[Int], target: Int) -> Int:
+    var index = 0
+    for x in xs:
+        if x == target:
+            return index
+        index += 1
+    return -1
+
+fn apply(signal: Signal, value: Int) -> Int:
+    return match signal:
+        Stop(code): value - code
+        Go(step): value + step
+        Idle: value
+
+fn under(limit: Int, counter: List[Int]) -> Bool:
+    counter[0] += 1
+    return counter[0] < limit
+
+fn guard(counter: List[Int]) -> Bool:
+    counter[0] += 1
+    return counter[0] % 2 == 1
+
+fn scan(xs: List[Int]) -> Int:
+    for x in xs:
+        match x:
+            0:
+                return 0
+            _:
+                if x > 5:
+                    return x
+    return -1
+
+fn first_negative(xs: List[Int]) -> Int:
+    var index = 0
+    while index < len(xs):
+        if xs[index] < 0:
+            return index
+        index += 1
+    return -1
+
+fn main():
+    let xs: List[Int] = [{", ".join(values)}]
+    print(find(xs, {target}))
+    print(find(xs, 99))
+    print(scan(xs))
+    print(first_negative(xs))
+    print(classify(-3))
+    print(classify(0))
+    print(classify(2))
+    print(classify(9))
+    print(apply(Stop(2), 10))
+    print(apply(Go(3), 10))
+    print(apply(Idle(), 10))
+    var i = 0
+    var total = 0
+    while i < {while_limit} and total < 40:
+        i += 1
+        if i % 2 == 0:
+            continue
+        total += i
+        if total > 20:
+            break
+    print(i)
+    print(total)
+    if len(xs) > 0:
+        let total = 100
+        print(total)
+    print(total)
+    var counter = [0]
+    while under({guard_limit + 2}, counter):
+        total += counter[0]
+    print(total)
+    print(counter[0])
+    var seen = 0
+    for x in xs:
+        if x < 0:
+            continue
+        if x > 5:
+            break
+        seen += x
+    print(seen)
+    var pairs = 0
+    for a in range(0, 3):
+        for b in range(0, 3):
+            if b == a:
+                continue
+            if b > 1:
+                break
+            pairs += 1
+    print(pairs)
+    for k in range(5, 0, {negative}):
+        print(k)
+    var matched = 0
+    for s in [0, 1, 2, 3]:
+        match s:
+            0:
+                continue
+            1:
+                matched += 1
+            2:
+                break
+            _:
+                matched += 10
+    print(matched)
+    let m: Map[Str, Int] = {{"a": 1, "b": 2, "c": 3}}
+    var keysum = 0
+    for k in m:
+        if k == "b":
+            continue
+        keysum += m[k]
+    print(keysum)
+    let pair = Pair({left}, {right})
+    pair.left += {delta}
+    pair.right *= 2
+    print(pair)
+    let guard_counter = [0]
+    match 2:
+        1 | 2 if guard(guard_counter):
+            print("guarded")
+        _:
+            print("fallback")
+    print(guard_counter[0])
+    print("done")
+
+main()
+"""
+
+
 def result_program(rng: random.Random) -> str:
     """Result-enum propagation: `?` unwraps or returns the same value."""
     threshold = rng.choice(["0", "1", "2", "3", "5"])
@@ -656,6 +821,7 @@ GENERATORS = [
     numeric_program,
     result_program,
     error_program,
+    control_program,
 ]
 
 
@@ -668,11 +834,125 @@ def compiler_available(compiler: str) -> bool:
         return False
 
 
+class CaseResult(NamedTuple):
+    """Observed outcome of one interpreter/native comparison."""
+
+    interp_code: int
+    interp_out: str
+    build_code: int
+    build_err: str
+    native_code: int | None
+    native_out: str
+    native_err: str
+
+    def failed(self) -> bool:
+        if self.build_code != 0:
+            # Both engines rejecting the program is agreement, not a defect.
+            return not (self.interp_code == 1 and self.build_code == 1)
+        return (self.interp_code, self.interp_out) != (self.native_code, self.native_out)
+
+    def signature(self) -> tuple[int, int, int | None]:
+        """Failure category used to keep a shrink step on the same defect."""
+        return (self.interp_code, self.build_code, self.native_code)
+
+
 def run(command: list[str], cwd: Path, timeout: int) -> tuple[int, str, str]:
-    completed = subprocess.run(
-        command, cwd=cwd, capture_output=True, text=True, timeout=timeout
-    )
+    try:
+        completed = subprocess.run(
+            command, cwd=cwd, capture_output=True, text=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout or ""
+        stderr = error.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", "replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", "replace")
+        return 124, stdout, f"timeout after {timeout}s\n{stderr}"
     return completed.returncode, completed.stdout, completed.stderr
+
+
+def execute_case(binary: Path, source: str, timeout: int) -> CaseResult:
+    with tempfile.TemporaryDirectory(prefix="vantyx-diff-") as temp:
+        directory = Path(temp)
+        path = directory / "main.vtx"
+        path.write_text(source)
+        executable = directory / "program"
+        interp_code, interp_out, _ = run(
+            [str(binary), "run", str(path)], Path.cwd(), timeout
+        )
+        build_code, _, build_err = run(
+            [str(binary), "build", str(path), "-o", str(executable)],
+            Path.cwd(),
+            timeout,
+        )
+        if build_code != 0:
+            return CaseResult(
+                interp_code, interp_out, build_code, build_err, None, "", ""
+            )
+        native_code, native_out, native_err = run(
+            [str(executable)], Path.cwd(), timeout
+        )
+        return CaseResult(
+            interp_code,
+            interp_out,
+            build_code,
+            build_err,
+            native_code,
+            native_out,
+            native_err,
+        )
+
+
+def describe(result: CaseResult) -> str:
+    if result.build_code != 0:
+        return (
+            f"native build failed ({result.build_code}) while the interpreter "
+            f"exited {result.interp_code}\n{result.build_err[:800]}"
+        )
+    return (
+        f"interpreter=({result.interp_code}, {result.interp_out!r})\n"
+        f"native=({result.native_code}, {result.native_out!r})\n"
+        f"native stderr: {result.native_err[:400]}"
+    )
+
+
+def shrink_source(
+    binary: Path,
+    source: str,
+    signature: tuple[int, int, int | None],
+    timeout: int,
+    budget: int,
+) -> tuple[str, int]:
+    """Greedily remove lines while preserving the failure category.
+
+    This is a bounded, line-oriented delta debugger. It cannot split a line,
+    so some generated programs shrink less than a syntax-aware minimizer could.
+    Every candidate must still be a failure with the same exit-code signature;
+    compile-error candidates are skipped.
+    """
+    lines = source.splitlines(keepends=True)
+    attempts = 0
+    chunk = max(1, len(lines) // 2)
+    while attempts < budget and len(lines) > 1:
+        removed = False
+        start = 0
+        while start < len(lines) and attempts < budget:
+            candidate_lines = lines[:start] + lines[start + chunk :]
+            if candidate_lines:
+                attempts += 1
+                result = execute_case(binary, "".join(candidate_lines), timeout)
+                if result.failed() and result.signature() == signature:
+                    lines = candidate_lines
+                    chunk = max(1, len(lines) // 2)
+                    removed = True
+                    break
+            start += chunk
+        if not removed:
+            if chunk == 1:
+                break
+            chunk = max(1, chunk // 2)
+    return "".join(lines), attempts
 
 
 def main() -> int:
@@ -690,6 +970,17 @@ def main() -> int:
         "--save-failures",
         default="",
         help="directory to write failing programs into",
+    )
+    parser.add_argument(
+        "--shrink",
+        action="store_true",
+        help="minimize each failing program with a bounded line delta debugger",
+    )
+    parser.add_argument(
+        "--shrink-budget",
+        type=int,
+        default=150,
+        help="maximum interpreter/native comparisons spent shrinking one failure",
     )
     args = parser.parse_args()
 
@@ -710,51 +1001,40 @@ def main() -> int:
         rng = random.Random(args.seed + index)
         generator = GENERATORS[index % len(GENERATORS)]
         source = generator(rng)
-        with tempfile.TemporaryDirectory(prefix="vantyx-diff-") as temp:
-            directory = Path(temp)
-            path = directory / "main.vtx"
-            path.write_text(source)
-            executable = directory / "program"
-            interp_code, interp_out, interp_err = run(
-                [str(binary), "run", str(path)], Path.cwd(), args.timeout
-            )
-            build_code, _, build_err = run(
-                [str(binary), "build", str(path), "-o", str(executable)],
-                Path.cwd(),
+        result = execute_case(binary, source, args.timeout)
+        if not result.failed():
+            if result.interp_code == 1 and result.build_code == 1:
+                rejected += 1
+            continue
+        failures += 1
+        print(f"FAIL seed={args.seed + index} generator={generator.__name__}")
+        print(describe(result))
+        print("--- program ---")
+        print(source)
+        print("--- end ---")
+        if args.save_failures:
+            target = Path(args.save_failures)
+            target.mkdir(parents=True, exist_ok=True)
+            stem = f"failure-seed-{args.seed + index}"
+            (target / f"{stem}.vtx").write_text(source)
+        if args.shrink:
+            minimized, attempts = shrink_source(
+                binary,
+                source,
+                result.signature(),
                 args.timeout,
+                args.shrink_budget,
             )
-            if build_code != 0:
-                if interp_code == 1 and build_code == 1:
-                    rejected += 1
-                    continue
-                failures += 1
-                detail = (
-                    f"native build failed ({build_code}) while the interpreter "
-                    f"exited {interp_code}\n{build_err[:800]}"
-                )
-            else:
-                native_code, native_out, native_err = run(
-                    [str(executable)], Path.cwd(), args.timeout
-                )
-                if (interp_code, interp_out) == (native_code, native_out):
-                    continue
-                failures += 1
-                detail = (
-                    f"interpreter=({interp_code}, {interp_out!r})\n"
-                    f"native=({native_code}, {native_out!r})\n"
-                    f"native stderr: {native_err[:400]}"
-                )
-            print(f"FAIL seed={args.seed + index} generator={generator.__name__}")
-            print(detail)
-            print("--- program ---")
-            print(source)
-            print("--- end ---")
+            print(
+                f"--- minimized after {attempts} comparisons "
+                f"({len(source.splitlines())} -> {len(minimized.splitlines())} lines) ---"
+            )
+            print(minimized)
+            print("--- end minimized ---")
             if args.save_failures:
-                target = Path(args.save_failures)
-                target.mkdir(parents=True, exist_ok=True)
-                (target / f"failure-seed-{args.seed + index}.vtx").write_text(source)
-            if failures >= 5:
-                break
+                (target / f"{stem}.min.vtx").write_text(minimized)
+        if failures >= 5:
+            break
 
     passed = args.iterations - failures - rejected
     print(

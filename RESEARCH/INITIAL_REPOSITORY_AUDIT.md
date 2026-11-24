@@ -31,11 +31,11 @@ second `research/` tree with duplicate content.
 | Tests | **621 passed**: 348 library unit, 15 CLI unit, 32 AI integration, 101 end-to-end, 125 native (after T-075) |
 | Builds | `cargo build` and `cargo build --release` succeed |
 | Lints | `cargo clippy --all-targets -- -D warnings` clean |
-| Formatting | **`cargo fmt --check` fails** with 224 diff locations (pre-existing; see gap G-01) |
-| Differential fuzzer | `tools/differential_fuzz.py --iterations 180 --seed 1` — 180/180 agree; also 180/180 on seeds 500 and 1000 with nine program shapes (T-075 added result propagation) |
+| Formatting | `cargo fmt --check --all` clean after the T-076 mechanical baseline; CI enforces it |
+| Differential fuzzer | `tools/differential_fuzz.py` has ten program shapes, bounded `--shrink` minimization, controlled timeout handling, and seven Python self-tests. The full ten-shape run agreed 200/200 on seeds 1, 2, 3, 500, and 1000; 180/180 agreed on each of seeds 500 and 1000 with nine shapes, and the tenth shape matched 20/20 on seeds 1–20 (T-077) |
 | Fuzz smoke | 9 depth/limit cases and 400 random/mutated inputs with controlled diagnostics |
 | Examples | All five `examples/*.vtx` match interpreter and native output |
-| CI | Run 45499019615 green on `53a8b82` with the expanded fuzzer; run 45496041422 green on `5e1092f` with 613 tests; run 45493833079 green on `a4fe86b` with 584 tests |
+| CI | Run 45504177763 green on `de0bac7` with the rustfmt gate; run 45503321172 green on `66b4efc` with T-075; run 45499019615 green on `53a8b82` with the expanded fuzzer; run 45496041422 green on `5e1092f` with 613 tests; run 45493833079 green on `a4fe86b` with 584 tests |
 | Unsafe Rust | No `unsafe` blocks found in `src/` or `tests/` (only comments and a test name) |
 | Available optional tools | `rustfmt`, `clang` sanitizers, `gh`, `python3 3.14.10`; no `cargo-nextest`, `cargo-fuzz`, `cargo-audit`, `cargo-deny`, Miri, Valgrind, or `perf` |
 
@@ -85,25 +85,26 @@ limitations and risks, not claims of correctness.
 
 ## Confirmed gaps and risks
 
-### G-01 — Repository is not rustfmt-clean (P2)
+### G-01 — Repository is not rustfmt-clean (P2, fixed by T-076)
 
-`cargo fmt --check` exits `1` with 224 diff locations, including
-`src/ai/http.rs`, `src/codegen_c.rs`, and `tests/native.rs`. This is a
-pre-existing quality gap, not a semantic defect. It violates the "pass
-formatting" definition of done. A repository-wide `cargo fmt` plus a CI check
-is a safe, mechanical follow-up; it must be a separate commit so it does not
-hide semantic changes.
+`cargo fmt --check` exited `1` with 224 diff locations, including
+`src/ai/http.rs`, `src/codegen_c.rs`, and `tests/native.rs`. T-076 applied
+`cargo fmt` as a separate mechanical commit and added
+`cargo fmt --check --all` to CI; the formatting gate is green (CI run
+45504177763).
 
-### G-02 — Differential coverage is narrow (P1)
+### G-02 — Differential coverage is still narrow (P1, improved by T-077)
 
-The fuzzer now has eight typed program grammars (scalars/control flow,
+The fuzzer now has ten typed program grammars (scalars/control flow,
 collections, pattern matching, nested aliasing, typed functions, strings,
-numerics, and runtime-error agreement), but it still has no shrinking,
-sanitizer integration, or coverage measurement. It found two real P0 defects.
-The expansion also found a test-quality bug: the collection generator used
-`xs[-1]`, an invalid negative index, so that program stopped at its first
-index and never exercised the remaining statements. A green fuzzer run is
-evidence, not proof.
+numerics, result-enum `?` propagation, runtime-error agreement, and
+loop-heavy control flow). T-077 added bounded line-oriented shrinking,
+controlled timeout handling, and seven Python self-tests. It still has no
+sanitizer integration or coverage measurement, and the shrinker cannot split
+a line. It found two real P0 defects. An earlier expansion found a
+test-quality bug: the collection generator used `xs[-1]`, an invalid negative
+index, so that program stopped at its first index and never exercised the
+remaining statements. A green fuzzer run is evidence, not proof.
 
 ### G-03 — Native memory is intentionally leaked (P1)
 
@@ -186,8 +187,10 @@ no shrinking, coverage measurement, mutation testing, or sanitizer job in CI.
 
 ## Highest-priority tasks
 
-1. **P1 — Expand differential fuzzing.** Add grammars and seeds; fix any
-   mismatch. This is the cheapest way to find another silent native divergence.
+1. **P1 — Continue differential fuzzing.** The ten-shape fuzzer and bounded
+   shrinker are in place (T-077); add sanitizer integration, coverage
+   measurement, and more seeds, and fix any mismatch. This is the cheapest way
+   to find another silent native divergence.
 2. **P1 — Memory reclamation design.** Produce an ADR and a bounded prototype
    before claiming ownership or GC; preserve the intentional-leak disclosure
    until then.

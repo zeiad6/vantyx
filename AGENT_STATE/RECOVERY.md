@@ -13,21 +13,23 @@
 
 ## Last recorded repository state (2026-11-24)
 
-- `origin/main` is at `53a8b82`; the T-075 result-propagation change set is
-  uncommitted in the working tree. `e6ec597` contains the T-058–T-069 change
-  set, `4982ab3` fixes the glob result-cap test portability, `0491c63`/
-  `dfaad9b` record CI verification, `a4fe86b` contains the T-070–T-072 native
-  fixes plus the original fuzzer, `5e1092f` contains the T-073–T-074 linter and
-  return-path fix, and `53a8b82` contains the expanded differential fuzzer.
-- CI run 45499019615 passed on `53a8b82` with the expanded fuzzer. CI run
-  45496041422 passed on `5e1092f` with 613 tests. CI run 45493833079 passed on
-  `a4fe86b` with 584 tests. CI run 45488725812 passed on `4982ab3` with 581
-  tests; the status documentation commit `0491c63` also passed run
-  45489360135.
-- The T-075 change set is verified locally: 621 tests (348 library + 15 CLI +
-  32 AI + 101 e2e + 125 native), clippy clean, debug and release builds, five
-  examples, and 180/180 fuzzer cases on each of seeds 1, 500, and 1000.
-- If the T-075 commit is not present, inspect `git status --short`, re-run
+- `origin/main` is at `de0bac7` (rustfmt baseline and CI formatting gate,
+  CI run 45504177763 green). T-077, the tenth fuzzer shape plus bounded
+  shrinking and self-tests, is uncommitted in the working tree.
+- Earlier commits: `66b4efc` contains T-075 result-enum propagation (CI run
+  45503321172 green), `53a8b82` contains the expanded differential fuzzer (CI
+  run 45499019615 green), `5e1092f` contains the T-073–T-074 linter and
+  return-path fix (CI run 45496041422 green), `a4fe86b` contains the
+  T-070–T-072 native fixes plus the original fuzzer (CI run 45493833079
+  green), and `4982ab3` contains the glob result-cap portability fix (CI run
+  45488725812 green).
+- The T-077 change set is verified locally: 621 Rust tests, clippy clean,
+  `cargo fmt --check --all` clean, debug and release builds, seven Python
+  self-tests, the tenth fuzzer shape 20/20 on seeds 1–20, and the full
+  ten-shape fuzzer 200/200 on seeds 1 and 2. Seeds 3, 500, and 1000 were still
+  running when this note was written.
+- If the T-077 commit is not present, inspect `git status --short`, re-run
+  `python3 tools/test_differential_fuzz.py`, re-run
   `cargo test`, and commit rather than discarding the changes.
 
 ## If the network or a provider is unavailable

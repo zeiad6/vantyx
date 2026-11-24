@@ -360,3 +360,18 @@ file records operational choices.
   with `return` would panic or require a larger match-lowering change.
 - Keep `R0017` as a defensive runtime error for operands that bypass the
   checker; the checker normally rejects invalid placements and shapes first.
+
+## 2026-11-24 — Differential-fuzzer coverage and shrinking
+
+- Add one broad control-flow shape rather than many tiny shapes. It combines
+  loop forms, match statements, early returns, guards, compound assignment,
+  and shadowing so a single generated program exercises interactions that
+  isolated examples miss.
+- Keep shrinking opt-in and line-oriented. It preserves the failure's
+  exit-code signature and skips candidates that stop failing, but it cannot
+  split a line or prove a global minimum. `--shrink-budget` bounds the extra
+  builds so a failure report cannot run unbounded.
+- Map subprocess timeouts to exit `124` rather than raising, so a hang is a
+  controlled differential failure.
+- Add the shrinker's pure comparison logic to a Python unit test file and run
+  it in CI; the real differential run remains the integration evidence.

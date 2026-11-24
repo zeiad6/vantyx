@@ -43,6 +43,9 @@ jobs:
           VANTYX_CC: clang
         run: cargo test --locked
 
+      - name: Fuzzer self-tests
+        run: python3 tools/test_differential_fuzz.py
+
       - name: Differential fuzz
         env:
           VANTYX_CC: clang

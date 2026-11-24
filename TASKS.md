@@ -166,7 +166,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Dependencies: T-010; ADR for native collection representation.
 - Acceptance: `vantyx build` accepts a program using a typed list and produces output identical to `vantyx run`, including aliasing/mutation and bounds-error exit code 2. Unsupported element types are rejected with `E0401`, never miscompiled.
 - Tests: `tests/native.rs` differential tests for list creation, mutation through aliases, iteration, display, nested lists, recursive structs, bounds errors, and unsupported `List[Any]` rejection.
-- Verification: 2026-11-22 — 54 native differential tests pass; `cargo test` 166 passed; clippy clean; all examples build natively with matching output.
+- Verification: 2026-11-22 — 54 native differential tests pass; `cargo test` 167 passed; clippy clean; all examples build natively with matching output.
 - Scope limits: `List[Any]` is rejected; native list buffers are intentionally leaked. Structural equality of distinct cycles is coinductive and matches the interpreter.
 
 ### T-025 — Native string indexing and iteration
@@ -193,7 +193,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Acceptance: `vantyx build` accepts typed maps and produces output identical to `vantyx run`, including insertion order, alias mutation, structural struct keys, and missing-key exit code 2. `Any`/untyped map types are rejected with `E0401`, never miscompiled.
 - Implementation: `IrType::Map`, `IrExprKind::Map`, `IrStmtKind::ForMap`, map index assignment and compound assignment; `VantyxMap` runtime with parallel key/value buffers, descriptor-driven equality, checked growth, cycle-safe display and equality; checker precision for `keys`/`values`/`contains`/`pop`.
 - Tests: `tests/native.rs` — map literals/builtins, mutation/iteration/aliasing, struct keys, nested-map equality, missing key, annotated empty map, map-of-lists struct fields, cyclic equality, untyped/`Any` rejection.
-- Verification: 2026-11-22 — 12 map-focused differential tests pass; full suite 166 passed; clippy clean; all examples build natively with matching output.
+- Verification: 2026-11-22 — 12 map-focused differential tests pass; full suite 167 passed; clippy clean; all examples build natively with matching output.
 - Scope limits: scalar-key lookup/insertion use an optional hash index (ADR-0016); struct/enum/list keys still use O(n) structural equality. Map buffers and the index are intentionally leaked; keys are compared structurally, so mutating a key's contents after insertion can make it unreachable (documented in ADR-0010 and ADR-0016).
 
 ### T-028 — Prior-art review and lessons
@@ -711,5 +711,16 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Dependencies: T-001, ADR-0001.
 - Implementation: `cargo fmt` with the default configuration across `src/`, `tests/`, and `tools/`; `.github/workflows/ci.yml` installs `clippy` and `rustfmt` and runs `cargo fmt --check --all`; no `rustfmt.toml` or edition change.
 - Tests: the existing 621-test suite is the regression check; `cargo fmt --check --all`, `cargo build`, `cargo build --release`, and `cargo clippy --all-targets -- -D warnings` are the tooling checks.
-- Verification: 2026-11-24 — `cargo fmt --check --all` clean; `cargo test` passed 621 tests; `cargo build` and `cargo build --release` succeeded; clippy clean; all five examples matched interpreter/native output; CI pending.
+- Verification: 2026-11-24 — `cargo fmt --check --all` clean; `cargo test` passed 621 tests; `cargo build` and `cargo build --release` succeeded; clippy clean; all five examples matched interpreter/native output; CI run 45504177763 passed on `de0bac7`.
 - Scope limits: Formatting only. This does not add a formatter command, comment preservation, import sorting, or a `rustfmt.toml` policy. It changes no language or runtime behavior.
+
+### T-077 — Differential-fuzzer control-flow coverage and bounded shrinking
+- Priority: P1
+- Status: VERIFIED (tooling/correctness)
+- Description: Add a tenth deterministic program shape that stresses loop-heavy control flow (`while` with `and` conditions and side effects, `for` over lists, maps, ranges with negative steps, nested loops, `break`/`continue`, `match` statements inside loops, early `return` from loops and match arms, guard side effects, compound assignment, and inner-block shadowing). Add an optional bounded line-oriented shrinker for failures, controlled timeout handling, and unit tests for the comparison and shrink logic.
+- Acceptance: `tools/differential_fuzz.py` generates ten shapes; the new shape agrees between interpreter and native across many seeds; `--shrink` reduces a failing program while preserving the failure's exit-code signature and `--shrink-budget` caps the work; a timed-out subprocess is reported as exit `124` instead of crashing the tool; `tools/test_differential_fuzz.py` passes; CI runs the self-tests before the differential fuzz.
+- Dependencies: T-072, T-070, T-071, T-075.
+- Implementation: `control_program` added to `GENERATORS`; `CaseResult`, `execute_case`, `describe`, and `shrink_source` factor the comparison and shrinking logic; `--shrink` and `--shrink-budget` options; `tools/test_differential_fuzz.py` with six unit tests; `.github/workflows/ci.yml` runs the self-tests.
+- Tests: the tenth shape was generated for seeds 1–20 and matched in every case; `tools/test_differential_fuzz.py` passed seven tests; the existing Rust suite remains unchanged at 621 tests.
+- Verification: 2026-11-24 — `python3 -m py_compile tools/differential_fuzz.py` succeeded; `python3 tools/test_differential_fuzz.py` passed 7 tests; the tenth shape matched 20/20 on seeds 1–20; `python3 tools/differential_fuzz.py --iterations 20 --seed 1` agreed 20/20; `--iterations 200` agreed 200/200 on seeds 1, 2, 3, 500, and 1000; CI pending.
+- Scope limits: The shrinker is line-oriented and cannot split a line or guarantee a global minimum; shrinking is opt-in because each attempt rebuilds and reruns a program. Ten shapes are not exhaustive, and the tool still has no sanitizer integration or coverage measurement.

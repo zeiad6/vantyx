@@ -63,7 +63,7 @@ because a document says so; the table cites code or an observed command.
 
 | Status | Core tasks | Directive requirements |
 | --- | ---: | ---: |
-| COMPLETE (including documented subsets) | 53 | 16 |
+| COMPLETE (including documented subsets) | 54 | 16 |
 | IN_PROGRESS | 0 | 0 |
 | READY | 0 | 0 |
 | MISSING | 8 | 10 |
@@ -71,7 +71,7 @@ because a document says so; the table cites code or an observed command.
 | PARTIAL | 2 | 16 |
 | BROKEN | 0 | 0 |
 | SUPERSEDED | 0 | 0 |
-| **Total tracked** | **63** | **45** |
+| **Total tracked** | **64** | **45** |
 
 Counts are derived from the rows below, not from prior reports. Core rows use
 the `TASKS.md` vocabulary; directive rows use
@@ -79,11 +79,12 @@ the `TASKS.md` vocabulary; directive rows use
 `COMPLETE (offline/loopback)` are counted as complete because the documented
 subset has tests and evidence; the missing scope is listed in the same row. The
 directive matrix includes 45 rows covering the AI extension plus the recovered
-cross-cutting requirements. Core rows T-036–T-043, T-067–T-068, T-073, and
-T-075 are tracked in `TASKS.md` and the AI matrix rather than duplicated here;
-T-044–T-066 and T-069–T-074 are included above. T-016 moved from `MISSING` to
-`PARTIAL` when T-075 shipped statement-position `?`; a built-in generic
-`Result`, error conversion, and expression-position propagation remain open.
+cross-cutting requirements. Core rows T-036–T-043, T-067–T-068, and T-075–T-077
+are tracked in `TASKS.md` and the AI matrix rather than duplicated here;
+T-044–T-066, T-069–T-074, and T-073 are included above. T-016 moved from
+`MISSING` to `PARTIAL` when T-075 shipped statement-position `?`; a built-in
+generic `Result`, error conversion, and expression-position propagation remain
+open.
 
 ## Core task matrix (T-001 … T-064)
 
@@ -150,7 +151,8 @@ T-044–T-066 and T-069–T-074 are included above. T-016 moved from `MISSING` t
 | T-069 | Refuse destructive recursive-removal roots | `remove_dir_all` refuses `.`, `./`, `..`, `../`, every root whose final component is `.` or `..` (including `link/.` and `link/..`), and `/`/`//`/`///` with `R0015` before any filesystem access in both engines; ordinary roots such as `tree`, `tree/`, `./tree`, `/tmp/tree`, and `foo/.hidden` remain accepted; empty paths keep the ordinary missing-path failure; five `src/fs_safety.rs` unit tests, two e2e tests, and two differential native tests; the prior test that locked the destructive `.` behavior was replaced; ADR-0035 amends ADR-0031 | COMPLETE (interpreter/native differential) | Lexical only: no link resolution or intermediate normalization, `link/sub` still traverses, check-then-act races remain, and there is no confirmation, trash, dry run, rollback, depth/entry cap, `Result` recovery, or sandbox; Windows native evidence missing | P1 | Keep |
 | T-070 | Native statement-expression conditions | `if`/`elif`/`while` conditions that lower to GNU statement expressions are wrapped in one extra pair of parentheses; comparisons keep their existing form; `tests/native.rs::conditions_with_calls_match`; ADR-0036 | COMPLETE (P0 correctness fix) | No statement-prelude rewrite; GNU C11 remains required | P0 | Keep |
 | T-071 | Native short-circuit evaluation | Effectful `and`/`or` right operands lower through a lazy conditional expression; effect-free operands use `&&`/`||`; call-count and left-to-right tests; ADR-0036 | COMPLETE (P0 correctness fix) | Effect analysis remains conservative and treats every binary/unary node as effectful | P0 | Keep |
-| T-072 | Deterministic differential fuzzer | `tools/differential_fuzz.py` with eight program shapes (scalars/control flow, collections, pattern matching, nested aliasing, typed functions, strings, numerics, runtime-error agreement), deterministic seeds, failure saving, and CI at 80 iterations; 160/160 on each of seeds 1, 500, and 1000; found T-070/T-071 and a collection-generator coverage bug | COMPLETE (tooling) | No shrinking, sanitizer integration, or coverage measurement; error paths compare exit code and stdout prefix only | P2 | Extend | Read-only AST pass with `L0001` unused binding, `L0002` `var` never reassigned, and `L0003` unreachable statement after a direct `return`/`break`/`continue`; underscore names, parameters, loop variables, and match bindings ignored; lint-only findings exit `0`, compile errors exit `1`; 19 unit tests and four e2e tests; `docs/linting.md`, specification §14, ADR-0037 | COMPLETE (tooling, conservative) | Suppression/configuration, unused parameters/loop variables, all-terminating `if`/`match` reachability, deny mode, machine-readable output, fixes | P2 | Extend |
+| T-072 | Deterministic differential fuzzer | `tools/differential_fuzz.py` with ten program shapes (scalars/control flow, collections, pattern matching, nested aliasing, typed functions, strings, numerics, result-enum `?`, runtime-error agreement, and loop-heavy control flow added by T-077), deterministic seeds, failure saving, an optional bounded line-oriented shrinker, and CI at 80 iterations plus fuzzer self-tests; 180/180 on seeds 1, 500, and 1000 with nine shapes and the tenth shape passed 20/20 generated programs on seeds 1–20; found T-070/T-071 and a collection-generator coverage bug | COMPLETE (tooling) | No sanitizer integration or coverage measurement; the line shrinker cannot split a line or guarantee a global minimum; error paths compare exit code and stdout only | P2 | Extend |
+| T-073 | Static linter | Read-only AST pass with `L0001` unused binding, `L0002` `var` never reassigned, and `L0003` unreachable statement after a direct `return`/`break`/`continue`; underscore names, parameters, loop variables, and match bindings ignored; lint-only findings exit `0`, compile errors exit `1`; 19 unit tests and four e2e tests; `docs/linting.md`, specification §14, ADR-0037 | COMPLETE (tooling, conservative) | Suppression/configuration, unused parameters/loop variables, all-terminating `if`/`match` reachability, deny mode, machine-readable output, fixes | P2 | Extend |
 | T-074 | Reachability-aware return checking | `block_returns` walks reachable statements and stops at the first `return`/`break`/`continue`; a fully returning `if` with `else` or `match` terminates the block; dead code after `return` no longer causes a false `E0309`; three checker unit tests, two e2e tests, and one differential native test; ADR-0037 | COMPLETE (checker correctness) | No full control-flow graph or loop-termination proof; `if` without `else` does not terminate | P1 | Keep |
 
 ### Core partials that must not be described as finished
