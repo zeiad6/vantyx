@@ -68,9 +68,8 @@ python3 benchmarks/run.py --reps 5
 ## Current verified baseline (2026-11-24)
 
 - Public repository: https://github.com/zeiad6/vantyx (MIT; renamed from
-  `zeiad6/auren`; CI run 45321718008 green on `main` with 358 tests; earlier
-  runs and a clean clone verified; T-045 is verified locally with 383 tests and
-  its CI run is recorded after the push).
+  `zeiad6/auren`; CI run 45330680289 green on `main` with 383 tests; earlier
+  runs and a clean clone verified; T-045 is verified with 383 tests).
 - `cargo test`: 383 passed (237 library unit + 12 CLI unit + 25 AI integration +
   41 e2e + 68 native).
 - Clippy clean; debug and release builds succeed.

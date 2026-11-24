@@ -296,8 +296,9 @@ succeeded; all five examples matched. Embedding tests cover offline determinism,
 normalization, batch limits, cache behavior, loopback `/v1/embeddings`, index
 and dimension validation, and `echo` rejection. Live embedding-model evidence
 remains blocked by the unavailable local/cloud inference environment; the hash
-provider is explicitly lexical, not semantic. The T-045 GitHub Actions run is
-recorded after the push.
+provider is explicitly lexical, not semantic. GitHub Actions run 45330680289
+passed build, all 383 tests, clippy, release build, and differential examples on
+commit `52dd1ae`.
 
 ### P1 — Core language recovery
 
