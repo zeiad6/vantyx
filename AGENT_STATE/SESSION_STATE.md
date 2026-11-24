@@ -4,15 +4,16 @@
 - Updated: 2026-11-24
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `a4fe86b` (native condition and short-circuit fixes plus the
-  differential fuzzer); CI run 45493833079 passed on it
-- Remote: `origin/main` at `a4fe86b`
+- Last commit: `5e1092f` (static linter and reachability-aware returns); CI run
+  45496041422 passed on it
+- Remote: `origin/main` at `5e1092f`
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
 
 T-073 — Static linter and `vantyx lint`. T-074 — Reachability-aware return
-checking. Status: VERIFIED locally; the change set is pending commit and CI.
+checking. Status: VERIFIED, committed in `5e1092f`, pushed, and CI-green (run
+45496041422).
 The linter is a read-only AST pass with `L0001` unused binding, `L0002` `var`
 never reassigned, and `L0003` unreachable statement; `vantyx lint` compiles
 first, prints warnings, exits `0` for lint-only findings, and exits `1` for
@@ -133,6 +134,8 @@ credentials are tracked. The T-070–T-072 change set was committed in `a4fe86b`
 - `python3 tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100
   agree, 0 rejected by both engines
 - `python3 -m py_compile tools/differential_fuzz.py` — success
+- CI run 45496041422 — success on `5e1092f` with 613 tests, the differential
+  fuzz step, streaming smoke, clippy, and the release build
 - CI run 45493833079 — success on `a4fe86b` with 584 tests and the
   differential fuzz step
 - CI run 45488725812 — success on `4982ab3` with 581 tests; run 45488152955

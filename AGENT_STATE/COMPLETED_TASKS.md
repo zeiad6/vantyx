@@ -3,8 +3,9 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
-CI run 45493833079 passed on `a4fe86b` with 584 tests and the differential
-fuzz step. CI run 45488725812 passed on `4982ab3` with 581 tests. The preceding
+CI run 45496041422 passed on `5e1092f` with 613 tests and the differential
+fuzz step. CI run 45493833079 passed on `a4fe86b` with 584 tests and the
+differential fuzz step. CI run 45488725812 passed on `4982ab3` with 581 tests. The preceding
 run 45488152955 failed only the glob result-cap test because ext4 caps hard
 links per inode; `4982ab3` spreads the links across four anchors. The status
 documentation commit `0491c63` also passed run 45489360135.

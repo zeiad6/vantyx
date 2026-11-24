@@ -13,20 +13,19 @@
 
 ## Last recorded repository state (2026-11-24)
 
-- `main` and `origin/main` are at `a4fe86b`; `e6ec597` contains the
+- `main` and `origin/main` are at `5e1092f`; `e6ec597` contains the
   T-058–T-069 change set, `4982ab3` fixes the glob result-cap test
-  portability, `0491c63`/`dfaad9b` record CI verification, and `a4fe86b`
-  contains the T-070–T-072 native fixes plus the differential fuzzer.
-- CI run 45493833079 passed on `a4fe86b` with 584 tests and the differential
-  fuzz step. CI run 45488725812 passed on `4982ab3` with 581 tests; the status
-  documentation commit `0491c63` also passed run 45489360135.
-- The T-073–T-074 change set (static linter, `vantyx lint`, and
-  reachability-aware `E0309`) is verified locally and pending commit. The local
-  gate passed 613 tests (348 library + 15 CLI + 32 AI + 96 e2e + 122 native),
-  clippy clean, debug and release builds, all five examples, 100/100 fuzz cases
-  on seed 1, and fuzz smoke.
-- If the T-073–T-074 commit is not present, inspect `git status --short`,
-  re-run the targeted tests, and commit rather than discarding the changes.
+  portability, `0491c63`/`dfaad9b` record CI verification, `a4fe86b`
+  contains the T-070–T-072 native fixes plus the differential fuzzer, and
+  `5e1092f` contains the T-073–T-074 linter and return-path fix.
+- CI run 45496041422 passed on `5e1092f` with 613 tests and the differential
+  fuzz step. CI run 45493833079 passed on `a4fe86b` with 584 tests. CI run
+  45488725812 passed on `4982ab3` with 581 tests; the status documentation
+  commit `0491c63` also passed run 45489360135.
+- The T-073–T-074 change set is committed and CI-green. The local gate passed
+  613 tests (348 library + 15 CLI + 32 AI + 96 e2e + 122 native), clippy clean,
+  debug and release builds, all five examples, 100/100 fuzz cases on seed 1,
+  and fuzz smoke.
 
 ## If the network or a provider is unavailable
 

@@ -178,7 +178,7 @@ Verified on 2026-11-24 (language, modules, native backend, file/directory/metada
 | `cargo build` | success |
 | `cargo build --release` | success |
 | `cargo clippy --all-targets -- -D warnings` | success, zero warnings |
-| `cargo test` | **613 passed, 0 failed** (348 library unit + 15 CLI unit + 32 AI integration + 96 end-to-end + 122 native) |
+| `cargo test` | **613 passed, 0 failed** (348 library unit + 15 CLI unit + 32 AI integration + 96 end-to-end + 122 native); CI run 45496041422 green on `5e1092f` |
 | `python3 benchmarks/run.py --reps 5` | all implementations printed identical output; wrote `benchmarks/results/2026-11-24.{json,md}`; `map_ops` native 3.597 ms vs interpreter 121.728 ms |
 | `vantyx run examples/*.vtx` | all 5 exit 0 with expected output |
 | `vantyx build examples/*.vtx` + run | all 5 exit 0 with output identical to `run` |

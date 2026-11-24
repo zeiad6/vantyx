@@ -78,7 +78,8 @@ python3 benchmarks/run.py --reps 5
   clone of the rewritten history passed 457 tests; CI run 45488725812 passed
   on `4982ab3` with 581 tests after run 45488152955 failed only a nonportable
   hard-link test that `4982ab3` fixed; the status documentation commit
-  `0491c63` also passed run 45489360135). The
+  `0491c63` also passed run 45489360135; run 45493833079 passed on `a4fe86b`
+  with 584 tests and run 45496041422 passed on `5e1092f` with 613 tests). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 613 passed (348 library unit + 15 CLI unit + 32 AI integration +
