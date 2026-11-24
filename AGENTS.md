@@ -62,6 +62,7 @@ python3 benchmarks/run.py --reps 5
 
 ## Current verified baseline (2026-11-23)
 
+- Public repository: https://github.com/zeiad6/auren (MIT; CI green on `main`).
 - `cargo test`: 241 passed (126 library unit + 7 CLI unit + 41 e2e + 67 native).
 - Clippy clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.

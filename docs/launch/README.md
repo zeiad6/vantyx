@@ -17,15 +17,15 @@ discoverability without exaggeration.
 
 ## Pre-launch checklist
 
-- [ ] Full verification gate passes on the launch commit.
-- [ ] `PROJECT_STATUS.md` and `TASKS.md` match the code and test counts.
-- [ ] `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, and `CODE_OF_CONDUCT.md` are present.
-- [ ] CI is green on the default branch.
-- [ ] The repository has a short description and topics.
-- [ ] `llms.txt` facts match `PROJECT_STATUS.md`.
-- [ ] The demo script runs from a clean checkout.
-- [ ] Benchmarks are cited with their date and methodology, not as a general claim.
-- [ ] Known limitations are visible in the README, not buried.
+- [x] Full verification gate passes on the launch commit.
+- [x] `PROJECT_STATUS.md` and `TASKS.md` match the code and test counts.
+- [x] `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, and `CODE_OF_CONDUCT.md` are present.
+- [x] CI is green on the default branch.
+- [x] The repository has a short description and topics.
+- [x] `llms.txt` facts match `PROJECT_STATUS.md`.
+- [x] The demo script runs from a clean checkout.
+- [x] Benchmarks are cited with their date and methodology, not as a general claim.
+- [x] Known limitations are visible in the README, not buried.
 
 ## Launch sequence
 

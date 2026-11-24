@@ -254,11 +254,11 @@ Yes, under MIT. It is pre-1.0; expect breaking changes.
 
 ## Launch checklist
 
-- [ ] Publish the repository and confirm the URL in this file and `llms.txt`.
-- [ ] Confirm CI is green on the launch commit.
+- [x] Publish the repository and confirm the URL in this file and `llms.txt`.
+- [x] Confirm CI is green on the launch commit.
 - [ ] Tag `v0.1.0` and write release notes with verified counts.
 - [ ] Record a terminal demo with the commands above.
 - [ ] Post the long-form text with the limitations included.
-- [ ] Link the specification, status, and benchmark methodology.
+- [x] Link the specification, status, and benchmark methodology.
 - [ ] Pin an issue for questions and corrections.
 - [ ] Update the docs after the first round of feedback.

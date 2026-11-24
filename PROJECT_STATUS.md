@@ -1,12 +1,13 @@
 # Project Status
 
-Updated: 2026-11-23 (T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums verified; T-031 bracketed-match diagnostic; T-028 sustainability addendum; T-035 launch kit prepared; documentation reconciled)
+Updated: 2026-11-23 (T-035 public repository published and CI verified; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums verified; T-031 bracketed-match diagnostic; T-028 sustainability addendum; documentation reconciled)
 
 ## Project overview
 
 **Auren** is a gradual-typing programming language implemented in Rust. It targets Python-like ergonomics with Rust-like safety and a real native compilation path. Repository codename: RustZ.
 
 - Language: Auren
+- Repository: https://github.com/zeiad6/auren (public, MIT)
 - File extension: `.auren`
 - CLI: `auren`
 - Implementation: Rust 1.100.0, 2024 edition, zero third-party dependencies
@@ -127,6 +128,7 @@ Verified on 2026-11-23:
 | `python3 tools/fuzz_smoke.py --binary target/debug/auren` | 9 depth/limit cases + 400 random/mutated inputs, all controlled diagnostics |
 | Launch-material link check | 8 files checked; all relative links resolve |
 | Native `Any` rejection demo | `auren run` prints the value; `auren build` exits 1 with `E0401` and help |
+| GitHub Actions CI (public, run 45308499010) | passed build, 241 tests, clippy, release build, and differential examples |
 
 Not re-run for this verification: `python3 benchmarks/run.py`. Its last recorded results remain in `benchmarks/results/`.
 
@@ -140,22 +142,21 @@ Native tests require `clang` (or `AUREN_CC`) and skip when no compiler is availa
 
 See `docs/PROJECT_BASELINE.md` and `docs/security-audit-2026-11-22.md`. The largest open risks are intentional native leaks, O(n) native map operations, enum allocation cost (unmeasured), gradual `Any` eroding static guarantees, and documentation drift. The drift found on 2026-11-23 (T-030 implemented but still marked READY) is mitigated by the status-sync rules in `AGENTS.md` and the `spec-sync-auditor` subagent.
 
-## Public launch assets
+## Public launch
 
-The repository now includes an MIT `LICENSE`, `.gitignore`, a GitHub Actions CI workflow, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`, `llms.txt`, and `docs/launch/` with canonical descriptions, recommendation boundaries, launch drafts, and a demo script. The material states the pre-1.0 status, native subset, intentional leaks, O(n) maps, and missing tooling. T-035 remains IN PROGRESS until the public push and CI run are observed.
+Auren is published at **https://github.com/zeiad6/auren** under the MIT license. The public repository includes `.gitignore`, a GitHub Actions CI workflow, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`, `llms.txt`, and `docs/launch/` with canonical descriptions, recommendation boundaries, launch drafts, and a demo script. The material states the pre-1.0 status, native subset, intentional leaks, O(n) maps, and missing tooling. GitHub Actions CI run 45308499010 passed build, 241 tests, clippy, release build, and differential examples on commit `ea4f2ec`; the repository description and ten discovery topics are set. T-035 is VERIFIED.
 
 ## Current task
 
-T-035 public repository and launch kit — IN PROGRESS (prepared locally; publication pending GitHub authentication). T-029 REPL line editing, history, completion, and expression echo — VERIFIED. T-033 match guards — VERIFIED. T-032 scalar literal patterns in `match` — VERIFIED. T-030 native enums and `match` — VERIFIED. T-031 bracketed-match diagnostic — VERIFIED. Documentation reconciled on 2026-11-23.
+T-035 public repository and launch kit — VERIFIED (https://github.com/zeiad6/auren; CI run 45308499010 passed). T-029 REPL line editing, history, completion, and expression echo — VERIFIED. T-033 match guards — VERIFIED. T-032 scalar literal patterns in `match` — VERIFIED. T-030 native enums and `match` — VERIFIED. T-031 bracketed-match diagnostic — VERIFIED. Documentation reconciled on 2026-11-23.
 
 ## Next tasks
 
-1. Publish the public repository and confirm CI (T-035)
-2. Nested/or-patterns (follow-up to T-014/T-030/T-032/T-033)
-3. Native map hash index if benchmarks justify it
-4. T-011 bytecode VM feasibility study
-5. Enum allocation benchmark before optimizing the native representation
-6. T-034 REPL multi-line history and field completion (P4, BACKLOG)
+1. Nested/or-patterns (follow-up to T-014/T-030/T-032/T-033)
+2. Native map hash index if benchmarks justify it
+3. T-011 bytecode VM feasibility study
+4. Enum allocation benchmark before optimizing the native representation
+5. T-034 REPL multi-line history and field completion (P4, BACKLOG)
 
 ## Last verification
 

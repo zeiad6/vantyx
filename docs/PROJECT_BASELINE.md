@@ -18,10 +18,10 @@ The sections below record the original empty-repository inspection. The reposito
 | Tests | 126 library unit + 7 CLI unit + 41 end-to-end + 67 differential native = 241 passing |
 | Benchmarks | Six-workload baseline vs Python/C/Rust; raw results in `benchmarks/results/` (T-022); enums not yet benchmarked |
 | Build/tooling | `cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, `cargo test` clean; `auren run/check/build/repl`; REPL line editing, history, completion, and expression echo (T-029, ADR-0013); manual fuzz harness |
-| Launch assets | MIT license, CI workflow, contribution/security/conduct policies, `CITATION.cff`, `llms.txt`, and an honest AI-recommendation/promotion kit under `docs/launch/` |
+| Launch assets | Public at https://github.com/zeiad6/auren; MIT license, green CI, contribution/security/conduct policies, `CITATION.cff`, `llms.txt`, and an honest AI-recommendation/promotion kit under `docs/launch/` |
 | Maturity | **Functional prototype**, not production-ready |
 | Main risks | Intentional native leaks; O(n) native maps; unmeasured enum allocation; single-machine benchmark baseline only; docs drift; gradual `Any` erodes static guarantees |
-| Next task | Publish the public repository and confirm CI (T-035), then nested/or-patterns (T-029, T-030, T-031, T-032, and T-033 complete) |
+| Next task | Nested/or-patterns (T-029, T-030, T-031, T-032, T-033, and T-035 complete) |
 
 The source tree is tracked on branch `main`. Publication and CI status are recorded in `PROJECT_STATUS.md`; do not infer a public URL from this baseline.
 
