@@ -1,0 +1,31 @@
+enum Op:
+    Add(value: Int)
+    Mul(value: Int)
+    Neg
+    Keep
+
+fn choose(state: Int) -> Op:
+    return match state % 4:
+        0: Add((state % 7) + 1)
+        1: Mul((state % 5) + 1)
+        2: Neg()
+        _: Keep()
+
+fn apply(op: Op, acc: Int) -> Int:
+    return match op:
+        Add(value): acc + value
+        Mul(value): acc * value
+        Neg: 0 - acc
+        Keep: acc
+
+fn main():
+    var state = 12345
+    var acc = 1
+    var i = 0
+    while i < 200000:
+        state = (state * 31 + 7) % 1000003
+        let op = choose(state)
+        acc = apply(op, acc)
+        acc = (acc + 1000003) % 1000003
+        i = i + 1
+    print(state, acc)

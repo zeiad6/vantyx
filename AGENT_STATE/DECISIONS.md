@@ -22,6 +22,16 @@ file records operational choices.
 - Defer streaming tool calls because the CLI has no tool-execution surface;
   implementing them now would be library-only.
 
+## 2026-11-24 — Enum benchmark and representation
+
+- Add an `enum_ops` workload before changing the heap-allocated native enum
+  representation. The measured native median is in the same band as C and Rust
+  (3.646 ms vs 3.766 ms and 4.529 ms in the same run; a targeted run measured
+  4.208 ms vs 3.557 ms and 3.370 ms), so the evidence does not justify a
+  representation rewrite.
+- Do not claim enum performance from a single run; absolute medians shift with
+  machine load, so compare implementations within the same run.
+
 ## 2026-11-24 — Native string character buffers
 
 - Single-byte ASCII characters returned by iteration or indexing share an

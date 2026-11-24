@@ -3,8 +3,12 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-056 — Native enum construction and match benchmark (2026-11-24;
+  seven-workload suite; `enum_ops` native 3.646 ms vs C 3.766 ms and Rust
+  4.529 ms; representation rewrite not justified).
 - T-055 — Shared ASCII character buffers for native string iteration and
-  indexing (2026-11-24; 464-test gate; `string_ops` 8.318 ms → 3.190 ms).
+  indexing (2026-11-24; 464-test gate; `string_ops` 8.318 ms → 1.565 ms in the
+  latest run).
 - T-054 — Incremental RAG re-indexing with vector reuse and deletion pruning
   (2026-11-24; 463-test gate; ADR-0024; CI run 45376386743).
 - T-053 — Placeholder attribution correction and history rewrite

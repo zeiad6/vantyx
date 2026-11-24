@@ -41,6 +41,7 @@ BENCH = ROOT / "benchmarks"
 RESULTS = BENCH / "results"
 WORKLOADS = [
     "arith_loop",
+    "enum_ops",
     "fib",
     "list_ops",
     "map_ops",
@@ -51,6 +52,7 @@ IMPLEMENTATIONS = ["vantyx-interp", "vantyx-native", "python", "c", "rust"]
 
 DESCRIPTIONS = {
     "arith_loop": "1,000,000 checked Int loop iterations with multiply/modulo/add",
+    "enum_ops": "200,000 enum constructions and exhaustive payload matches",
     "fib": "recursive fib(24), 46,368",
     "list_ops": "150,000 list appends, indexed mutation, and sum",
     "map_ops": "3,000 map inserts and 3,000 lookups (native/C/Rust/Python hash; interpreter linear)",

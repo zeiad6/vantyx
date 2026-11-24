@@ -29,6 +29,7 @@ to guide optimization and to make regressions visible.
 | Workload | What it exercises |
 | --- | --- |
 | `arith_loop` | 1,000,000 checked integer loop iterations with multiply/modulo/add |
+| `enum_ops` | 200,000 enum constructions with payloads and exhaustive `match` dispatch |
 | `fib` | Recursive `fib(24)` (46,368), function calls and recursion |
 | `list_ops` | 150,000 list appends, indexed mutation, and sum |
 | `map_ops` | 3,000 map inserts and 3,000 lookups (native/C/Rust/Python hash; interpreter linear) |
@@ -95,58 +96,63 @@ native executable from `vantyx build`.
 
 | Workload | Vantyx interp | Vantyx native | Python | C | Rust |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `arith_loop` | 688.659 | 2.342 | 419.057 | 5.101 | 6.071 |
-| `fib` | 179.172 | 3.510 | 53.524 | 3.002 | 3.619 |
-| `list_ops` | 446.043 | 6.097 | 169.327 | 4.462 | 5.037 |
-| `map_ops` | 121.265 | 3.353 | 40.583 | 3.064 | 3.881 |
-| `struct_ops` | 456.802 | 9.219 | 186.645 | 12.201 | 12.798 |
-| `string_ops` | 71.456 | 3.190 | 46.610 | 2.796 | 3.733 |
+| `arith_loop` | 684.518 | 2.726 | 213.220 | 2.838 | 3.055 |
+| `enum_ops` | 687.079 | 3.646 | 164.903 | 3.766 | 4.529 |
+| `fib` | 93.506 | 1.795 | 27.288 | 1.544 | 1.794 |
+| `list_ops` | 226.563 | 2.738 | 89.147 | 2.223 | 2.526 |
+| `map_ops` | 65.779 | 1.781 | 22.596 | 1.355 | 2.119 |
+| `struct_ops` | 237.671 | 5.348 | 100.108 | 6.078 | 6.548 |
+| `string_ops` | 36.897 | 1.565 | 24.949 | 1.242 | 1.799 |
 
 For comparison, the 2026-11-24 pre-T-055 `string_ops` native median was
-8.318 ms; it fell to 3.190 ms after single-byte ASCII iteration and indexing
-stopped allocating a heap string per character. The 2026-11-22 `map_ops`
-medians before the hash index were: Vantyx interpreter 106.218 ms, Vantyx
-native 64.212 ms, Python 3208.396 ms, C 8.360 ms, Rust 9.044 ms. The Python
-number changed because the workload now uses `dict` instead of the deliberately
-naive linear implementation.
+8.318 ms; it fell to the 1.6–3.2 ms range across later runs after single-byte
+ASCII iteration and indexing stopped allocating a heap string per character.
+The 2026-11-22 `map_ops` medians before the hash index were: Vantyx interpreter
+106.218 ms, Vantyx native 64.212 ms, Python 3208.396 ms, C 8.360 ms, Rust
+9.044 ms. The Python number changed because the workload now uses `dict`
+instead of the deliberately naive linear implementation.
 
 Peak RSS and min/max spread are in the raw result files. Representative values:
 
 | Workload | Vantyx native RSS | Vantyx interp RSS | C RSS | Rust RSS |
 | --- | ---: | ---: | ---: | ---: |
-| `arith_loop` | 2.04 MiB | 3.64 MiB | 1.60 MiB | 2.02 MiB |
-| `list_ops` | 3.37 MiB | 13.92 MiB | 2.75 MiB | 3.37 MiB |
-| `struct_ops` | 5.16 MiB | 43.16 MiB | 4.65 MiB | 5.11 MiB |
+| `arith_loop` | 2.02 MiB | 3.78 MiB | 1.58 MiB | 2.08 MiB |
+| `enum_ops` | 2.01 MiB | 3.72 MiB | 1.60 MiB | 2.09 MiB |
+| `list_ops` | 3.46 MiB | 13.81 MiB | 2.77 MiB | 3.37 MiB |
+| `struct_ops` | 5.02 MiB | 43.06 MiB | 4.65 MiB | 5.06 MiB |
 
 Build time and binary size:
 
 | Workload | Vantyx build s | C build s | Rust build s | Vantyx binary B | C binary B | Rust binary B |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `arith_loop` | 0.171 | 0.075 | 0.093 | 16,744 | 15,992 | 4,493,248 |
-| `fib` | 0.120 | 0.072 | 0.095 | 16,784 | 16,016 | 4,493,104 |
-| `list_ops` | 0.127 | 0.079 | 0.113 | 16,840 | 16,144 | 4,494,328 |
-| `map_ops` | 0.254 | 0.081 | 0.243 | 21,824 | 16,240 | 4,516,256 |
-| `struct_ops` | 0.136 | 0.078 | 0.116 | 16,832 | 16,144 | 4,494,736 |
-| `string_ops` | 0.139 | 0.078 | 0.117 | 16,880 | 16,192 | 4,494,072 |
+| `arith_loop` | 0.195 | 0.097 | 0.155 | 16,744 | 15,992 | 4,493,248 |
+| `enum_ops` | 0.143 | 0.077 | 0.104 | 16,784 | 15,992 | 4,493,272 |
+| `fib` | 0.122 | 0.074 | 0.087 | 16,784 | 16,016 | 4,493,104 |
+| `list_ops` | 0.134 | 0.085 | 0.192 | 16,840 | 16,144 | 4,494,328 |
+| `map_ops` | 0.258 | 0.084 | 0.313 | 21,824 | 16,240 | 4,516,256 |
+| `struct_ops` | 0.142 | 0.082 | 0.124 | 16,832 | 16,144 | 4,494,736 |
+| `string_ops` | 0.136 | 0.081 | 0.128 | 16,880 | 16,192 | 4,494,072 |
 
 ## Interpretation
 
-- **Native vs interpreter:** native is roughly 9×–240× faster on these
-  workloads. `map_ops` is now ~34× faster than the interpreter because the
-  native backend uses a hash index while the interpreter remains linear.
+- **Native vs interpreter:** native is roughly 20×–250× faster on these
+  workloads. `map_ops` is ~37× faster than the interpreter because the native
+  backend uses a hash index while the interpreter remains linear.
 - **Native vs C/Rust:** on these workloads the native backend is in the same
   performance band. Do not read small differences (including cases where
   Vantyx is marginally ahead) as a language-level win; they are within
   measurement noise and reflect workload-specific code generation.
-  `string_ops` fell from 8.318 ms to 3.190 ms after single-byte ASCII
-  iteration and indexing stopped allocating a heap string per character
-  (T-055); it is now close to C's 2.796 ms. Immutable concatenation still
-  allocates a fresh exact-size string.
+  `string_ops` fell from 8.318 ms to the 1.6–3.2 ms range across runs after
+  single-byte ASCII iteration and indexing stopped allocating a heap string per
+  character (T-055). `enum_ops` (T-056) puts heap-allocated native enums in the
+  same band as stack-value C and Rust enums, so a representation rewrite is not
+  justified by this evidence. Immutable concatenation still allocates a fresh
+  exact-size string.
 - **Maps:** the scalar-key hash index (ADR-0016) cut `map_ops` from 64.212 ms
-  to 3.597 ms. Native is now 1.25× slower than C's hash table and faster than
-  the Rust `HashMap` result on this run. Structural keys still take the linear
-  path, and the fixed seed is not collision-resistant against adversarial
-  input.
+  to the 1–4 ms band. Native is about 1.3× slower than C's hash table and
+  faster than the Rust `HashMap` result on this run. Structural keys still take
+  the linear path, and the fixed seed is not collision-resistant against
+  adversarial input.
 - **Interpreter:** it is a semantic oracle, not a performance target. It is
   slower than Python on these microbenchmarks, and its map workload is
   intentionally linear rather than a `dict`.

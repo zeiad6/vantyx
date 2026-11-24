@@ -238,20 +238,23 @@ timing, one warm-up was discarded, and medians are over five runs.
 
 | Workload | Vantyx native | C `-O2` | Rust `-O` |
 | --- | ---: | ---: | ---: |
-| `arith_loop` | 2.342 ms | 5.101 ms | 6.071 ms |
-| `fib` | 3.510 ms | 3.002 ms | 3.619 ms |
-| `list_ops` | 6.097 ms | 4.462 ms | 5.037 ms |
-| `map_ops` | 3.353 ms | 3.064 ms | 3.881 ms |
-| `struct_ops` | 9.219 ms | 12.201 ms | 12.798 ms |
-| `string_ops` | 3.190 ms | 2.796 ms | 3.733 ms |
+| `arith_loop` | 2.726 ms | 2.838 ms | 3.055 ms |
+| `enum_ops` | 3.646 ms | 3.766 ms | 4.529 ms |
+| `fib` | 1.795 ms | 1.544 ms | 1.794 ms |
+| `list_ops` | 2.738 ms | 2.223 ms | 2.526 ms |
+| `map_ops` | 1.781 ms | 1.355 ms | 2.119 ms |
+| `struct_ops` | 5.348 ms | 6.078 ms | 6.548 ms |
+| `string_ops` | 1.565 ms | 1.242 ms | 1.799 ms |
 
-`string_ops` fell from 8.318 ms to 3.190 ms after single-byte ASCII string
-iteration stopped allocating a heap string per character (T-055); it now sits
-near C and Rust on this workload. Concatenation still allocates a fresh
-exact-size buffer. These are single-machine baseline numbers, not a competitive
-claim. The interpreter is intentionally the slow reference. Methodology, peak
-RSS, build time, binary size, and raw results:
-[docs/benchmarks.md](docs/benchmarks.md) and
+`string_ops` fell from 8.318 ms to 1.565 ms in the latest run after single-byte
+ASCII string iteration stopped allocating a heap string per character (T-055);
+it now sits near C and Rust. `enum_ops` (T-056) shows native enum construction
+and matching in the same band as C and Rust, so the heap-allocated enum
+representation does not justify a rewrite yet. Concatenation still allocates a
+fresh exact-size buffer. These are single-machine baseline numbers, not a
+competitive claim; run-to-run load shifts the absolute medians. The interpreter
+is intentionally the slow reference. Methodology, peak RSS, build time, binary
+size, and raw results: [docs/benchmarks.md](docs/benchmarks.md) and
 [`benchmarks/results/`](benchmarks/results/).
 
 ```sh
