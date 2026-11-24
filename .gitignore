@@ -1,0 +1,38 @@
+# Rust build output
+/target/
+
+# Native build artifacts
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.bin
+a.out
+
+# Auren local state
+.auren_history
+*.auren.tmp
+
+# Python bytecode from benchmark and fuzz tooling
+__pycache__/
+*.py[cod]
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Benchmark scratch output
+benchmarks/results/*.tmp

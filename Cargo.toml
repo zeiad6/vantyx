@@ -1,0 +1,19 @@
+[package]
+name = "auren"
+version = "0.1.0"
+edition = "2024"
+description = "Auren: a safe, gradual-typing language that starts like a script and scales to native code"
+license = "MIT"
+
+[lib]
+name = "auren"
+path = "src/lib.rs"
+
+[[bin]]
+name = "auren"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

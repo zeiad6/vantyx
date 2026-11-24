@@ -1,0 +1,17 @@
+struct Point:
+    x: Int
+    y: Int
+
+fn main():
+    var points: List[Point] = []
+    var i = 0
+    while i < 80000:
+        push(points, Point(i, i + 1))
+        i = i + 1
+    var total = 0
+    i = 0
+    while i < len(points):
+        points[i].x = points[i].x + 1
+        total = total + points[i].x + points[i].y
+        i = i + 1
+    print(len(points), total)

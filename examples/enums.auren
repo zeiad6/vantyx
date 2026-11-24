@@ -1,0 +1,52 @@
+# Closed enums with payloads and exhaustive matching.
+enum Shape:
+    Circle(radius: Float)
+    Rect(width: Float, height: Float)
+    Point
+
+fn area(shape: Shape) -> Float:
+    match shape:
+        Circle(radius):
+            return 3.14159 * radius * radius
+        Rect(width, height):
+            return width * height
+        Point:
+            return 0.0
+
+fn label(shape: Shape) -> Str:
+    return match shape:
+        Circle(radius): "circle({radius})"
+        Rect(width, height): "rect({width}x{height})"
+        _: "point"
+
+fn describe_score(score: Int) -> Str:
+    return match score:
+        0: "zero"
+        100: "perfect"
+        _: "partial"
+
+fn classify(shape: Shape) -> Str:
+    match shape:
+        Circle(radius) if radius > 2.0:
+            return "large circle"
+        Circle(radius):
+            return "small circle"
+        Rect(width, height) if width == height:
+            return "square"
+        Rect(width, height):
+            return "rectangle"
+        Point:
+            return "point"
+
+fn main():
+    let shapes: List[Shape] = [Circle(1.0), Rect(2.0, 3.0), Point()]
+    var total: Float = 0.0
+    for shape in shapes:
+        print("{label(shape)} area={area(shape)} kind={classify(shape)}")
+        total = total + area(shape)
+    print("total={total}")
+    print("classify large circle: {classify(Circle(3.0))}")
+    print("classify square: {classify(Rect(2.0, 2.0))}")
+    print(describe_score(0))
+    print(describe_score(100))
+    print(describe_score(42))

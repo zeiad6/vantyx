@@ -1,0 +1,9 @@
+# Recursion and string interpolation.
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+fn main():
+    for n in range(11):
+        print("{n}! = {factorial(n)}")

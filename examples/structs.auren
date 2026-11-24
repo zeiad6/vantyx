@@ -1,0 +1,14 @@
+# Structs have reference semantics: q and p alias the same instance.
+struct Point:
+    x: Int
+    y: Int
+
+fn length_squared(p: Point) -> Int:
+    return p.x * p.x + p.y * p.y
+
+fn main():
+    let p = Point(x=3, y=4)
+    let q = p
+    q.x = 6
+    print("p = {p}")
+    print("length squared = {length_squared(p)}")

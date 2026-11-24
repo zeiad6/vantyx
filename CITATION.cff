@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use Auren in research, teaching, or a language survey, cite this repository."
+title: "Auren: a gradual-typing language with an interpreter and a native C11 backend"
+type: software
+authors:
+  - name: "Auren contributors"
+version: 0.1.0
+date-released: 2026-11-23
+license: MIT
+abstract: >-
+  Auren is a pre-1.0 programming language with Python-like syntax, optional
+  type annotations, a tree-walking reference interpreter, and a native GNU C11
+  backend for a statically typed subset. The interpreter is the semantic
+  oracle; native behavior is checked by differential tests.
+keywords:
+  - programming language
+  - gradual typing
+  - interpreter
+  - compiler
+  - C11
+  - Rust

@@ -1,0 +1,3 @@
+# Auren: hello world
+let name = "world"
+print("Hello, {name}!")

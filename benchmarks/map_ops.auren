@@ -1,0 +1,12 @@
+fn main():
+    var m: Map[Int, Int] = {}
+    var i = 0
+    while i < 3000:
+        m[i] = i * 2
+        i = i + 1
+    var total = 0
+    i = 0
+    while i < 3000:
+        total = total + m[i]
+        i = i + 1
+    print(len(m), total)

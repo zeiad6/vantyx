@@ -1,0 +1,528 @@
+{
+  "generated_at": "2026-11-22T22:29:29+00:00",
+  "repetitions": 5,
+  "warmup_runs": 1,
+  "environment": {
+    "platform": "Linux-7.2.15+kali-amd64-x86_64-with-glibc2.43",
+    "cpu": "Intel(R) Core(TM) i7-8565U CPU @ 1.80GHz",
+    "cores": 4,
+    "memory": "1978576 kB",
+    "python": "3.14.10",
+    "clang": "Debian clang version 21.1.8 (13)",
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+    "auren": "auren 0.1.0"
+  },
+  "descriptions": {
+    "arith_loop": "1,000,000 checked Int loop iterations with multiply/modulo/add",
+    "fib": "recursive fib(24), 46,368",
+    "list_ops": "150,000 list appends, indexed mutation, and sum",
+    "map_ops": "3,000 linear-map inserts and 3,000 lookups",
+    "struct_ops": "80,000 struct allocations, field mutations, and sum",
+    "string_ops": "15 string doublings (65,536 chars) and character scan"
+  },
+  "results": {
+    "arith_loop": {
+      "auren-interp": {
+        "times_ms": [
+          1272.374,
+          1300.888,
+          1318.147,
+          1320.934,
+          1277.483
+        ],
+        "median_ms": 1300.888,
+        "min_ms": 1272.374,
+        "max_ms": 1320.934,
+        "peak_rss_mib": 3.12,
+        "exit_code": 0
+      },
+      "auren-native": {
+        "times_ms": [
+          6.142,
+          4.99,
+          5.253,
+          5.21,
+          5.056
+        ],
+        "median_ms": 5.21,
+        "min_ms": 4.99,
+        "max_ms": 6.142,
+        "peak_rss_mib": 2.09,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          425.585,
+          409.355,
+          414.646,
+          413.489,
+          402.175
+        ],
+        "median_ms": 413.489,
+        "min_ms": 402.175,
+        "max_ms": 425.585,
+        "peak_rss_mib": 12.37,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          5.1,
+          4.823,
+          5.097,
+          5.06,
+          5.102
+        ],
+        "median_ms": 5.097,
+        "min_ms": 4.823,
+        "max_ms": 5.102,
+        "peak_rss_mib": 1.6,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          5.597,
+          5.825,
+          5.748,
+          5.683,
+          5.559
+        ],
+        "median_ms": 5.683,
+        "min_ms": 5.559,
+        "max_ms": 5.825,
+        "peak_rss_mib": 2.0,
+        "exit_code": 0
+      }
+    },
+    "fib": {
+      "auren-interp": {
+        "times_ms": [
+          164.635,
+          167.512,
+          167.095,
+          173.435,
+          179.353
+        ],
+        "median_ms": 167.512,
+        "min_ms": 164.635,
+        "max_ms": 179.353,
+        "peak_rss_mib": 3.34,
+        "exit_code": 0
+      },
+      "auren-native": {
+        "times_ms": [
+          3.311,
+          3.372,
+          3.227,
+          3.471,
+          3.301
+        ],
+        "median_ms": 3.311,
+        "min_ms": 3.227,
+        "max_ms": 3.471,
+        "peak_rss_mib": 1.99,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          49.967,
+          49.306,
+          49.79,
+          51.873,
+          49.496
+        ],
+        "median_ms": 49.79,
+        "min_ms": 49.306,
+        "max_ms": 51.873,
+        "peak_rss_mib": 12.37,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          3.148,
+          3.352,
+          2.93,
+          3.368,
+          2.86
+        ],
+        "median_ms": 3.148,
+        "min_ms": 2.86,
+        "max_ms": 3.368,
+        "peak_rss_mib": 1.52,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          3.612,
+          3.996,
+          3.505,
+          3.87,
+          3.435
+        ],
+        "median_ms": 3.612,
+        "min_ms": 3.435,
+        "max_ms": 3.996,
+        "peak_rss_mib": 2.11,
+        "exit_code": 0
+      }
+    },
+    "list_ops": {
+      "auren-interp": {
+        "times_ms": [
+          383.585,
+          382.157,
+          402.89,
+          381.992,
+          420.994
+        ],
+        "median_ms": 383.585,
+        "min_ms": 381.992,
+        "max_ms": 420.994,
+        "peak_rss_mib": 6.45,
+        "exit_code": 0
+      },
+      "auren-native": {
+        "times_ms": [
+          4.767,
+          4.829,
+          4.634,
+          4.661,
+          4.661
+        ],
+        "median_ms": 4.661,
+        "min_ms": 4.634,
+        "max_ms": 4.829,
+        "peak_rss_mib": 3.36,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          173.851,
+          167.116,
+          171.517,
+          159.382,
+          169.181
+        ],
+        "median_ms": 169.181,
+        "min_ms": 159.382,
+        "max_ms": 173.851,
+        "peak_rss_mib": 18.25,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          4.389,
+          4.399,
+          4.433,
+          4.341,
+          4.512
+        ],
+        "median_ms": 4.399,
+        "min_ms": 4.341,
+        "max_ms": 4.512,
+        "peak_rss_mib": 2.77,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          5.241,
+          5.073,
+          5.28,
+          4.958,
+          5.114
+        ],
+        "median_ms": 5.114,
+        "min_ms": 4.958,
+        "max_ms": 5.28,
+        "peak_rss_mib": 3.34,
+        "exit_code": 0
+      }
+    },
+    "map_ops": {
+      "auren-interp": {
+        "times_ms": [
+          106.536,
+          106.218,
+          106.161,
+          105.056,
+          107.957
+        ],
+        "median_ms": 106.218,
+        "min_ms": 105.056,
+        "max_ms": 107.957,
+        "peak_rss_mib": 3.33,
+        "exit_code": 0
+      },
+      "auren-native": {
+        "times_ms": [
+          63.092,
+          64.212,
+          68.357,
+          63.757,
+          65.693
+        ],
+        "median_ms": 64.212,
+        "min_ms": 63.092,
+        "max_ms": 68.357,
+        "peak_rss_mib": 2.14,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          3253.577,
+          3208.396,
+          3047.171,
+          3172.243,
+          3366.932
+        ],
+        "median_ms": 3208.396,
+        "min_ms": 3047.171,
+        "max_ms": 3366.932,
+        "peak_rss_mib": 12.62,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          8.066,
+          8.127,
+          9.848,
+          8.36,
+          8.583
+        ],
+        "median_ms": 8.36,
+        "min_ms": 8.066,
+        "max_ms": 9.848,
+        "peak_rss_mib": 1.73,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          9.605,
+          9.044,
+          8.815,
+          9.028,
+          9.045
+        ],
+        "median_ms": 9.044,
+        "min_ms": 8.815,
+        "max_ms": 9.605,
+        "peak_rss_mib": 2.24,
+        "exit_code": 0
+      }
+    },
+    "struct_ops": {
+      "auren-interp": {
+        "times_ms": [
+          405.054,
+          399.025,
+          398.383,
+          413.846,
+          409.73
+        ],
+        "median_ms": 405.054,
+        "min_ms": 398.383,
+        "max_ms": 413.846,
+        "peak_rss_mib": 30.39,
+        "exit_code": 0
+      },
+      "auren-native": {
+        "times_ms": [
+          9.494,
+          9.11,
+          8.923,
+          9.584,
+          8.896
+        ],
+        "median_ms": 9.11,
+        "min_ms": 8.896,
+        "max_ms": 9.584,
+        "peak_rss_mib": 5.21,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          175.491,
+          191.667,
+          202.129,
+          178.437,
+          178.566
+        ],
+        "median_ms": 178.566,
+        "min_ms": 175.491,
+        "max_ms": 202.129,
+        "peak_rss_mib": 21.61,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          18.294,
+          14.017,
+          11.753,
+          11.115,
+          11.053
+        ],
+        "median_ms": 11.753,
+        "min_ms": 11.053,
+        "max_ms": 18.294,
+        "peak_rss_mib": 4.6,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          12.336,
+          12.333,
+          12.376,
+          12.537,
+          12.949
+        ],
+        "median_ms": 12.376,
+        "min_ms": 12.333,
+        "max_ms": 12.949,
+        "peak_rss_mib": 4.96,
+        "exit_code": 0
+      }
+    },
+    "string_ops": {
+      "auren-interp": {
+        "times_ms": [
+          60.282,
+          59.757,
+          60.503,
+          59.517,
+          59.714
+        ],
+        "median_ms": 59.757,
+        "min_ms": 59.517,
+        "max_ms": 60.503,
+        "peak_rss_mib": 6.42,
+        "exit_code": 0
+      },
+      "auren-native": {
+        "times_ms": [
+          7.741,
+          7.367,
+          9.004,
+          7.716,
+          7.488
+        ],
+        "median_ms": 7.716,
+        "min_ms": 7.367,
+        "max_ms": 9.004,
+        "peak_rss_mib": 4.14,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          45.316,
+          44.593,
+          50.813,
+          44.846,
+          44.752
+        ],
+        "median_ms": 44.846,
+        "min_ms": 44.593,
+        "max_ms": 50.813,
+        "peak_rss_mib": 12.43,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          2.88,
+          2.666,
+          2.639,
+          2.576,
+          2.611
+        ],
+        "median_ms": 2.639,
+        "min_ms": 2.576,
+        "max_ms": 2.88,
+        "peak_rss_mib": 1.73,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          3.955,
+          3.526,
+          3.595,
+          3.66,
+          3.508
+        ],
+        "median_ms": 3.595,
+        "min_ms": 3.508,
+        "max_ms": 3.955,
+        "peak_rss_mib": 2.33,
+        "exit_code": 0
+      }
+    }
+  },
+  "builds": {
+    "arith_loop": {
+      "auren-native": 0.23593006499959301,
+      "c": 0.16522695000003296,
+      "rust": 0.2057955199998105
+    },
+    "fib": {
+      "auren-native": 0.23783607799987294,
+      "c": 0.14021239699968646,
+      "rust": 0.16202852500009612
+    },
+    "list_ops": {
+      "auren-native": 0.2588418499999534,
+      "c": 0.15927778099967327,
+      "rust": 0.204950528000154
+    },
+    "map_ops": {
+      "auren-native": 0.44828090999999404,
+      "c": 0.16146334199993362,
+      "rust": 0.23350294699957885
+    },
+    "struct_ops": {
+      "auren-native": 0.29488101499964614,
+      "c": 0.15031235600008586,
+      "rust": 0.23522243799970965
+    },
+    "string_ops": {
+      "auren-native": 0.26710226599971065,
+      "c": 0.17081733399982113,
+      "rust": 0.22116219899999123
+    }
+  },
+  "sizes": {
+    "arith_loop": {
+      "auren-source": 147,
+      "auren-native": 16736,
+      "c": 15992,
+      "rust": 4493248
+    },
+    "fib": {
+      "auren-source": 120,
+      "auren-native": 16776,
+      "c": 16016,
+      "rust": 4493104
+    },
+    "list_ops": {
+      "auren-source": 263,
+      "auren-native": 16832,
+      "c": 16144,
+      "rust": 4494328
+    },
+    "map_ops": {
+      "auren-source": 234,
+      "auren-native": 21672,
+      "c": 16136,
+      "rust": 4494432
+    },
+    "struct_ops": {
+      "auren-source": 363,
+      "auren-native": 16824,
+      "c": 16144,
+      "rust": 4494736
+    },
+    "string_ops": {
+      "auren-source": 224,
+      "auren-native": 16784,
+      "c": 16192,
+      "rust": 4494072
+    }
+  },
+  "verification": "all implementations produced identical stdout"
+}
