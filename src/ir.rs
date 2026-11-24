@@ -2327,6 +2327,164 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
+            "split" => {
+                if lowered.len() != 2 {
+                    return Err(IrError::internal("`split` arity was not validated", span));
+                }
+                if lowered[0].ty != IrType::Str || lowered[1].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `split` requires two Strs, found `{}` and `{}`",
+                            lowered[0].ty.name(),
+                            lowered[1].ty.name()
+                        ),
+                        span,
+                        "annotate the text and separator as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::List(Box::new(IrType::Str))
+            }
+            "join" => {
+                if lowered.len() != 2 {
+                    return Err(IrError::internal("`join` arity was not validated", span));
+                }
+                match &lowered[0].ty {
+                    IrType::List(inner) if **inner == IrType::Str => {}
+                    other => {
+                        return Err(IrError::unsupported(
+                            format!(
+                                "native `join` requires List[Str], found `{}`",
+                                other.name()
+                            ),
+                            span,
+                            "annotate the list as List[Str] or run with `vantyx run`",
+                        ));
+                    }
+                }
+                if lowered[1].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `join` requires a Str separator, found `{}`",
+                            lowered[1].ty.name()
+                        ),
+                        span,
+                        "annotate the separator as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Str
+            }
+            "trim" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal("`trim` arity was not validated", span));
+                }
+                if lowered[0].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!("native `trim` requires a Str, found `{}`", lowered[0].ty.name()),
+                        span,
+                        "annotate the text as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Str
+            }
+            "starts_with" | "ends_with" => {
+                if lowered.len() != 2 {
+                    return Err(IrError::internal(
+                        format!("`{name}` arity was not validated"),
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str || lowered[1].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `{name}` requires two Strs, found `{}` and `{}`",
+                            lowered[0].ty.name(),
+                            lowered[1].ty.name()
+                        ),
+                        span,
+                        "annotate the text and affix as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Bool
+            }
+            "replace" => {
+                if lowered.len() != 3 {
+                    return Err(IrError::internal("`replace` arity was not validated", span));
+                }
+                if lowered
+                    .iter()
+                    .any(|argument| argument.ty != IrType::Str)
+                {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `replace` requires three Strs, found `{}`, `{}`, and `{}`",
+                            lowered[0].ty.name(),
+                            lowered[1].ty.name(),
+                            lowered[2].ty.name()
+                        ),
+                        span,
+                        "annotate all three arguments as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Str
+            }
+            "path_join" => {
+                if lowered.len() != 2 {
+                    return Err(IrError::internal(
+                        "`path_join` arity was not validated",
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str || lowered[1].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `path_join` requires two Strs, found `{}` and `{}`",
+                            lowered[0].ty.name(),
+                            lowered[1].ty.name()
+                        ),
+                        span,
+                        "annotate both paths as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Str
+            }
+            "path_parent" | "path_name" | "path_stem" | "path_extension" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal(
+                        format!("`{name}` arity was not validated"),
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `{name}` requires a Str path, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "annotate the path as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Str
+            }
+            "path_is_absolute" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal(
+                        "`path_is_absolute` arity was not validated",
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `path_is_absolute` requires a Str path, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "annotate the path as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Bool
+            }
             "abs" => {
                 if lowered.len() != 1 {
                     return Err(IrError::internal("`abs` arity was not validated", span));
@@ -2389,6 +2547,164 @@ impl<'a> Builder<'a> {
             "assert" => {
                 if lowered.len() != 1 || lowered[0].ty != IrType::Bool {
                     return Err(IrError::internal("`assert` argument is not Bool", span));
+                }
+                IrType::Unit
+            }
+            "read_file" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal(
+                        "`read_file` arity was not validated",
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `read_file` requires a Str path, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "annotate the path as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Str
+            }
+            "write_file" | "append_file" => {
+                if lowered.len() != 2 {
+                    return Err(IrError::internal(
+                        format!("`{name}` arity was not validated"),
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str || lowered[1].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `{name}` requires Str path and contents, found `{}` and `{}`",
+                            lowered[0].ty.name(),
+                            lowered[1].ty.name()
+                        ),
+                        span,
+                        "annotate both arguments as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Unit
+            }
+            "file_size" | "is_file" | "is_dir" | "is_symlink" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal(
+                        format!("`{name}` arity was not validated"),
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `{name}` requires a Str path, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "annotate the path as Str or run with `vantyx run`",
+                    ));
+                }
+                if name == "file_size" {
+                    IrType::Int
+                } else {
+                    IrType::Bool
+                }
+            }
+            "file_exists" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal(
+                        "`file_exists` arity was not validated",
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `file_exists` requires a Str path, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "annotate the path as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Bool
+            }
+            "list_dir" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal(
+                        "`list_dir` arity was not validated",
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `list_dir` requires a Str path, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "annotate the path as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::List(Box::new(IrType::Str))
+            }
+            "glob" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal(
+                        "`glob` arity was not validated",
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `glob` requires a Str pattern, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "annotate the pattern as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::List(Box::new(IrType::Str))
+            }
+            "make_dir" | "remove_file" | "remove_dir" | "make_dir_all" | "remove_dir_all" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal(
+                        format!("`{name}` arity was not validated"),
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `{name}` requires a Str path, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "annotate the path as Str or run with `vantyx run`",
+                    ));
+                }
+                IrType::Unit
+            }
+            "rename" | "copy_file" | "copy_dir_all" => {
+                if lowered.len() != 2 {
+                    return Err(IrError::internal(
+                        format!("`{name}` arity was not validated"),
+                        span,
+                    ));
+                }
+                if lowered[0].ty != IrType::Str || lowered[1].ty != IrType::Str {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `{name}` requires Str source and target paths, found `{}` and `{}`",
+                            lowered[0].ty.name(),
+                            lowered[1].ty.name()
+                        ),
+                        span,
+                        "annotate both paths as Str or run with `vantyx run`",
+                    ));
                 }
                 IrType::Unit
             }

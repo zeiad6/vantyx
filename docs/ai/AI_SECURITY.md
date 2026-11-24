@@ -251,6 +251,22 @@ stable error naming the limit.
   cache-eviction tests.
 - Model download checksum and archive traversal tests when that code exists.
 
+## Live verification handling (2026-11-24)
+
+- `tools/live_ai_check.py` reads the key only from the named environment
+  variable, never echoes it, and writes bounded, truncated stdout/stderr to the
+  evidence file.
+- Evidence records only `api_key_env`, endpoint, model names, counts, usage,
+  and observed text; no key, authorization header, or full request is stored.
+- The provider rejected an earlier retry with HTTP 400 `User location is not
+  supported for the API use.` A later re-verification at 20:59Z passed all 21
+  checks, while one re-run hit a transient HTTP 503. The harness retries only
+  retryable failures with bounded exponential backoff and does not attempt to
+  bypass provider restrictions.
+- `tools/ai_failure_harness.py` uses loopback servers and
+  `VANTYX_TEST_KEY=harness-placeholder-key`; it exercises 401, 429, and timeout
+  without real credentials.
+
 ## Reporting
 
 Report vulnerabilities through the repository Security tab as described in

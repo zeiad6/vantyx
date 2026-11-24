@@ -1863,6 +1863,67 @@ impl<'a> Emitter<'a> {
                 }
             }
             "type" => c_string(&args[0].ty.runtime_name()),
+            "read_file" => format!(
+                "vantyx_read_file({}, {line}, {column})",
+                self.expr(&args[0])
+            ),
+            "write_file" | "append_file" => {
+                let append = if name == "append_file" { 1 } else { 0 };
+                let path_name = self.fresh("path");
+                let text_name = self.fresh("text");
+                let path = self.expr(&args[0]);
+                let text = self.expr(&args[1]);
+                format!(
+                    "({{ vantyx_str {path_name} = {path}; vantyx_str {text_name} = {text}; vantyx_write_file({path_name}, {text_name}, {append}, {line}, {column}); }})"
+                )
+            }
+            "file_size" => format!(
+                "vantyx_file_size({}, {line}, {column})",
+                self.expr(&args[0])
+            ),
+            "is_file" | "is_dir" | "is_symlink" => {
+                let function = match name {
+                    "is_file" => "vantyx_is_file",
+                    "is_dir" => "vantyx_is_dir",
+                    _ => "vantyx_is_symlink",
+                };
+                format!("{function}({})", self.expr(&args[0]))
+            }
+            "file_exists" => {
+                format!("vantyx_file_exists({})", self.expr(&args[0]))
+            }
+            "list_dir" => format!(
+                "vantyx_list_dir({}, {line}, {column})",
+                self.expr(&args[0])
+            ),
+            "glob" => format!(
+                "vantyx_glob({}, {line}, {column})",
+                self.expr(&args[0])
+            ),
+            "make_dir" | "remove_file" | "remove_dir" | "make_dir_all" | "remove_dir_all" => {
+                let function = match name {
+                    "make_dir" => "vantyx_make_dir",
+                    "make_dir_all" => "vantyx_make_dir_all",
+                    "remove_file" => "vantyx_remove_file",
+                    "remove_dir_all" => "vantyx_remove_dir_all",
+                    _ => "vantyx_remove_dir",
+                };
+                format!("{function}({}, {line}, {column})", self.expr(&args[0]))
+            }
+            "rename" | "copy_file" | "copy_dir_all" => {
+                let function = match name {
+                    "rename" => "vantyx_rename",
+                    "copy_dir_all" => "vantyx_copy_dir_all",
+                    _ => "vantyx_copy_file",
+                };
+                let source_name = self.fresh("source");
+                let target_name = self.fresh("target");
+                let source = self.expr(&args[0]);
+                let target = self.expr(&args[1]);
+                format!(
+                    "({{ vantyx_str {source_name} = {source}; vantyx_str {target_name} = {target}; {function}({source_name}, {target_name}, {line}, {column}); }})"
+                )
+            }
             "push" => {
                 let IrType::List(inner) = &args[0].ty else {
                     unreachable!("IR rejected push on this type");
@@ -1916,6 +1977,71 @@ impl<'a> Emitter<'a> {
                 }
                 _ => unreachable!("IR rejected contains on this type"),
             },
+            "split" => {
+                let text = self.expr(&args[0]);
+                let separator = self.expr(&args[1]);
+                let text_name = self.fresh("text");
+                let separator_name = self.fresh("separator");
+                format!(
+                    "({{ vantyx_str {text_name} = {text}; vantyx_str {separator_name} = {separator}; vantyx_text_split({text_name}, {separator_name}, {line}, {column}); }})"
+                )
+            }
+            "join" => {
+                let list = self.expr(&args[0]);
+                let separator = self.expr(&args[1]);
+                let list_name = self.fresh("list");
+                let separator_name = self.fresh("separator");
+                format!(
+                    "({{ VantyxList* {list_name} = {list}; vantyx_str {separator_name} = {separator}; vantyx_text_join({list_name}, {separator_name}); }})"
+                )
+            }
+            "trim" => format!("vantyx_text_trim({})", self.expr(&args[0])),
+            "starts_with" | "ends_with" => {
+                let function = if name == "starts_with" {
+                    "vantyx_text_starts_with"
+                } else {
+                    "vantyx_text_ends_with"
+                };
+                let text = self.expr(&args[0]);
+                let affix = self.expr(&args[1]);
+                let text_name = self.fresh("text");
+                let affix_name = self.fresh("affix");
+                format!(
+                    "({{ vantyx_str {text_name} = {text}; vantyx_str {affix_name} = {affix}; {function}({text_name}, {affix_name}); }})"
+                )
+            }
+            "replace" => {
+                let text = self.expr(&args[0]);
+                let pattern = self.expr(&args[1]);
+                let replacement = self.expr(&args[2]);
+                let text_name = self.fresh("text");
+                let pattern_name = self.fresh("pattern");
+                let replacement_name = self.fresh("replacement");
+                format!(
+                    "({{ vantyx_str {text_name} = {text}; vantyx_str {pattern_name} = {pattern}; vantyx_str {replacement_name} = {replacement}; vantyx_text_replace({text_name}, {pattern_name}, {replacement_name}, {line}, {column}); }})"
+                )
+            }
+            "path_join" => {
+                let base = self.expr(&args[0]);
+                let child = self.expr(&args[1]);
+                let base_name = self.fresh("base");
+                let child_name = self.fresh("child");
+                format!(
+                    "({{ vantyx_str {base_name} = {base}; vantyx_str {child_name} = {child}; vantyx_path_join({base_name}, {child_name}); }})"
+                )
+            }
+            "path_parent" | "path_name" | "path_stem" | "path_extension" => {
+                let function = match name {
+                    "path_parent" => "vantyx_path_parent",
+                    "path_name" => "vantyx_path_name",
+                    "path_stem" => "vantyx_path_stem",
+                    _ => "vantyx_path_extension",
+                };
+                format!("{function}({})", self.expr(&args[0]))
+            }
+            "path_is_absolute" => {
+                format!("vantyx_path_is_absolute({})", self.expr(&args[0]))
+            }
             "keys" | "values" => {
                 let IrType::Map(key, value) = &args[0].ty else {
                     unreachable!("IR rejected keys/values on this type");
@@ -2258,6 +2384,7 @@ fn c_string(text: &str) -> String {
 
 const PREAMBLE: &str = r#"/* Generated by the Vantyx native backend. */
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <math.h>
@@ -2266,6 +2393,9 @@ const PREAMBLE: &str = r#"/* Generated by the Vantyx native backend. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 typedef int vantyx_unit;
 typedef const char* vantyx_str;
@@ -2373,6 +2503,183 @@ static vantyx_str vantyx_strndup(const char* text, size_t length) {
     memcpy(copy, text, length);
     copy[length] = '\0';
     return copy;
+}
+
+/* File I/O (ADR-0026). Reads are capped so a runaway file cannot exhaust the
+   process, contents must be valid UTF-8 without NUL bytes, and writes use the
+   host filesystem with the caller's privileges. There is no sandbox. */
+#define VANTYX_MAX_FILE_BYTES ((size_t)64 * 1024 * 1024)
+
+static bool vantyx_utf8_valid(const unsigned char* text, size_t length) {
+    size_t index = 0;
+    while (index < length) {
+        unsigned char lead = text[index];
+        if (lead < 0x80) {
+            index++;
+            continue;
+        }
+        size_t continuation;
+        uint32_t code;
+        if ((lead & 0xE0) == 0xC0) {
+            continuation = 1;
+            code = lead & 0x1F;
+            if (code < 2) return false;
+        } else if ((lead & 0xF0) == 0xE0) {
+            continuation = 2;
+            code = lead & 0x0F;
+        } else if ((lead & 0xF8) == 0xF0) {
+            continuation = 3;
+            code = lead & 0x07;
+        } else {
+            return false;
+        }
+        if (index + continuation >= length) return false;
+        for (size_t offset = 1; offset <= continuation; offset++) {
+            unsigned char next = text[index + offset];
+            if ((next & 0xC0) != 0x80) return false;
+            code = (code << 6) | (next & 0x3F);
+        }
+        if (continuation == 2 && code < 0x800) return false;
+        if (continuation == 3 && code < 0x10000) return false;
+        if (code > 0x10FFFF) return false;
+        if (code >= 0xD800 && code <= 0xDFFF) return false;
+        index += continuation + 1;
+    }
+    return true;
+}
+
+static vantyx_str vantyx_read_file(vantyx_str path, int line, int column) {
+    FILE* file = fopen(path, "rb");
+    if (file == NULL) {
+        char message[512];
+        snprintf(message, sizeof message, "cannot read file `%.200s`: %.200s", path, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    size_t capacity = 8192;
+    size_t length = 0;
+    char* buffer = (char*)vantyx_alloc_array(capacity, 1);
+    for (;;) {
+        if (length == capacity) {
+            if (capacity > VANTYX_MAX_FILE_BYTES) {
+                fclose(file);
+                vantyx_rt_error("R0015", "file exceeds the 64 MiB read limit", line, column);
+            }
+            size_t grown = capacity * 2;
+            if (grown > VANTYX_MAX_FILE_BYTES + 1) grown = VANTYX_MAX_FILE_BYTES + 1;
+            char* next = (char*)realloc(buffer, grown);
+            if (next == NULL) {
+                fclose(file);
+                fputs("error: out of memory\n", stderr);
+                exit(2);
+            }
+            buffer = next;
+            capacity = grown;
+        }
+        size_t count = fread(buffer + length, 1, capacity - length, file);
+        length += count;
+        if (count == 0) {
+            if (ferror(file)) {
+                int error_number = errno;
+                fclose(file);
+                char message[512];
+                snprintf(message, sizeof message,
+                         "cannot read file `%.200s`: %.200s", path, strerror(error_number));
+                vantyx_rt_error("R0015", message, line, column);
+            }
+            break;
+        }
+        if (length > VANTYX_MAX_FILE_BYTES) {
+            fclose(file);
+            vantyx_rt_error("R0015", "file exceeds the 64 MiB read limit", line, column);
+        }
+    }
+    if (fclose(file) != 0) {
+        int error_number = errno;
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot read file `%.200s`: %.200s", path, strerror(error_number));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    if (memchr(buffer, '\0', length) != NULL) {
+        vantyx_rt_error("R0015", "file contains a NUL byte", line, column);
+    }
+    if (!vantyx_utf8_valid((const unsigned char*)buffer, length)) {
+        vantyx_rt_error("R0015", "file contents are not valid UTF-8", line, column);
+    }
+    char* result = (char*)realloc(buffer, length + 1);
+    if (result == NULL) {
+        free(buffer);
+        fputs("error: out of memory\n", stderr);
+        exit(2);
+    }
+    result[length] = '\0';
+    return result;
+}
+
+static vantyx_unit vantyx_write_file(vantyx_str path, vantyx_str text, int append,
+                                     int line, int column) {
+    FILE* file = fopen(path, append ? "ab" : "wb");
+    if (file == NULL) {
+        char message[512];
+        snprintf(message, sizeof message, "cannot write file `%.200s`: %.200s", path, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    size_t length = strlen(text);
+    if (length != 0 && fwrite(text, 1, length, file) != length) {
+        int error_number = errno;
+        fclose(file);
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot write file `%.200s`: %.200s", path, strerror(error_number));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    if (fclose(file) != 0) {
+        int error_number = errno;
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot write file `%.200s`: %.200s", path, strerror(error_number));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    return (vantyx_unit)0;
+}
+
+static bool vantyx_file_exists(vantyx_str path) {
+    struct stat info;
+    return stat(path, &info) == 0;
+}
+
+/* Follows symbolic links and requires a regular file. Reports the logical
+   size (`st_size`), not allocated blocks. */
+static int64_t vantyx_file_size(vantyx_str path, int line, int column) {
+    struct stat info;
+    if (stat(path, &info) != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot read metadata for `%.200s`: %.200s", path, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    if (!S_ISREG(info.st_mode)) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "`%.200s` is not a regular file", path);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    return (int64_t)info.st_size;
+}
+
+static bool vantyx_is_file(vantyx_str path) {
+    struct stat info;
+    return stat(path, &info) == 0 && S_ISREG(info.st_mode);
+}
+
+static bool vantyx_is_dir(vantyx_str path) {
+    struct stat info;
+    return stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+static bool vantyx_is_symlink(vantyx_str path) {
+    struct stat info;
+    return lstat(path, &info) == 0 && S_ISLNK(info.st_mode);
 }
 
 /* Single-byte ASCII characters are immutable and extremely common in loops.
@@ -2842,6 +3149,1459 @@ static void vantyx_list_pop_raw(VantyxList* list, void* out, int line, int colum
     if (list->len == 0) vantyx_rt_error("R0003", "`pop` on an empty list", line, column);
     list->len--;
     memcpy(out, (char*)list->items + list->len * list->elem_size, (size_t)list->elem_size);
+}
+
+/* Text builtins (ADR-0028). Strings are UTF-8 and immutable; helpers may
+   return a shared slice when no allocation is required. */
+static uint32_t vantyx_utf8_decode(const unsigned char* text, int* bytes) {
+    unsigned char lead = text[0];
+    if (lead < 0x80) {
+        *bytes = 1;
+        return lead;
+    }
+    if ((lead & 0xE0) == 0xC0) {
+        *bytes = 2;
+        return ((uint32_t)(lead & 0x1F) << 6) | (uint32_t)(text[1] & 0x3F);
+    }
+    if ((lead & 0xF0) == 0xE0) {
+        *bytes = 3;
+        return ((uint32_t)(lead & 0x0F) << 12)
+             | ((uint32_t)(text[1] & 0x3F) << 6)
+             | (uint32_t)(text[2] & 0x3F);
+    }
+    *bytes = 4;
+    return ((uint32_t)(lead & 0x07) << 18)
+         | ((uint32_t)(text[1] & 0x3F) << 12)
+         | ((uint32_t)(text[2] & 0x3F) << 6)
+         | (uint32_t)(text[3] & 0x3F);
+}
+
+static bool vantyx_text_is_whitespace(uint32_t code) {
+    return (code >= 0x0009 && code <= 0x000D)
+        || code == 0x0020
+        || code == 0x0085
+        || code == 0x00A0
+        || code == 0x1680
+        || (code >= 0x2000 && code <= 0x200A)
+        || code == 0x2028
+        || code == 0x2029
+        || code == 0x202F
+        || code == 0x205F
+        || code == 0x3000;
+}
+
+static VantyxList* vantyx_text_split(vantyx_str text, vantyx_str separator,
+                                     int line, int column) {
+    VantyxList* parts = vantyx_list_new(sizeof(vantyx_str), &vantyx_desc_str);
+    size_t separator_length = strlen(separator);
+    if (separator_length == 0) {
+        const char* cursor = text;
+        while (*cursor != '\0') {
+            int bytes = vantyx_utf8_char_len((const unsigned char)*cursor);
+            vantyx_str part = vantyx_str_slice(cursor, bytes);
+            vantyx_list_push_raw(parts, &part, line, column);
+            cursor += bytes;
+        }
+        return parts;
+    }
+    const char* cursor = text;
+    for (;;) {
+        const char* match = strstr(cursor, separator);
+        size_t length = match == NULL ? strlen(cursor) : (size_t)(match - cursor);
+        vantyx_str part = vantyx_strndup(cursor, length);
+        vantyx_list_push_raw(parts, &part, line, column);
+        if (match == NULL) break;
+        cursor = match + separator_length;
+    }
+    return parts;
+}
+
+static vantyx_str vantyx_text_join(VantyxList* parts, vantyx_str separator) {
+    size_t separator_length = strlen(separator);
+    size_t total = 0;
+    for (size_t index = 0; index < parts->len; index++) {
+        vantyx_str part = ((vantyx_str*)parts->items)[index];
+        total = vantyx_checked_add(total, strlen(part), "string");
+        if (index != 0) {
+            total = vantyx_checked_add(total, separator_length, "string");
+        }
+    }
+    char* result = (char*)vantyx_alloc_array(
+        vantyx_checked_add(total, 1, "string"), 1);
+    size_t out = 0;
+    for (size_t index = 0; index < parts->len; index++) {
+        vantyx_str part = ((vantyx_str*)parts->items)[index];
+        size_t part_length = strlen(part);
+        if (index != 0) {
+            memcpy(result + out, separator, separator_length);
+            out += separator_length;
+        }
+        memcpy(result + out, part, part_length);
+        out += part_length;
+    }
+    result[out] = '\0';
+    return result;
+}
+
+static vantyx_str vantyx_text_trim(vantyx_str text) {
+    size_t length = strlen(text);
+    size_t start = 0;
+    while (start < length) {
+        int bytes = 0;
+        uint32_t code = vantyx_utf8_decode((const unsigned char*)text + start, &bytes);
+        if (!vantyx_text_is_whitespace(code)) break;
+        start += (size_t)bytes;
+    }
+    size_t end = start;
+    size_t position = start;
+    while (position < length) {
+        int bytes = 0;
+        uint32_t code = vantyx_utf8_decode((const unsigned char*)text + position, &bytes);
+        if (!vantyx_text_is_whitespace(code)) {
+            end = position + (size_t)bytes;
+        }
+        position += (size_t)bytes;
+    }
+    if (start == 0 && end == length) return text;
+    return vantyx_strndup(text + start, end - start);
+}
+
+static bool vantyx_text_starts_with(vantyx_str text, vantyx_str prefix) {
+    return strncmp(text, prefix, strlen(prefix)) == 0;
+}
+
+static bool vantyx_text_ends_with(vantyx_str text, vantyx_str suffix) {
+    size_t text_length = strlen(text);
+    size_t suffix_length = strlen(suffix);
+    if (suffix_length > text_length) return false;
+    return memcmp(text + text_length - suffix_length, suffix, suffix_length) == 0;
+}
+
+static vantyx_str vantyx_text_replace(vantyx_str text, vantyx_str pattern,
+                                      vantyx_str replacement,
+                                      int line, int column) {
+    size_t pattern_length = strlen(pattern);
+    if (pattern_length == 0) {
+        vantyx_rt_error("R0016", "`replace` requires a non-empty pattern",
+                        line, column);
+    }
+    size_t replacement_length = strlen(replacement);
+    size_t total = 0;
+    const char* cursor = text;
+    for (;;) {
+        const char* match = strstr(cursor, pattern);
+        size_t segment = match == NULL ? strlen(cursor) : (size_t)(match - cursor);
+        total = vantyx_checked_add(total, segment, "string");
+        if (match == NULL) break;
+        total = vantyx_checked_add(total, replacement_length, "string");
+        cursor = match + pattern_length;
+    }
+    char* result = (char*)vantyx_alloc_array(
+        vantyx_checked_add(total, 1, "string"), 1);
+    size_t out = 0;
+    cursor = text;
+    for (;;) {
+        const char* match = strstr(cursor, pattern);
+        size_t segment = match == NULL ? strlen(cursor) : (size_t)(match - cursor);
+        memcpy(result + out, cursor, segment);
+        out += segment;
+        if (match == NULL) break;
+        memcpy(result + out, replacement, replacement_length);
+        out += replacement_length;
+        cursor = match + pattern_length;
+    }
+    result[out] = '\0';
+    return result;
+}
+
+/* Lexical path helpers (ADR-0030). `/` is the only separator, paths are not
+   normalized, `.` and `..` are preserved, and no filesystem access occurs. */
+static void vantyx_path_name_range(vantyx_str path, size_t* start, size_t* length) {
+    size_t end = strlen(path);
+    while (end > 0 && path[end - 1] == '/') end--;
+    size_t begin = end;
+    while (begin > 0 && path[begin - 1] != '/') begin--;
+    *start = begin;
+    *length = end - begin;
+}
+
+static vantyx_str vantyx_path_join(vantyx_str base, vantyx_str child) {
+    if (child[0] == '/') return vantyx_strdup(child);
+    if (child[0] == '\0') return vantyx_strdup(base);
+    if (base[0] == '\0') return vantyx_strdup(child);
+    size_t base_length = strlen(base);
+    if (base[base_length - 1] == '/') {
+        return vantyx_str_concat(base, child);
+    }
+    return vantyx_str_concat(vantyx_str_concat(base, "/"), child);
+}
+
+static vantyx_str vantyx_path_parent(vantyx_str path) {
+    size_t end = strlen(path);
+    while (end > 0 && path[end - 1] == '/') end--;
+    if (end == 0) {
+        return vantyx_strdup(path[0] == '/' ? "/" : ".");
+    }
+    size_t slash = end;
+    while (slash > 0 && path[slash - 1] != '/') slash--;
+    size_t parent_end = slash;
+    while (parent_end > 0 && path[parent_end - 1] == '/') parent_end--;
+    if (parent_end == 0) {
+        return vantyx_strdup(path[0] == '/' ? "/" : ".");
+    }
+    return vantyx_strndup(path, parent_end);
+}
+
+static vantyx_str vantyx_path_name(vantyx_str path) {
+    size_t start = 0;
+    size_t length = 0;
+    vantyx_path_name_range(path, &start, &length);
+    return vantyx_strndup(path + start, length);
+}
+
+static vantyx_str vantyx_path_stem(vantyx_str path) {
+    size_t start = 0;
+    size_t length = 0;
+    vantyx_path_name_range(path, &start, &length);
+    size_t dot = SIZE_MAX;
+    for (size_t index = 1; index + 1 < length; index++) {
+        if (path[start + index] == '.') dot = index;
+    }
+    if (dot == SIZE_MAX) return vantyx_strndup(path + start, length);
+    return vantyx_strndup(path + start, dot);
+}
+
+static vantyx_str vantyx_path_extension(vantyx_str path) {
+    size_t start = 0;
+    size_t length = 0;
+    vantyx_path_name_range(path, &start, &length);
+    size_t dot = SIZE_MAX;
+    for (size_t index = 1; index + 1 < length; index++) {
+        if (path[start + index] == '.') dot = index;
+    }
+    if (dot == SIZE_MAX) return vantyx_strdup("");
+    return vantyx_strndup(path + start + dot + 1, length - dot - 1);
+}
+
+static bool vantyx_path_is_absolute(vantyx_str path) {
+    return path[0] == '/';
+}
+
+/* Directory operations (ADR-0027). Entries are sorted by byte order and names
+   must be valid UTF-8. Errors are fatal R0015 until a Result type exists. */
+static int vantyx_name_compare(const void* left, const void* right) {
+    const char* a = *(const char* const*)left;
+    const char* b = *(const char* const*)right;
+    return strcmp(a, b);
+}
+
+static VantyxList* vantyx_list_dir(vantyx_str path, int line, int column) {
+    DIR* directory = opendir(path);
+    if (directory == NULL) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot list directory `%.200s`: %.200s", path, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    size_t length = 0;
+    size_t capacity = 16;
+    vantyx_str* names =
+        (vantyx_str*)vantyx_alloc_array(capacity, sizeof(vantyx_str));
+    for (;;) {
+        errno = 0;
+        struct dirent* entry = readdir(directory);
+        if (entry == NULL) {
+            if (errno != 0) {
+                int error_number = errno;
+                (void)closedir(directory);
+                char message[512];
+                snprintf(message, sizeof message,
+                         "cannot list directory `%.200s`: %.200s",
+                         path, strerror(error_number));
+                vantyx_rt_error("R0015", message, line, column);
+            }
+            break;
+        }
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (!vantyx_utf8_valid((const unsigned char*)entry->d_name,
+                               strlen(entry->d_name))) {
+            (void)closedir(directory);
+            vantyx_rt_error("R0015", "directory entry name is not valid UTF-8",
+                            line, column);
+        }
+        if (length == capacity) {
+            if (capacity > SIZE_MAX / 2 / sizeof(vantyx_str)) {
+                (void)closedir(directory);
+                fputs("error: directory entry count is too large\n", stderr);
+                exit(2);
+            }
+            capacity *= 2;
+            vantyx_str* grown =
+                (vantyx_str*)realloc(names, capacity * sizeof(vantyx_str));
+            if (grown == NULL) {
+                (void)closedir(directory);
+                fputs("error: out of memory\n", stderr);
+                exit(2);
+            }
+            names = grown;
+        }
+        names[length++] = vantyx_strdup(entry->d_name);
+    }
+    (void)closedir(directory);
+    qsort(names, length, sizeof(vantyx_str), vantyx_name_compare);
+    VantyxList* list = vantyx_list_new(sizeof(vantyx_str), &vantyx_desc_str);
+    for (size_t index = 0; index < length; index++) {
+        vantyx_list_push_raw(list, &names[index], line, column);
+    }
+    free(names);
+    return list;
+}
+
+/* Glob expansion (ADR-0033). Patterns are split on '/'; '*' and '?' match
+   Unicode scalar values within one component, classes use [a-z]/[!a-z], and a
+   complete '**' component recurses through real directories without following
+   symbolic links. Results are byte-sorted and deduplicated. Malformed
+   patterns are R0016; filesystem failures and caps are R0015. */
+#define VANTYX_GLOB_MAX_RESULTS ((size_t)100000)
+#define VANTYX_GLOB_MAX_DEPTH ((size_t)128)
+#define VANTYX_GLOB_MAX_COMPONENTS ((size_t)1024)
+
+typedef enum {
+    VANTYX_GLOB_LITERAL,
+    VANTYX_GLOB_STAR,
+    VANTYX_GLOB_QUESTION,
+    VANTYX_GLOB_CLASS
+} VantyxGlobTokenKind;
+
+typedef struct {
+    uint32_t first;
+    uint32_t last;
+} VantyxGlobRange;
+
+typedef struct {
+    VantyxGlobTokenKind kind;
+    uint32_t literal;
+    bool negated;
+    VantyxGlobRange* ranges;
+    size_t range_count;
+} VantyxGlobToken;
+
+typedef struct {
+    vantyx_str text;
+    VantyxGlobToken* tokens;
+    size_t token_count;
+    bool has_meta;
+    bool allows_hidden;
+    bool double_star;
+} VantyxGlobComponent;
+
+typedef struct {
+    VantyxGlobComponent* components;
+    size_t component_count;
+    bool absolute;
+} VantyxGlobPattern;
+
+typedef struct {
+    char** names;
+    size_t length;
+    size_t capacity;
+} VantyxGlobNames;
+
+typedef struct {
+    vantyx_str* items;
+    size_t length;
+    size_t capacity;
+} VantyxGlobResults;
+
+static void* vantyx_glob_grow(void* pointer, size_t* capacity, size_t element_size) {
+    if (*capacity > SIZE_MAX / 2) {
+        fputs("error: glob data is too large\n", stderr);
+        exit(2);
+    }
+    size_t next = *capacity == 0 ? 8 : *capacity * 2;
+    if (element_size != 0 && next > SIZE_MAX / element_size) {
+        fputs("error: glob data is too large\n", stderr);
+        exit(2);
+    }
+    void* grown = realloc(pointer, next * element_size);
+    if (grown == NULL) {
+        fputs("error: out of memory\n", stderr);
+        exit(2);
+    }
+    *capacity = next;
+    return grown;
+}
+
+static void vantyx_glob_pattern_free(VantyxGlobPattern* pattern) {
+    for (size_t index = 0; index < pattern->component_count; index++) {
+        VantyxGlobComponent* component = &pattern->components[index];
+        for (size_t token = 0; token < component->token_count; token++) {
+            free(component->tokens[token].ranges);
+        }
+        free(component->tokens);
+        free((void*)component->text);
+    }
+    free(pattern->components);
+    pattern->components = NULL;
+    pattern->component_count = 0;
+}
+
+static VantyxGlobComponent vantyx_glob_component(const char* text, size_t length,
+                                                 int line, int column) {
+    VantyxGlobComponent component;
+    memset(&component, 0, sizeof component);
+    component.text = vantyx_strndup(text, length);
+    size_t token_capacity = 0;
+    size_t index = 0;
+    while (index < length) {
+        VantyxGlobToken token;
+        memset(&token, 0, sizeof token);
+        unsigned char lead = (unsigned char)text[index];
+        if (lead == '*') {
+            token.kind = VANTYX_GLOB_STAR;
+            index++;
+        } else if (lead == '?') {
+            token.kind = VANTYX_GLOB_QUESTION;
+            index++;
+        } else if (lead == '[') {
+            token.kind = VANTYX_GLOB_CLASS;
+            index++;
+            if (index < length && (text[index] == '!' || text[index] == '^')) {
+                token.negated = true;
+                index++;
+            }
+            size_t range_capacity = 0;
+            if (index < length && text[index] == ']') {
+                token.ranges = (VantyxGlobRange*)vantyx_glob_grow(
+                    token.ranges, &range_capacity, sizeof(VantyxGlobRange));
+                token.ranges[token.range_count].first = ']';
+                token.ranges[token.range_count].last = ']';
+                token.range_count++;
+                index++;
+            }
+            bool closed = false;
+            while (index < length) {
+                if (text[index] == ']') {
+                    index++;
+                    closed = true;
+                    break;
+                }
+                int first_bytes = 0;
+                uint32_t first = vantyx_utf8_decode(
+                    (const unsigned char*)text + index, &first_bytes);
+                index += (size_t)first_bytes;
+                if (index + 1 < length && text[index] == '-' && text[index + 1] != ']') {
+                    int last_bytes = 0;
+                    uint32_t last = vantyx_utf8_decode(
+                        (const unsigned char*)text + index + 1, &last_bytes);
+                    if (last < first) {
+                        vantyx_rt_error("R0016",
+                                        "descending range in glob character class",
+                                        line, column);
+                    }
+                    if (token.range_count == range_capacity) {
+                        token.ranges = (VantyxGlobRange*)vantyx_glob_grow(
+                            token.ranges, &range_capacity, sizeof(VantyxGlobRange));
+                    }
+                    token.ranges[token.range_count].first = first;
+                    token.ranges[token.range_count].last = last;
+                    token.range_count++;
+                    index += 1 + (size_t)last_bytes;
+                } else {
+                    if (token.range_count == range_capacity) {
+                        token.ranges = (VantyxGlobRange*)vantyx_glob_grow(
+                            token.ranges, &range_capacity, sizeof(VantyxGlobRange));
+                    }
+                    token.ranges[token.range_count].first = first;
+                    token.ranges[token.range_count].last = first;
+                    token.range_count++;
+                }
+            }
+            if (!closed) {
+                vantyx_rt_error("R0016", "unclosed character class in glob pattern",
+                                line, column);
+            }
+            if (token.range_count == 0) {
+                vantyx_rt_error("R0016", "empty character class in glob pattern",
+                                line, column);
+            }
+        } else {
+            int bytes = 0;
+            token.kind = VANTYX_GLOB_LITERAL;
+            token.literal = vantyx_utf8_decode(
+                (const unsigned char*)text + index, &bytes);
+            index += (size_t)bytes;
+        }
+        if (component.token_count == token_capacity) {
+            component.tokens = (VantyxGlobToken*)vantyx_glob_grow(
+                component.tokens, &token_capacity, sizeof(VantyxGlobToken));
+        }
+        component.tokens[component.token_count++] = token;
+    }
+    for (size_t token = 0; token < component.token_count; token++) {
+        if (component.tokens[token].kind != VANTYX_GLOB_LITERAL) {
+            component.has_meta = true;
+        }
+    }
+    if (component.token_count > 0) {
+        VantyxGlobToken* first = &component.tokens[0];
+        if (first->kind == VANTYX_GLOB_LITERAL && first->literal == '.') {
+            component.allows_hidden = true;
+        } else if (first->kind == VANTYX_GLOB_CLASS && !first->negated) {
+            for (size_t range = 0; range < first->range_count; range++) {
+                if (first->ranges[range].first <= '.' &&
+                    '.' <= first->ranges[range].last) {
+                    component.allows_hidden = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (component.token_count == 2 &&
+        component.tokens[0].kind == VANTYX_GLOB_STAR &&
+        component.tokens[1].kind == VANTYX_GLOB_STAR) {
+        component.double_star = true;
+    }
+    return component;
+}
+
+static VantyxGlobPattern vantyx_glob_parse(vantyx_str pattern, int line, int column) {
+    VantyxGlobPattern parsed;
+    memset(&parsed, 0, sizeof parsed);
+    if (pattern[0] == '\0') {
+        vantyx_rt_error("R0016", "glob pattern is empty", line, column);
+    }
+    parsed.absolute = pattern[0] == '/';
+    size_t component_capacity = 0;
+    const char* cursor = pattern;
+    while (*cursor != '\0') {
+        while (*cursor == '/') {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+        const char* start = cursor;
+        while (*cursor != '\0' && *cursor != '/') {
+            cursor++;
+        }
+        size_t length = (size_t)(cursor - start);
+        if (parsed.component_count >= VANTYX_GLOB_MAX_COMPONENTS) {
+            vantyx_rt_error("R0016", "glob pattern has more than 1024 components",
+                            line, column);
+        }
+        if (parsed.component_count == component_capacity) {
+            parsed.components = (VantyxGlobComponent*)vantyx_glob_grow(
+                parsed.components, &component_capacity, sizeof(VantyxGlobComponent));
+        }
+        parsed.components[parsed.component_count++] =
+            vantyx_glob_component(start, length, line, column);
+    }
+    return parsed;
+}
+
+static vantyx_str vantyx_glob_join(vantyx_str base, const char* name) {
+    size_t base_length = strlen(base);
+    size_t name_length = strlen(name);
+    if (base_length == 0) {
+        return vantyx_strdup(name);
+    }
+    bool root = base_length == 1 && base[0] == '/';
+    size_t separator = root ? 0 : 1;
+    size_t total = vantyx_checked_add(base_length, separator, "glob path");
+    total = vantyx_checked_add(total, name_length, "glob path");
+    total = vantyx_checked_add(total, 1, "glob path");
+    char* path = (char*)vantyx_alloc_array(total, 1);
+    memcpy(path, base, base_length);
+    size_t at = base_length;
+    if (separator == 1) {
+        path[at++] = '/';
+    }
+    memcpy(path + at, name, name_length + 1);
+    return path;
+}
+
+static void vantyx_glob_names_free(VantyxGlobNames* names) {
+    for (size_t index = 0; index < names->length; index++) {
+        free(names->names[index]);
+    }
+    free(names->names);
+    names->names = NULL;
+    names->length = 0;
+    names->capacity = 0;
+}
+
+static bool vantyx_glob_read_names(vantyx_str path, VantyxGlobNames* names,
+                                   int line, int column) {
+    const char* target = path[0] == '\0' ? "." : path;
+    DIR* directory = opendir(target);
+    if (directory == NULL) {
+        int error_number = errno;
+        if (error_number == ENOENT || error_number == ENOTDIR) {
+            return false;
+        }
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot list directory `%.200s`: %.200s", target,
+                 strerror(error_number));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    for (;;) {
+        errno = 0;
+        struct dirent* entry = readdir(directory);
+        if (entry == NULL) {
+            if (errno != 0) {
+                int error_number = errno;
+                (void)closedir(directory);
+                vantyx_glob_names_free(names);
+                char message[512];
+                snprintf(message, sizeof message,
+                         "cannot list directory `%.200s`: %.200s", target,
+                         strerror(error_number));
+                vantyx_rt_error("R0015", message, line, column);
+            }
+            break;
+        }
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (!vantyx_utf8_valid((const unsigned char*)entry->d_name,
+                               strlen(entry->d_name))) {
+            (void)closedir(directory);
+            vantyx_glob_names_free(names);
+            vantyx_rt_error("R0015", "directory entry name is not valid UTF-8",
+                            line, column);
+        }
+        if (names->length == names->capacity) {
+            names->names = (char**)vantyx_glob_grow(
+                names->names, &names->capacity, sizeof(char*));
+        }
+        names->names[names->length++] = (char*)vantyx_strdup(entry->d_name);
+    }
+    (void)closedir(directory);
+    return true;
+}
+
+static void vantyx_glob_push(VantyxGlobResults* results, vantyx_str path,
+                             int line, int column) {
+    if (results->length >= VANTYX_GLOB_MAX_RESULTS) {
+        char message[128];
+        snprintf(message, sizeof message,
+                 "glob produced more than %zu candidate paths",
+                 VANTYX_GLOB_MAX_RESULTS);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    if (results->length == results->capacity) {
+        results->items = (vantyx_str*)vantyx_glob_grow(
+            results->items, &results->capacity, sizeof(vantyx_str));
+    }
+    results->items[results->length++] = path;
+}
+
+static bool vantyx_glob_class_matches(const VantyxGlobToken* token, uint32_t code) {
+    bool hit = false;
+    for (size_t index = 0; index < token->range_count; index++) {
+        if (token->ranges[index].first <= code &&
+            code <= token->ranges[index].last) {
+            hit = true;
+            break;
+        }
+    }
+    return token->negated ? !hit : hit;
+}
+
+static bool vantyx_glob_component_matches(const VantyxGlobComponent* component,
+                                          const char* name) {
+    size_t byte_length = strlen(name);
+    uint32_t* codes = (uint32_t*)vantyx_alloc_array(
+        byte_length + 1, sizeof(uint32_t));
+    size_t code_count = 0;
+    size_t byte = 0;
+    while (byte < byte_length) {
+        int bytes = 0;
+        codes[code_count++] = vantyx_utf8_decode(
+            (const unsigned char*)name + byte, &bytes);
+        byte += (size_t)bytes;
+    }
+    size_t token_index = 0;
+    size_t name_index = 0;
+    size_t star_token = SIZE_MAX;
+    size_t star_name = 0;
+    while (name_index < code_count) {
+        bool advanced = false;
+        if (token_index < component->token_count) {
+            const VantyxGlobToken* token = &component->tokens[token_index];
+            if (token->kind == VANTYX_GLOB_STAR) {
+                token_index++;
+                star_token = token_index;
+                star_name = name_index;
+                advanced = true;
+            } else if (token->kind == VANTYX_GLOB_QUESTION) {
+                token_index++;
+                name_index++;
+                advanced = true;
+            } else if (token->kind == VANTYX_GLOB_CLASS &&
+                       vantyx_glob_class_matches(token, codes[name_index])) {
+                token_index++;
+                name_index++;
+                advanced = true;
+            } else if (token->kind == VANTYX_GLOB_LITERAL &&
+                       token->literal == codes[name_index]) {
+                token_index++;
+                name_index++;
+                advanced = true;
+            }
+        }
+        if (advanced) {
+            continue;
+        }
+        if (star_token == SIZE_MAX) {
+            free(codes);
+            return false;
+        }
+        token_index = star_token;
+        star_name++;
+        name_index = star_name;
+    }
+    while (token_index < component->token_count &&
+           component->tokens[token_index].kind == VANTYX_GLOB_STAR) {
+        token_index++;
+    }
+    bool matched = token_index == component->token_count;
+    free(codes);
+    return matched;
+}
+
+static void vantyx_glob_depth_error(int line, int column) {
+    char message[128];
+    snprintf(message, sizeof message,
+             "glob exceeded maximum depth of %zu", VANTYX_GLOB_MAX_DEPTH);
+    vantyx_rt_error("R0015", message, line, column);
+}
+
+static void vantyx_glob_collect_descendants(vantyx_str base, size_t depth,
+                                            VantyxGlobResults* results,
+                                            int line, int column) {
+    if (depth > VANTYX_GLOB_MAX_DEPTH) {
+        vantyx_glob_depth_error(line, column);
+    }
+    VantyxGlobNames names;
+    memset(&names, 0, sizeof names);
+    if (!vantyx_glob_read_names(base, &names, line, column)) {
+        return;
+    }
+    for (size_t index = 0; index < names.length; index++) {
+        const char* name = names.names[index];
+        if (name[0] == '.') {
+            continue;
+        }
+        vantyx_str child = vantyx_glob_join(base, name);
+        vantyx_glob_push(results, child, line, column);
+        struct stat info;
+        if (lstat(child, &info) != 0) {
+            int error_number = errno;
+            if (error_number == ENOENT || error_number == ENOTDIR) {
+                continue;
+            }
+            char message[512];
+            snprintf(message, sizeof message,
+                     "cannot inspect `%.200s`: %.200s", child,
+                     strerror(error_number));
+            vantyx_glob_names_free(&names);
+            vantyx_rt_error("R0015", message, line, column);
+        }
+        if (S_ISDIR(info.st_mode)) {
+            vantyx_glob_collect_descendants(child, depth + 1, results, line, column);
+        }
+    }
+    vantyx_glob_names_free(&names);
+}
+
+static void vantyx_glob_walk(const VantyxGlobPattern* pattern, size_t index,
+                             vantyx_str base, size_t depth,
+                             VantyxGlobResults* results, int line, int column) {
+    if (index == pattern->component_count) {
+        if (base[0] != '\0') {
+            vantyx_glob_push(results, vantyx_strdup(base), line, column);
+        }
+        return;
+    }
+    const VantyxGlobComponent* component = &pattern->components[index];
+    bool last = index + 1 == pattern->component_count;
+    if (component->double_star) {
+        if (last) {
+            vantyx_glob_collect_descendants(base, depth, results, line, column);
+            return;
+        }
+        vantyx_glob_walk(pattern, index + 1, base, depth, results, line, column);
+        VantyxGlobNames names;
+        memset(&names, 0, sizeof names);
+        if (!vantyx_glob_read_names(base, &names, line, column)) {
+            return;
+        }
+        for (size_t name_index = 0; name_index < names.length; name_index++) {
+            const char* name = names.names[name_index];
+            if (name[0] == '.') {
+                continue;
+            }
+            vantyx_str child = vantyx_glob_join(base, name);
+            struct stat info;
+            if (lstat(child, &info) != 0) {
+                int error_number = errno;
+                if (error_number == ENOENT || error_number == ENOTDIR) {
+                    free((void*)child);
+                    continue;
+                }
+                char message[512];
+                snprintf(message, sizeof message,
+                         "cannot inspect `%.200s`: %.200s", child,
+                         strerror(error_number));
+                vantyx_glob_names_free(&names);
+                free((void*)child);
+                vantyx_rt_error("R0015", message, line, column);
+            }
+            if (S_ISDIR(info.st_mode)) {
+                if (depth + 1 > VANTYX_GLOB_MAX_DEPTH) {
+                    vantyx_glob_names_free(&names);
+                    free((void*)child);
+                    vantyx_glob_depth_error(line, column);
+                }
+                vantyx_glob_walk(pattern, index, child, depth + 1, results,
+                                 line, column);
+            }
+            free((void*)child);
+        }
+        vantyx_glob_names_free(&names);
+        return;
+    }
+    if (component->has_meta) {
+        VantyxGlobNames names;
+        memset(&names, 0, sizeof names);
+        if (!vantyx_glob_read_names(base, &names, line, column)) {
+            return;
+        }
+        for (size_t name_index = 0; name_index < names.length; name_index++) {
+            const char* name = names.names[name_index];
+            if (name[0] == '.' && !component->allows_hidden) {
+                continue;
+            }
+            if (!vantyx_glob_component_matches(component, name)) {
+                continue;
+            }
+            vantyx_str child = vantyx_glob_join(base, name);
+            if (last) {
+                vantyx_glob_push(results, child, line, column);
+            } else {
+                vantyx_glob_walk(pattern, index + 1, child, depth, results,
+                                 line, column);
+                free((void*)child);
+            }
+        }
+        vantyx_glob_names_free(&names);
+        return;
+    }
+    vantyx_str child = vantyx_glob_join(base, component->text);
+    if (last) {
+        struct stat info;
+        if (lstat(child, &info) == 0) {
+            vantyx_glob_push(results, child, line, column);
+        } else {
+            free((void*)child);
+        }
+    } else {
+        vantyx_glob_walk(pattern, index + 1, child, depth, results, line, column);
+        free((void*)child);
+    }
+}
+
+static VantyxList* vantyx_glob(vantyx_str pattern, int line, int column) {
+    VantyxGlobPattern parsed = vantyx_glob_parse(pattern, line, column);
+    VantyxGlobResults results;
+    memset(&results, 0, sizeof results);
+    if (parsed.component_count == 0) {
+        if (parsed.absolute) {
+            struct stat info;
+            if (lstat("/", &info) == 0) {
+                vantyx_glob_push(&results, vantyx_strdup("/"), line, column);
+            }
+        }
+    } else {
+        vantyx_str base = parsed.absolute ? vantyx_strdup("/") : vantyx_strdup("");
+        vantyx_glob_walk(&parsed, 0, base, 0, &results, line, column);
+        free((void*)base);
+    }
+    if (results.length > 1) {
+        qsort(results.items, results.length, sizeof(vantyx_str),
+              vantyx_name_compare);
+    }
+    size_t unique = 0;
+    for (size_t index = 0; index < results.length; index++) {
+        if (unique == 0 ||
+            strcmp(results.items[unique - 1], results.items[index]) != 0) {
+            results.items[unique++] = results.items[index];
+        } else {
+            free((void*)results.items[index]);
+        }
+    }
+    VantyxList* list = vantyx_list_new(sizeof(vantyx_str), &vantyx_desc_str);
+    for (size_t index = 0; index < unique; index++) {
+        vantyx_list_push_raw(list, &results.items[index], line, column);
+    }
+    free(results.items);
+    vantyx_glob_pattern_free(&parsed);
+    return list;
+}
+
+static vantyx_unit vantyx_make_dir(vantyx_str path, int line, int column) {
+    if (mkdir(path, 0777) != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot create directory `%.200s`: %.200s", path, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    return (vantyx_unit)0;
+}
+
+static vantyx_unit vantyx_remove_file(vantyx_str path, int line, int column) {
+    if (unlink(path) != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot remove file `%.200s`: %.200s", path, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    return (vantyx_unit)0;
+}
+
+static vantyx_unit vantyx_remove_dir(vantyx_str path, int line, int column) {
+    if (rmdir(path) != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot remove directory `%.200s`: %.200s", path, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    return (vantyx_unit)0;
+}
+
+static bool vantyx_is_directory(const char* path) {
+    struct stat info;
+    return stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+static _Noreturn void vantyx_directory_error(
+    const char* action, const char* path, int error_number, int line, int column) {
+    char message[512];
+    snprintf(message, sizeof message,
+             "cannot %s `%.200s`: %.200s", action, path, strerror(error_number));
+    vantyx_rt_error("R0015", message, line, column);
+}
+
+/* Creates every missing component. An empty path is a no-op, matching
+   `std::fs::create_dir_all("")`. An existing directory or symlink to one is
+   accepted; a non-directory in the way is an error. */
+static vantyx_unit vantyx_make_dir_all(vantyx_str path, int line, int column) {
+    size_t length = strlen(path);
+    if (length == 0) {
+        return (vantyx_unit)0;
+    }
+    char* buffer = (char*)vantyx_alloc(length + 1);
+    memcpy(buffer, path, length + 1);
+    if (mkdir(buffer, 0777) == 0) {
+        free(buffer);
+        return (vantyx_unit)0;
+    }
+    int first_error = errno;
+    if (first_error != ENOENT) {
+        if (first_error == EEXIST && vantyx_is_directory(buffer)) {
+            free(buffer);
+            return (vantyx_unit)0;
+        }
+        free(buffer);
+        vantyx_directory_error("create directory", path, first_error, line, column);
+    }
+    for (size_t index = 1; index < length; index++) {
+        if (buffer[index] != '/') continue;
+        char saved = buffer[index];
+        buffer[index] = '\0';
+        if (buffer[0] != '\0') {
+            if (mkdir(buffer, 0777) != 0 && errno != EEXIST) {
+                int error_number = errno;
+                free(buffer);
+                vantyx_directory_error(
+                    "create directory", path, error_number, line, column);
+            }
+            if (!vantyx_is_directory(buffer)) {
+                free(buffer);
+                vantyx_directory_error("create directory", path, ENOTDIR, line, column);
+            }
+        }
+        buffer[index] = saved;
+    }
+    if (mkdir(buffer, 0777) != 0 && errno != EEXIST) {
+        int error_number = errno;
+        free(buffer);
+        vantyx_directory_error("create directory", path, error_number, line, column);
+    }
+    if (!vantyx_is_directory(buffer)) {
+        free(buffer);
+        vantyx_directory_error("create directory", path, EEXIST, line, column);
+    }
+    free(buffer);
+    return (vantyx_unit)0;
+}
+
+/* Removes a tree without traversing symbolic links. The displayed path is the
+   caller's original root so messages stay stable across recursion. */
+static void vantyx_remove_tree(
+    const char* path, const char* display, int line, int column) {
+    struct stat info;
+    if (lstat(path, &info) != 0) {
+        vantyx_directory_error("remove directory", display, errno, line, column);
+    }
+    if (S_ISLNK(info.st_mode)) {
+        if (unlink(path) != 0) {
+            vantyx_directory_error("remove directory", display, errno, line, column);
+        }
+        return;
+    }
+    if (!S_ISDIR(info.st_mode)) {
+        vantyx_directory_error("remove directory", display, ENOTDIR, line, column);
+    }
+    DIR* directory = opendir(path);
+    if (directory == NULL) {
+        vantyx_directory_error("remove directory", display, errno, line, column);
+    }
+    for (;;) {
+        errno = 0;
+        struct dirent* entry = readdir(directory);
+        if (entry == NULL) {
+            if (errno != 0) {
+                int error_number = errno;
+                (void)closedir(directory);
+                vantyx_directory_error(
+                    "remove directory", display, error_number, line, column);
+            }
+            break;
+        }
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        size_t base = strlen(path);
+        size_t name = strlen(entry->d_name);
+        char* child = (char*)vantyx_alloc(base + name + 2);
+        memcpy(child, path, base);
+        child[base] = '/';
+        memcpy(child + base + 1, entry->d_name, name + 1);
+        struct stat child_info;
+        if (lstat(child, &child_info) != 0) {
+            int error_number = errno;
+            free(child);
+            (void)closedir(directory);
+            vantyx_directory_error(
+                "remove directory", display, error_number, line, column);
+        }
+        if (S_ISDIR(child_info.st_mode) && !S_ISLNK(child_info.st_mode)) {
+            vantyx_remove_tree(child, display, line, column);
+        } else if (unlink(child) != 0) {
+            int error_number = errno;
+            free(child);
+            (void)closedir(directory);
+            vantyx_directory_error(
+                "remove directory", display, error_number, line, column);
+        }
+        free(child);
+    }
+    if (closedir(directory) != 0) {
+        vantyx_directory_error("remove directory", display, errno, line, column);
+    }
+    if (rmdir(path) != 0) {
+        vantyx_directory_error("remove directory", display, errno, line, column);
+    }
+}
+
+/* Returns 1 for a final `.`/`..` component, 2 for the filesystem root, and 0
+   when the root is acceptable. Kept in sync with `src/fs_safety.rs`. */
+static int vantyx_remove_root_refusal(const char* path, size_t length) {
+    if (length == 0) return 0;
+    size_t trimmed = length;
+    while (trimmed > 0 && path[trimmed - 1] == '/') {
+        trimmed--;
+    }
+    if (trimmed == 0) return 2;
+    size_t start = trimmed;
+    while (start > 0 && path[start - 1] != '/') {
+        start--;
+    }
+    size_t component = trimmed - start;
+    if (component == 1 && path[start] == '.') return 1;
+    if (component == 2 && path[start] == '.' && path[start + 1] == '.') return 1;
+    return 0;
+}
+
+/* Trailing separators are trimmed before the root type check so that a
+   symlink named with a trailing slash is unlinked instead of followed.
+   Destructive roots are refused before any filesystem access. */
+static vantyx_unit vantyx_remove_dir_all(vantyx_str path, int line, int column) {
+    size_t length = strlen(path);
+    int refusal = vantyx_remove_root_refusal(path, length);
+    if (refusal != 0) {
+        const char* reason = refusal == 1
+            ? "refusing to remove a directory whose final component is `.` or `..`"
+            : "refusing to remove the filesystem root";
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot remove directory `%.200s`: %.200s", path, reason);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    while (length > 1 && path[length - 1] == '/') {
+        length--;
+    }
+    char* target = (char*)vantyx_alloc(length + 1);
+    memcpy(target, path, length);
+    target[length] = '\0';
+    vantyx_remove_tree(target, path, line, column);
+    free(target);
+    return (vantyx_unit)0;
+}
+
+static vantyx_unit vantyx_rename(vantyx_str from, vantyx_str to, int line, int column) {
+    if (rename(from, to) != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot rename `%.200s` to `%.200s`: %.200s",
+                 from, to, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    return (vantyx_unit)0;
+}
+
+/* Copy bytes only: permissions, timestamps, links, and other metadata are not
+   preserved. The contents are not validated as UTF-8, so this can copy files
+   that `read_file` would reject. */
+static vantyx_unit vantyx_copy_file(vantyx_str from, vantyx_str to, int line, int column) {
+    struct stat info;
+    if (stat(from, &info) != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy file `%.200s`: %.200s", from, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    if (!S_ISREG(info.st_mode)) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy file `%.200s`: not a regular file", from);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    FILE* source = fopen(from, "rb");
+    if (source == NULL) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy file `%.200s`: %.200s", from, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    FILE* target = fopen(to, "wb");
+    if (target == NULL) {
+        int error_number = errno;
+        (void)fclose(source);
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy file `%.200s` to `%.200s`: %.200s",
+                 from, to, strerror(error_number));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    char buffer[65536];
+    int error_number = 0;
+    for (;;) {
+        size_t count = fread(buffer, 1, sizeof buffer, source);
+        if (count == 0) {
+            if (ferror(source)) error_number = errno;
+            break;
+        }
+        if (fwrite(buffer, 1, count, target) != count) {
+            error_number = errno;
+            break;
+        }
+        if (count < sizeof buffer) {
+            if (ferror(source)) error_number = errno;
+            break;
+        }
+    }
+    if (fflush(target) != 0 && error_number == 0) error_number = errno;
+    if (fclose(source) != 0 && error_number == 0) error_number = errno;
+    if (fclose(target) != 0 && error_number == 0) error_number = errno;
+    if (error_number != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy file `%.200s` to `%.200s`: %.200s",
+                 from, to, strerror(error_number));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    return (vantyx_unit)0;
+}
+
+/* Recursive directory copy (ADR-0034). The root is inspected with `stat`, so
+   an explicit root link is followed; links below it are rejected. Metadata is
+   not preserved, names are copied as raw bytes, and the target must be absent
+   and outside the resolved source tree. */
+#define VANTYX_COPY_MAX_ENTRIES ((size_t)100000)
+#define VANTYX_COPY_MAX_DEPTH ((size_t)128)
+
+static void vantyx_copy_tree(
+    const char* source, const char* target, size_t depth,
+    size_t* entries, int line, int column) {
+    DIR* directory = opendir(source);
+    if (directory == NULL) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot read directory `%.200s`: %.200s",
+                 source, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    for (;;) {
+        errno = 0;
+        struct dirent* entry = readdir(directory);
+        if (entry == NULL) {
+            if (errno != 0) {
+                int error_number = errno;
+                (void)closedir(directory);
+                char message[512];
+                snprintf(message, sizeof message,
+                         "cannot read directory `%.200s`: %.200s",
+                         source, strerror(error_number));
+                vantyx_rt_error("R0015", message, line, column);
+            }
+            break;
+        }
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        *entries += 1;
+        if (*entries > VANTYX_COPY_MAX_ENTRIES) {
+            (void)closedir(directory);
+            char message[512];
+            snprintf(message, sizeof message,
+                     "directory tree exceeds %zu entries",
+                     VANTYX_COPY_MAX_ENTRIES);
+            vantyx_rt_error("R0015", message, line, column);
+        }
+        size_t source_base = strlen(source);
+        size_t target_base = strlen(target);
+        size_t name_length = strlen(entry->d_name);
+        char* child_source = (char*)vantyx_alloc(source_base + name_length + 2);
+        char* child_target = (char*)vantyx_alloc(target_base + name_length + 2);
+        memcpy(child_source, source, source_base);
+        child_source[source_base] = '/';
+        memcpy(child_source + source_base + 1, entry->d_name, name_length + 1);
+        memcpy(child_target, target, target_base);
+        child_target[target_base] = '/';
+        memcpy(child_target + target_base + 1, entry->d_name, name_length + 1);
+        struct stat info;
+        if (lstat(child_source, &info) != 0) {
+            int error_number = errno;
+            char message[512];
+            snprintf(message, sizeof message,
+                     "cannot inspect `%.200s`: %.200s",
+                     child_source, strerror(error_number));
+            free(child_source);
+            free(child_target);
+            (void)closedir(directory);
+            vantyx_rt_error("R0015", message, line, column);
+        }
+        if (S_ISLNK(info.st_mode)) {
+            char message[512];
+            snprintf(message, sizeof message,
+                     "symbolic link `%.200s` is not supported", child_source);
+            free(child_source);
+            free(child_target);
+            (void)closedir(directory);
+            vantyx_rt_error("R0015", message, line, column);
+        } else if (S_ISDIR(info.st_mode)) {
+            if (depth > VANTYX_COPY_MAX_DEPTH) {
+                free(child_source);
+                free(child_target);
+                (void)closedir(directory);
+                char message[512];
+                snprintf(message, sizeof message,
+                         "directory tree exceeds maximum depth %zu",
+                         VANTYX_COPY_MAX_DEPTH);
+                vantyx_rt_error("R0015", message, line, column);
+            }
+            if (mkdir(child_target, 0777) != 0) {
+                int error_number = errno;
+                char message[512];
+                snprintf(message, sizeof message,
+                         "cannot create directory `%.200s`: %.200s",
+                         child_target, strerror(error_number));
+                free(child_source);
+                free(child_target);
+                (void)closedir(directory);
+                vantyx_rt_error("R0015", message, line, column);
+            }
+            vantyx_copy_tree(
+                child_source, child_target, depth + 1, entries, line, column);
+        } else if (S_ISREG(info.st_mode)) {
+            vantyx_copy_file(child_source, child_target, line, column);
+        } else {
+            char message[512];
+            snprintf(message, sizeof message,
+                     "`%.200s` is not a regular file or directory", child_source);
+            free(child_source);
+            free(child_target);
+            (void)closedir(directory);
+            vantyx_rt_error("R0015", message, line, column);
+        }
+        free(child_source);
+        free(child_target);
+    }
+    if (closedir(directory) != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot read directory `%.200s`: %.200s",
+                 source, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+}
+
+static vantyx_unit vantyx_copy_dir_all(vantyx_str from, vantyx_str to, int line, int column) {
+    if (from[0] == '\0') {
+        vantyx_rt_error("R0015", "source path is empty", line, column);
+    }
+    struct stat info;
+    if (stat(from, &info) != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy directory `%.200s`: %.200s",
+                 from, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    if (!S_ISDIR(info.st_mode)) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy directory `%.200s`: not a directory", from);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+
+    size_t length = strlen(to);
+    while (length > 0 && to[length - 1] == '/') {
+        length--;
+    }
+    if (length == 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy directory `%.200s` to `%.200s`: "
+                 "target must name a new directory",
+                 from, to);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    size_t name_start = length;
+    while (name_start > 0 && to[name_start - 1] != '/') {
+        name_start--;
+    }
+    size_t name_length = length - name_start;
+    if (name_length == 0 ||
+        (name_length == 1 && to[name_start] == '.') ||
+        (name_length == 2 && to[name_start] == '.' && to[name_start + 1] == '.')) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy directory `%.200s` to `%.200s`: "
+                 "target must name a new directory",
+                 from, to);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    size_t parent_length = name_start;
+    while (parent_length > 1 && to[parent_length - 1] == '/') {
+        parent_length--;
+    }
+    char* parent;
+    if (parent_length == 0) {
+        parent = (char*)vantyx_alloc(2);
+        parent[0] = '.';
+        parent[1] = '\0';
+    } else {
+        parent = (char*)vantyx_alloc(parent_length + 1);
+        memcpy(parent, to, parent_length);
+        parent[parent_length] = '\0';
+    }
+    char* target = (char*)vantyx_alloc(length + 1);
+    memcpy(target, to, length);
+    target[length] = '\0';
+
+    struct stat target_info;
+    if (lstat(target, &target_info) == 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy directory `%.200s` to `%.200s`: "
+                 "target already exists",
+                 from, to);
+        vantyx_rt_error("R0015", message, line, column);
+    } else if (errno != ENOENT) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot inspect target `%.200s` for directory copy: %.200s",
+                 to, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+
+    char* source_real = realpath(from, NULL);
+    if (source_real == NULL) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot resolve source `%.200s`: %.200s",
+                 from, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    char* parent_real = realpath(parent, NULL);
+    if (parent_real == NULL) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot resolve target parent `%.200s`: %.200s",
+                 parent, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    size_t source_length = strlen(source_real);
+    size_t parent_real_length = strlen(parent_real);
+    char* target_real = (char*)vantyx_alloc(parent_real_length + name_length + 2);
+    memcpy(target_real, parent_real, parent_real_length);
+    size_t target_real_length = parent_real_length;
+    if (target_real_length == 0 || target_real[target_real_length - 1] != '/') {
+        target_real[target_real_length++] = '/';
+    }
+    memcpy(target_real + target_real_length, to + name_start, name_length);
+    target_real[target_real_length + name_length] = '\0';
+    bool inside = false;
+    if (strncmp(source_real, target_real, source_length) == 0) {
+        if (source_real[source_length - 1] == '/') {
+            inside = true;
+        } else if (target_real[source_length] == '/' ||
+                   target_real[source_length] == '\0') {
+            inside = true;
+        }
+    }
+    if (inside) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy directory `%.200s` to `%.200s`: "
+                 "target is inside the source",
+                 from, to);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    free(source_real);
+    free(parent_real);
+    free(target_real);
+    free(parent);
+
+    if (mkdir(target, 0777) != 0) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot create target directory `%.200s`: %.200s",
+                 to, strerror(errno));
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    size_t entries = 0;
+    vantyx_copy_tree(from, target, 1, &entries, line, column);
+    free(target);
+    return (vantyx_unit)0;
 }
 
 static vantyx_str vantyx_value_display(const void* value, const VantyxTypeDesc* desc, int depth);

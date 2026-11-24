@@ -4,7 +4,7 @@
 //! `VANTYX_CC`). If no compiler is available they skip rather than fail.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -44,6 +44,15 @@ fn run_engines(name: &str, source: &str) -> Option<Engines> {
 }
 
 fn run_engines_in(directory: PathBuf, name: &str) -> Option<Engines> {
+    run_engines_in_mode(directory, name, false)
+}
+
+fn run_engines_with_cwd(name: &str, source: &str) -> Option<Engines> {
+    let directory = workspace(name, source);
+    run_engines_in_mode(directory, name, true)
+}
+
+fn run_engines_in_mode(directory: PathBuf, name: &str, run_in_directory: bool) -> Option<Engines> {
     if !compiler_available() {
         eprintln!("skipping native test `{name}`: no C compiler available");
         return None;
@@ -51,11 +60,12 @@ fn run_engines_in(directory: PathBuf, name: &str) -> Option<Engines> {
     let source_path = directory.join("main.vtx");
     let executable = directory.join("program");
 
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
-        .arg("run")
-        .arg(&source_path)
-        .output()
-        .expect("run interpreter");
+    let mut interpreter_command = Command::new(env!("CARGO_BIN_EXE_vantyx"));
+    interpreter_command.arg("run").arg(&source_path);
+    if run_in_directory {
+        interpreter_command.current_dir(&directory);
+    }
+    let interpreter = interpreter_command.output().expect("run interpreter");
 
     let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
         .arg("build")
@@ -66,11 +76,11 @@ fn run_engines_in(directory: PathBuf, name: &str) -> Option<Engines> {
         .expect("run native build");
 
     let native = if build.status.success() {
-        Some(
-            Command::new(&executable)
-                .output()
-                .expect("run native executable"),
-        )
+        let mut native_command = Command::new(&executable);
+        if run_in_directory {
+            native_command.current_dir(&directory);
+        }
+        Some(native_command.output().expect("run native executable"))
     } else {
         None
     };
@@ -1777,4 +1787,2027 @@ fn imported_functions_structs_and_enums_match() {
         String::from_utf8_lossy(&native.stdout)
     );
     assert_eq!(String::from_utf8_lossy(&native.stdout), "14\nnumber 7\n");
+}
+
+#[test]
+fn file_io_matches() {
+    let source = "fn main():\n\
+         \x20   write_file(\"note.txt\", \"discarded\")\n\
+         \x20   write_file(\"note.txt\", \"héllo\")\n\
+         \x20   append_file(\"note.txt\", \" 🌍\")\n\
+         \x20   print(read_file(\"note.txt\"))\n\
+         \x20   print(file_exists(\"note.txt\"))\n\
+         \x20   print(file_exists(\"missing.txt\"))\n\
+         \x20   print(file_exists(\".\"))\n";
+    let Some(engines) = run_engines_with_cwd("file-io", source) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), native.status.code());
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "héllo 🌍\ntrue\nfalse\ntrue\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+    assert_eq!(
+        fs::read_to_string(engines.executable.parent().expect("directory").join("note.txt"))
+            .expect("read note"),
+        "héllo 🌍"
+    );
+}
+
+#[test]
+fn file_io_evaluates_arguments_left_to_right() {
+    let source = "fn path_for() -> Str:\n\
+         \x20   print(\"path\")\n\
+         \x20   return \"order.txt\"\n\n\
+         fn contents_for() -> Str:\n\
+         \x20   print(\"text\")\n\
+         \x20   return \"x\"\n\n\
+         fn main():\n\
+         \x20   write_file(path_for(), contents_for())\n\
+         \x20   print(read_file(\"order.txt\"))\n";
+    let Some(engines) = run_engines_with_cwd("file-io-order", source) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), native.status.code());
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "path\ntext\nx\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+}
+
+#[test]
+fn file_io_size_limit_matches() {
+    let source = "fn main():\n    print(read_file(\"huge.bin\"))\n";
+    let directory = workspace("file-io-size-limit", source);
+    let file = fs::File::create(directory.join("huge.bin")).expect("create huge file");
+    file.set_len(64 * 1024 * 1024 + 1).expect("extend huge file");
+    drop(file);
+    let Some(engines) = run_engines_in_mode(directory, "file-io-size-limit", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+    for stderr in [&engines.interpreter.stderr, &native.stderr] {
+        let stderr = String::from_utf8_lossy(stderr);
+        assert!(stderr.contains("error[R0015]"), "{stderr}");
+        assert!(stderr.contains("64 MiB"), "{stderr}");
+    }
+}
+
+#[test]
+fn file_io_any_paths_are_rejected_with_e0401() {
+    for (label, source) in [
+        (
+            "file-io-any-read",
+            "fn show(path: Any):\n\
+             \x20   print(read_file(path))\n\n\
+             fn main():\n\
+             \x20   show(\"data.txt\")\n",
+        ),
+        (
+            "file-io-any-write",
+            "fn save(path: Any):\n\
+             \x20   write_file(path, \"x\")\n\n\
+             fn main():\n\
+             \x20   save(\"data.txt\")\n",
+        ),
+    ] {
+        let directory = workspace(label, source);
+        fs::write(directory.join("data.txt"), "data").expect("write data");
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert_eq!(engines.interpreter.status.code(), Some(0));
+        assert_eq!(engines.build.status.code(), Some(1));
+        let stderr = String::from_utf8_lossy(&engines.build.stderr);
+        assert!(stderr.contains("error[E0401]"), "{stderr}");
+        assert!(stderr.contains("Any"), "{stderr}");
+    }
+}
+
+#[test]
+fn file_io_read_errors_match() {
+    for (label, bytes) in [
+        ("file-io-invalid-utf8", vec![0xff, 0xfe]),
+        ("file-io-overlong", vec![0xc0, 0xaf]),
+        ("file-io-surrogate", vec![0xed, 0xa0, 0x80]),
+        ("file-io-too-large", vec![0xf4, 0x90, 0x80, 0x80]),
+        ("file-io-truncated", vec![0xe2, 0x82]),
+        ("file-io-nul", b"a\0b".to_vec()),
+    ] {
+        let source = "fn main():\n    print(read_file(\"data.bin\"))\n";
+        let directory = workspace(label, source);
+        fs::write(directory.join("data.bin"), &bytes).expect("write data file");
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "native build failed:\n{}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let native = engines.native.expect("native output");
+        assert_eq!(engines.interpreter.status.code(), Some(2));
+        assert_eq!(native.status.code(), Some(2));
+        assert_eq!(
+            String::from_utf8_lossy(&engines.interpreter.stdout),
+            String::from_utf8_lossy(&native.stdout)
+        );
+        assert!(
+            String::from_utf8_lossy(&native.stderr).contains("error[R0015]"),
+            "{}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+    }
+}
+
+#[test]
+fn file_io_write_and_missing_read_errors_match() {
+    let source = "fn main():\n\
+         \x20   write_file(\"blocked\", \"x\")\n";
+    let directory = workspace("file-io-write-error", source);
+    fs::create_dir(directory.join("blocked")).expect("create blocked directory");
+    let Some(engines) = run_engines_in_mode(directory, "file-io-write-error", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&native.stderr).contains("error[R0015]"),
+        "{}",
+        String::from_utf8_lossy(&native.stderr)
+    );
+
+    let missing_source = "fn main():\n    print(read_file(\"missing.bin\"))\n";
+    let directory = workspace("file-io-missing-read", missing_source);
+    let Some(engines) = run_engines_in_mode(directory, "file-io-missing-read", true) else {
+        return;
+    };
+    assert!(engines.build.status.success());
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+}
+
+#[test]
+fn directory_builtins_match() {
+    let source = "fn main():\n\
+                  \x20   make_dir(\"work\")\n\
+                  \x20   make_dir(\"work/a\")\n\
+                  \x20   make_dir(\"work/b\")\n\
+                  \x20   write_file(\"work/a/note.txt\", \"hello\")\n\
+                  \x20   print(list_dir(\"work\"))\n\
+                  \x20   print(list_dir(\"work/a\"))\n\
+                  \x20   print(file_exists(\"work/a/note.txt\"))\n\
+                  \x20   remove_file(\"work/a/note.txt\")\n\
+                  \x20   remove_dir(\"work/a\")\n\
+                  \x20   remove_dir(\"work/b\")\n\
+                  \x20   remove_dir(\"work\")\n\
+                  \x20   print(file_exists(\"work\"))\n";
+    let directory = workspace("directory-builtins", source);
+    let Some(engines) = run_engines_in_mode(directory, "directory-builtins", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    let native = engines.native.expect("native output");
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "[\"a\", \"b\"]\n[\"note.txt\"]\ntrue\nfalse\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn directory_errors_match() {
+    for (label, setup, source) in [
+        (
+            "directory-list-missing",
+            None,
+            "fn main():\n    print(list_dir(\"missing\"))\n",
+        ),
+        (
+            "directory-make-existing",
+            None,
+            "fn main():\n    make_dir(\".\")\n",
+        ),
+        (
+            "directory-remove-file-dir",
+            Some(("sub", true)),
+            "fn main():\n    remove_file(\"sub\")\n",
+        ),
+        (
+            "directory-remove-nonempty",
+            Some(("nonempty/child.txt", false)),
+            "fn main():\n    remove_dir(\"nonempty\")\n",
+        ),
+        (
+            "directory-list-file",
+            Some(("plain.txt", false)),
+            "fn main():\n    print(list_dir(\"plain.txt\"))\n",
+        ),
+    ] {
+        let directory = workspace(label, source);
+        if let Some((path, is_dir)) = setup {
+            let path = directory.join(path);
+            if is_dir {
+                fs::create_dir_all(&path).expect("create setup directory");
+            } else {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).expect("create setup parent");
+                }
+                fs::write(&path, "x").expect("write setup file");
+            }
+        }
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "{label} build failed: {}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let native = engines.native.expect("native output");
+        assert_eq!(
+            engines.interpreter.status.code(),
+            Some(2),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert_eq!(
+            native.status.code(),
+            Some(2),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&engines.interpreter.stderr).contains("error[R0015]"),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&native.stderr).contains("error[R0015]"),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&engines.interpreter.stdout),
+            String::from_utf8_lossy(&native.stdout),
+            "{label}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_listing_rejects_non_utf8_names_in_both_engines() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let source = "fn main():\n    print(list_dir(\".\"))\n";
+    let directory = workspace("directory-invalid-name", source);
+    fs::create_dir(directory.join(OsStr::from_bytes(b"bad-\xff"))).expect("create invalid name");
+    let Some(engines) = run_engines_in_mode(directory, "directory-invalid-name", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    for stderr in [&engines.interpreter.stderr, &native.stderr] {
+        let stderr = String::from_utf8_lossy(stderr);
+        assert!(stderr.contains("error[R0015]"), "{stderr}");
+        assert!(stderr.contains("not valid UTF-8"), "{stderr}");
+    }
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+}
+
+#[test]
+fn recursive_directory_builtins_match() {
+    let source = "fn main():\n\
+                  \x20   make_dir_all(\"work/a/b/c\")\n\
+                  \x20   make_dir_all(\"work/a/b\")\n\
+                  \x20   make_dir_all(\"\")\n\
+                  \x20   write_file(\"work/a/b/c/note.txt\", \"hello\")\n\
+                  \x20   print(list_dir(\"work/a/b/c\"))\n\
+                  \x20   print(list_dir(\"work/a/b\"))\n\
+                  \x20   remove_dir_all(\"work/a/b/\")\n\
+                  \x20   print(file_exists(\"work/a/b\"))\n\
+                  \x20   remove_dir_all(\"work\")\n\
+                  \x20   print(file_exists(\"work\"))\n";
+    let directory = workspace("recursive-directory-builtins", source);
+    let Some(engines) = run_engines_in_mode(directory, "recursive-directory-builtins", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "[\"note.txt\"]\n[\"c\"]\nfalse\nfalse\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn recursive_directory_errors_match() {
+    for (label, setup, source) in [
+        (
+            "recursive-make-through-file",
+            Some(("plain.txt", false)),
+            "fn main():\n    make_dir_all(\"plain.txt/sub\")\n",
+        ),
+        (
+            "recursive-make-final-file",
+            Some(("plain.txt", false)),
+            "fn main():\n    make_dir_all(\"plain.txt\")\n",
+        ),
+        (
+            "recursive-remove-file",
+            Some(("plain.txt", false)),
+            "fn main():\n    remove_dir_all(\"plain.txt\")\n",
+        ),
+        (
+            "recursive-remove-missing",
+            None,
+            "fn main():\n    remove_dir_all(\"missing\")\n",
+        ),
+        (
+            "recursive-remove-empty",
+            None,
+            "fn main():\n    remove_dir_all(\"\")\n",
+        ),
+    ] {
+        let directory = workspace(label, source);
+        if let Some((path, is_dir)) = setup {
+            let path = directory.join(path);
+            if is_dir {
+                fs::create_dir_all(&path).expect("create setup directory");
+            } else {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).expect("create setup parent");
+                }
+                fs::write(&path, "x").expect("write setup file");
+            }
+        }
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "{label} build failed: {}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let native = engines.native.expect("native output");
+        assert_eq!(
+            engines.interpreter.status.code(),
+            Some(2),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert_eq!(
+            native.status.code(),
+            Some(2),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&engines.interpreter.stderr).contains("error[R0015]"),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&native.stderr).contains("error[R0015]"),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&engines.interpreter.stdout),
+            String::from_utf8_lossy(&native.stdout),
+            "{label}"
+        );
+    }
+}
+
+#[test]
+fn recursive_directory_any_paths_are_rejected_with_e0401() {
+    for (label, source) in [
+        (
+            "recursive-make-any",
+            "fn run(path: Any):\n\
+             \x20   make_dir_all(path)\n\n\
+             fn main():\n\
+             \x20   run(\"made\")\n",
+        ),
+        (
+            "recursive-remove-any",
+            "fn run(path: Any):\n\
+             \x20   remove_dir_all(path)\n\n\
+             fn main():\n\
+             \x20   make_dir_all(\"made\")\n\
+             \x20   run(\"made\")\n",
+        ),
+    ] {
+        let directory = workspace(label, source);
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert_eq!(engines.interpreter.status.code(), Some(0));
+        assert_eq!(engines.build.status.code(), Some(1));
+        let stderr = String::from_utf8_lossy(&engines.build.stderr);
+        assert!(stderr.contains("error[E0401]"), "{stderr}");
+        assert!(stderr.contains("Any"), "{stderr}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_directory_removal_does_not_follow_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    fn setup(label: &str) -> PathBuf {
+        let directory = workspace(
+            label,
+            "fn main():\n\
+             \x20   make_dir_all(\"make-link\")\n\
+             \x20   remove_dir_all(\"tree\")\n\
+             \x20   print(file_exists(\"tree\"))\n\
+             \x20   print(file_exists(\"target/inner/data.txt\"))\n\
+             \x20   remove_dir_all(\"root-link/\")\n\
+             \x20   print(file_exists(\"root-link\"))\n\
+             \x20   print(file_exists(\"target/inner/data.txt\"))\n",
+        );
+        let target = directory.join("target");
+        fs::create_dir_all(target.join("inner")).expect("create symlink target");
+        fs::write(target.join("inner/data.txt"), "keep").expect("write target data");
+        fs::create_dir_all(directory.join("tree/sub")).expect("create tree");
+        symlink(&target, directory.join("tree/sub/link")).expect("create inner symlink");
+        symlink(&target, directory.join("root-link")).expect("create root symlink");
+        symlink(&target, directory.join("make-link")).expect("create make symlink");
+        directory
+    }
+
+    if !compiler_available() {
+        eprintln!("skipping native test `recursive-directory-symlinks`: no C compiler");
+        return;
+    }
+
+    let interpreter_directory = setup("recursive-symlinks-interpreter");
+    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("run")
+        .arg(interpreter_directory.join("main.vtx"))
+        .current_dir(&interpreter_directory)
+        .output()
+        .expect("run interpreter");
+
+    let native_directory = setup("recursive-symlinks-native");
+    let executable = native_directory.join("program");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("build")
+        .arg(native_directory.join("main.vtx"))
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("run native build");
+    assert!(
+        build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let native = Command::new(&executable)
+        .current_dir(&native_directory)
+        .output()
+        .expect("run native executable");
+
+    let expected = "false\ntrue\nfalse\ntrue\n";
+    assert_eq!(interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&interpreter.stdout), expected);
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+    for directory in [&interpreter_directory, &native_directory] {
+        assert!(!directory.join("tree").exists());
+        assert!(directory.join("root-link").symlink_metadata().is_err());
+        assert_eq!(
+            fs::read_to_string(directory.join("target/inner/data.txt"))
+                .expect("read target data"),
+            "keep"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_removal_refuses_destructive_roots_in_both_engines() {
+    for (label, path) in [
+        ("recursive-root-dot", "."),
+        ("recursive-root-dot-slash", "./"),
+        ("recursive-root-dot-dot", ".."),
+        ("recursive-root-tree-dot", "tree/."),
+        ("recursive-root-tree-dot-dot", "tree/.."),
+        ("recursive-root-filesystem", "/"),
+        ("recursive-root-filesystem-double", "//"),
+    ] {
+        let source = format!("fn main():\n    remove_dir_all(\"{path}\")\n");
+        let directory = workspace(label, &source);
+        fs::write(directory.join("sentinel.txt"), "keep").expect("write sentinel");
+        fs::create_dir_all(directory.join("tree/inner")).expect("create tree");
+        fs::write(directory.join("tree/inner/data.txt"), "keep").expect("write tree data");
+
+        let Some(engines) = run_engines_in_mode(directory.clone(), label, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "{label}: build failed: {}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let native = engines.native.expect("native output after successful build");
+        assert_eq!(engines.interpreter.status.code(), Some(2), "{label}");
+        assert_eq!(native.status.code(), Some(2), "{label}");
+        for (engine, stderr) in [
+            ("interpreter", &engines.interpreter.stderr),
+            ("native", &native.stderr),
+        ] {
+            let stderr = String::from_utf8_lossy(stderr);
+            assert!(stderr.contains("error[R0015]"), "{label}/{engine}: {stderr}");
+            assert!(
+                stderr.contains("refusing to remove"),
+                "{label}/{engine}: {stderr}"
+            );
+        }
+        assert!(
+            directory.join("sentinel.txt").exists(),
+            "{label}: sentinel was deleted"
+        );
+        assert!(
+            directory.join("tree/inner/data.txt").exists(),
+            "{label}: tree was deleted"
+        );
+        assert!(
+            directory.join("main.vtx").exists(),
+            "{label}: source was deleted"
+        );
+        assert!(
+            engines.executable.exists(),
+            "{label}: native executable was deleted"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_removal_allows_a_leading_dot_prefix_in_both_engines() {
+    let source = "fn main():\n\
+                  \x20   make_dir_all(\"tree/inner\")\n\
+                  \x20   write_file(\"tree/inner/data.txt\", \"keep\")\n\
+                  \x20   remove_dir_all(\"./tree\")\n\
+                  \x20   print(file_exists(\"tree\"))\n\
+                  \x20   print(file_exists(\"main.vtx\"))\n";
+    let directory = workspace("recursive-root-leading-dot", source);
+
+    let Some(engines) = run_engines_in_mode(directory.clone(), "recursive-root-leading-dot", true)
+    else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output after successful build");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "false\ntrue\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), "false\ntrue\n");
+    assert!(!directory.join("tree").exists());
+    assert!(directory.join("main.vtx").exists());
+}
+
+#[test]
+fn file_metadata_builtins_match() {
+    let source = "fn main():\n\
+                  \x20   write_file(\"data.txt\", \"hello\")\n\
+                  \x20   make_dir(\"folder\")\n\
+                  \x20   print(file_size(\"data.txt\"))\n\
+                  \x20   print(is_file(\"data.txt\"))\n\
+                  \x20   print(is_file(\"folder\"))\n\
+                  \x20   print(is_dir(\"folder\"))\n\
+                  \x20   print(is_dir(\"data.txt\"))\n\
+                  \x20   print(is_symlink(\"data.txt\"))\n\
+                  \x20   print(is_file(\"missing\"))\n\
+                  \x20   print(is_dir(\"missing\"))\n\
+                  \x20   print(is_symlink(\"missing\"))\n\
+                  \x20   remove_file(\"data.txt\")\n\
+                  \x20   remove_dir(\"folder\")\n";
+    let directory = workspace("file-metadata-builtins", source);
+    let Some(engines) = run_engines_in_mode(directory, "file-metadata-builtins", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "5\ntrue\nfalse\ntrue\nfalse\nfalse\nfalse\nfalse\nfalse\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn file_metadata_errors_match() {
+    for (label, setup, source) in [
+        (
+            "metadata-error-directory",
+            true,
+            "fn main():\n    print(file_size(\"folder\"))\n",
+        ),
+        (
+            "metadata-error-missing",
+            false,
+            "fn main():\n    print(file_size(\"missing\"))\n",
+        ),
+        (
+            "metadata-error-empty",
+            false,
+            "fn main():\n    print(file_size(\"\"))\n",
+        ),
+    ] {
+        let directory = workspace(label, source);
+        if setup {
+            fs::create_dir(directory.join("folder")).expect("create folder");
+        }
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "{label} build failed: {}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let native = engines.native.expect("native output");
+        assert_eq!(
+            engines.interpreter.status.code(),
+            Some(2),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert_eq!(
+            native.status.code(),
+            Some(2),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        for stderr in [&engines.interpreter.stderr, &native.stderr] {
+            assert!(
+                String::from_utf8_lossy(stderr).contains("error[R0015]"),
+                "{label}: {}",
+                String::from_utf8_lossy(stderr)
+            );
+        }
+    }
+}
+
+#[test]
+fn file_metadata_any_paths_are_rejected_with_e0401() {
+    for (label, builtin) in [
+        ("metadata-any-file-size", "file_size"),
+        ("metadata-any-is-file", "is_file"),
+        ("metadata-any-is-dir", "is_dir"),
+        ("metadata-any-is-symlink", "is_symlink"),
+    ] {
+        let source = format!(
+            "fn run(path: Any):\n\
+             \x20   print({builtin}(path))\n\n\
+             fn main():\n\
+             \x20   run(\"data.txt\")\n"
+        );
+        let directory = workspace(label, &source);
+        fs::write(directory.join("data.txt"), "x").expect("write metadata input");
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert_eq!(engines.interpreter.status.code(), Some(0));
+        assert_eq!(engines.build.status.code(), Some(1));
+        let stderr = String::from_utf8_lossy(&engines.build.stderr);
+        assert!(stderr.contains("error[E0401]"), "{stderr}");
+        assert!(stderr.contains("Any"), "{stderr}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn file_metadata_symlink_rules_match() {
+    use std::os::unix::fs::symlink;
+
+    fn setup(label: &str) -> PathBuf {
+        let directory = workspace(
+            label,
+            "fn main():\n\
+             \x20   print(file_size(\"link.txt\"))\n\
+             \x20   print(is_file(\"link.txt\"))\n\
+             \x20   print(is_symlink(\"link.txt\"))\n\
+             \x20   print(is_dir(\"link-dir\"))\n\
+             \x20   print(is_symlink(\"link-dir\"))\n\
+             \x20   print(is_file(\"dangling\"))\n\
+             \x20   print(is_dir(\"dangling\"))\n\
+             \x20   print(is_symlink(\"dangling\"))\n",
+        );
+        fs::write(directory.join("target.txt"), "hello").expect("write target");
+        fs::create_dir(directory.join("target-dir")).expect("create target dir");
+        symlink("target.txt", directory.join("link.txt")).expect("create file link");
+        symlink("target-dir", directory.join("link-dir")).expect("create dir link");
+        symlink("absent", directory.join("dangling")).expect("create dangling link");
+        directory
+    }
+
+    if !compiler_available() {
+        eprintln!("skipping native test `file-metadata-symlinks`: no C compiler");
+        return;
+    }
+
+    let interpreter_directory = setup("metadata-symlinks-interpreter");
+    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("run")
+        .arg(interpreter_directory.join("main.vtx"))
+        .current_dir(&interpreter_directory)
+        .output()
+        .expect("run interpreter");
+
+    let native_directory = setup("metadata-symlinks-native");
+    let executable = native_directory.join("program");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("build")
+        .arg(native_directory.join("main.vtx"))
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("run native build");
+    assert!(
+        build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let native = Command::new(&executable)
+        .current_dir(&native_directory)
+        .output()
+        .expect("run native executable");
+
+    let expected = "5\ntrue\ntrue\ntrue\ntrue\nfalse\nfalse\ntrue\n";
+    assert_eq!(interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&interpreter.stdout), expected);
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn text_builtins_match() {
+    let source = "fn main():\n\
+                  \x20   print(split(\"a,b,,c,\", \",\"))\n\
+                  \x20   print(split(\"aéb\", \"\"))\n\
+                  \x20   print(join([\"a\", \"b\", \"c\"], \"-\"))\n\
+                  \x20   let empty: List[Str] = []\n\
+                  \x20   print(join(empty, \",\"))\n\
+                  \x20   print(trim(\" \\t\\n\u{a0}héllo\u{3000} \"))\n\
+                  \x20   print(len(trim(\"\u{200b}x\u{200b}\")))\n\
+                  \x20   print(len(trim(\"\u{1c}z\u{1f}\")))\n\
+                  \x20   print(starts_with(\"hello\", \"he\"))\n\
+                  \x20   print(starts_with(\"hello\", \"lo\"))\n\
+                  \x20   print(ends_with(\"hello\", \"lo\"))\n\
+                  \x20   print(ends_with(\"hello\", \"he\"))\n\
+                  \x20   print(replace(\"one two two\", \"two\", \"2\"))\n\
+                  \x20   print(replace(\"aaa\", \"aa\", \"b\"))\n\
+                  \x20   print(replace(\"abc\", \"x\", \"\"))\n\
+                  \x20   print(split(\"\", \"\"))\n\
+                  \x20   print(split(\"\", \",\"))\n\
+                  \x20   print(starts_with(\"\", \"\"))\n\
+                  \x20   print(ends_with(\"\", \"\"))\n";
+    let directory = workspace("text-builtins", source);
+    let Some(engines) = run_engines_in_mode(directory, "text-builtins", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "[\"a\", \"b\", \"\", \"c\", \"\"]\n\
+                    [\"a\", \"é\", \"b\"]\n\
+                    a-b-c\n\
+                    \n\
+                    héllo\n\
+                    3\n\
+                    3\n\
+                    true\n\
+                    false\n\
+                    true\n\
+                    false\n\
+                    one 2 2\n\
+                    ba\n\
+                    abc\n\
+                    []\n\
+                    [\"\"]\n\
+                    true\n\
+                    true\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn text_replace_empty_pattern_matches() {
+    let source = "fn main():\n    print(replace(\"abc\", \"\", \"x\"))\n";
+    let directory = workspace("text-empty-pattern", source);
+    let Some(engines) = run_engines_in_mode(directory, "text-empty-pattern", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    for stderr in [&engines.interpreter.stderr, &native.stderr] {
+        let stderr = String::from_utf8_lossy(stderr);
+        assert!(stderr.contains("error[R0016]"), "{stderr}");
+        assert!(stderr.contains("non-empty pattern"), "{stderr}");
+    }
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+}
+
+#[test]
+fn text_builtins_evaluate_arguments_left_to_right() {
+    let source = "fn note(label: Str) -> Str:\n\
+                  \x20   print(label)\n\
+                  \x20   return label\n\
+                  \n\
+                  fn main():\n\
+                  \x20   print(split(note(\"a-b\"), note(\"-\")))\n\
+                  \x20   print(join([note(\"x\"), note(\"y\")], note(\":\")))\n\
+                  \x20   print(replace(note(\"a-b\"), note(\"a\"), note(\"c\")))\n";
+    let directory = workspace("text-argument-order", source);
+    let Some(engines) = run_engines_in_mode(directory, "text-argument-order", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "a-b\n-\n[\"a\", \"b\"]\nx\ny\n:\nx:y\na-b\na\nc\nc-b\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn path_builtins_match() {
+    let source = "fn main():\n\
+                  \x20   print(path_join(\"a\", \"b\"))\n\
+                  \x20   print(path_join(\"a/\", \"b\"))\n\
+                  \x20   print(path_join(\"a\", \"/b\"))\n\
+                  \x20   print(path_join(\"\", \"b\"))\n\
+                  \x20   print(path_join(\"a\", \"\"))\n\
+                  \x20   print(path_join(\"a//\", \"b\"))\n\
+                  \x20   print(path_join(\"/\", \"a\"))\n\
+                  \x20   print(path_join(\"\", \"\"))\n\
+                  \x20   print(path_join(\"naïve\", \"文件.txt\"))\n\
+                  \x20   print(path_parent(\"a/b/c\"))\n\
+                  \x20   print(path_parent(\"a\"))\n\
+                  \x20   print(path_parent(\"/a\"))\n\
+                  \x20   print(path_parent(\"/\"))\n\
+                  \x20   print(path_parent(\"a//b\"))\n\
+                  \x20   print(path_parent(\"a/b/\"))\n\
+                  \x20   print(path_parent(\"\"))\n\
+                  \x20   print(path_parent(\"a/\"))\n\
+                  \x20   print(path_parent(\"//\"))\n\
+                  \x20   print(path_name(\"a/b/\"))\n\
+                  \x20   print(path_name(\"/\"))\n\
+                  \x20   print(path_name(\"\"))\n\
+                  \x20   print(path_name(\"a//b//\"))\n\
+                  \x20   print(path_name(\"naïve/文件.txt\"))\n\
+                  \x20   print(path_stem(\"a/b.tar.gz\"))\n\
+                  \x20   print(path_stem(\".bashrc\"))\n\
+                  \x20   print(path_stem(\"a.\"))\n\
+                  \x20   print(path_stem(\"archive\"))\n\
+                  \x20   print(path_stem(\"..\"))\n\
+                  \x20   print(path_stem(\".hidden.txt\"))\n\
+                  \x20   print(path_stem(\"a..b\"))\n\
+                  \x20   print(path_extension(\"a/b.tar.gz\"))\n\
+                  \x20   print(path_extension(\".bashrc\"))\n\
+                  \x20   print(path_extension(\"a.\"))\n\
+                  \x20   print(path_extension(\"archive\"))\n\
+                  \x20   print(path_extension(\"archive.tar\"))\n\
+                  \x20   print(path_extension(\".hidden.txt\"))\n\
+                  \x20   print(path_extension(\"a..b\"))\n\
+                  \x20   print(path_is_absolute(\"/a\"))\n\
+                  \x20   print(path_is_absolute(\"a\"))\n\
+                  \x20   print(path_is_absolute(\"\"))\n\
+                  \x20   print(path_is_absolute(\"//\"))\n\
+                  \x20   print(path_is_absolute(\"./a\"))\n";
+    let directory = workspace("path-builtins", source);
+    let Some(engines) = run_engines_in_mode(directory, "path-builtins", false) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "a/b\na/b\n/b\nb\na\na//b\n/a\n\nnaïve/文件.txt\n\
+                    a/b\n.\n/\n/\na\na\n.\n.\n/\nb\n\n\nb\n文件.txt\n\
+                    b.tar\n.bashrc\na.\narchive\n..\n.hidden\na.\n\
+                    gz\n\n\n\ntar\ntxt\nb\n\
+                    true\nfalse\nfalse\ntrue\nfalse\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn path_builtins_evaluate_arguments_left_to_right() {
+    let source = "fn note(label: Str) -> Str:\n\
+                  \x20   print(label)\n\
+                  \x20   return label\n\
+                  \n\
+                  fn main():\n\
+                  \x20   print(path_join(note(\"a\"), note(\"b\")))\n\
+                  \x20   print(path_parent(note(\"a/b\")))\n";
+    let directory = workspace("path-argument-order", source);
+    let Some(engines) = run_engines_in_mode(directory, "path-argument-order", false) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "a\nb\na/b\na/b\na\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn path_builtins_any_paths_are_rejected_with_e0401() {
+    for (label, source) in [
+        (
+            "path-any-join",
+            "fn join_it(base: Any, child: Any) -> Str:\n\
+             \x20   return path_join(base, child)\n\n\
+             fn main():\n\
+             \x20   print(join_it(\"a\", \"b\"))\n",
+        ),
+        (
+            "path-any-parent",
+            "fn parent_it(path: Any) -> Str:\n\
+             \x20   return path_parent(path)\n\n\
+             fn main():\n\
+             \x20   print(parent_it(\"a/b\"))\n",
+        ),
+        (
+            "path-any-name",
+            "fn name_it(path: Any) -> Str:\n\
+             \x20   return path_name(path)\n\n\
+             fn main():\n\
+             \x20   print(name_it(\"a/b\"))\n",
+        ),
+        (
+            "path-any-stem",
+            "fn stem_it(path: Any) -> Str:\n\
+             \x20   return path_stem(path)\n\n\
+             fn main():\n\
+             \x20   print(stem_it(\"a/b.txt\"))\n",
+        ),
+        (
+            "path-any-extension",
+            "fn extension_it(path: Any) -> Str:\n\
+             \x20   return path_extension(path)\n\n\
+             fn main():\n\
+             \x20   print(extension_it(\"a/b.txt\"))\n",
+        ),
+        (
+            "path-any-absolute",
+            "fn absolute_it(path: Any) -> Bool:\n\
+             \x20   return path_is_absolute(path)\n\n\
+             fn main():\n\
+             \x20   print(absolute_it(\"/a\"))\n",
+        ),
+    ] {
+        let directory = workspace(label, source);
+        let Some(engines) = run_engines_in_mode(directory, label, false) else {
+            return;
+        };
+        assert_eq!(engines.interpreter.status.code(), Some(0));
+        assert_eq!(engines.build.status.code(), Some(1));
+        let stderr = String::from_utf8_lossy(&engines.build.stderr);
+        assert!(stderr.contains("error[E0401]"), "{stderr}");
+        assert!(stderr.contains("Any"), "{stderr}");
+    }
+}
+
+#[test]
+fn rename_and_copy_match() {
+    let source = "fn main():\n\
+                  \x20   write_file(\"source.txt\", \"hello\")\n\
+                  \x20   rename(\"source.txt\", \"renamed.txt\")\n\
+                  \x20   print(file_exists(\"source.txt\"))\n\
+                  \x20   print(read_file(\"renamed.txt\"))\n\
+                  \x20   copy_file(\"renamed.txt\", \"copy.txt\")\n\
+                  \x20   print(read_file(\"copy.txt\"))\n\
+                  \x20   write_file(\"copy.txt\", \"stale\")\n\
+                  \x20   copy_file(\"renamed.txt\", \"copy.txt\")\n\
+                  \x20   print(read_file(\"copy.txt\"))\n\
+                  \x20   make_dir(\"folder\")\n\
+                  \x20   copy_file(\"renamed.txt\", \"folder/inner.txt\")\n\
+                  \x20   print(list_dir(\"folder\"))\n\
+                  \x20   rename(\"folder\", \"moved\")\n\
+                  \x20   print(file_exists(\"folder\"))\n\
+                  \x20   print(list_dir(\"moved\"))\n\
+                  \x20   remove_file(\"moved/inner.txt\")\n\
+                  \x20   remove_dir(\"moved\")\n\
+                  \x20   remove_file(\"renamed.txt\")\n\
+                  \x20   remove_file(\"copy.txt\")\n\
+                  \x20   print(file_exists(\"moved\"))\n";
+    let directory = workspace("rename-copy", source);
+    let Some(engines) = run_engines_in_mode(directory, "rename-copy", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "false\nhello\nhello\nhello\n[\"inner.txt\"]\nfalse\n[\"inner.txt\"]\nfalse\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+    let directory = engines
+        .executable
+        .parent()
+        .expect("executable directory")
+        .to_path_buf();
+    for name in ["source.txt", "renamed.txt", "copy.txt", "moved"] {
+        assert!(!directory.join(name).exists(), "{name} was not cleaned up");
+    }
+}
+
+#[test]
+fn copy_file_preserves_bytes_match() {
+    let source = "fn main():\n\
+                  \x20   copy_file(\"blob.bin\", \"blob-copy.bin\")\n\
+                  \x20   print(file_exists(\"blob-copy.bin\"))\n";
+    let directory = workspace("rename-copy-bytes", source);
+    let bytes: Vec<u8> = vec![0, 0xff, 0xfe, 1, 2, 3, 0, 0x80, 0x7f];
+    fs::write(directory.join("blob.bin"), &bytes).expect("write binary source");
+    let output_directory = directory.clone();
+    let Some(engines) = run_engines_in_mode(directory, "rename-copy-bytes", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "true\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+    assert_eq!(
+        fs::read(output_directory.join("blob-copy.bin")).expect("read copied bytes"),
+        bytes
+    );
+}
+
+#[test]
+fn rename_and_copy_errors_match() {
+    for (label, setup, source) in [
+        (
+            "rename-missing",
+            None,
+            "fn main():\n    rename(\"missing\", \"x\")\n",
+        ),
+        (
+            "copy-missing",
+            None,
+            "fn main():\n    copy_file(\"missing\", \"x\")\n",
+        ),
+        (
+            "copy-directory",
+            Some(("dir", true)),
+            "fn main():\n    copy_file(\"dir\", \"x\")\n",
+        ),
+        (
+            "copy-missing-parent",
+            Some(("file.txt", false)),
+            "fn main():\n    copy_file(\"file.txt\", \"missing/x\")\n",
+        ),
+        (
+            "rename-over-directory",
+            Some(("file.txt", false)),
+            "fn main():\n    make_dir(\"dir\")\n    rename(\"file.txt\", \"dir\")\n",
+        ),
+    ] {
+        let directory = workspace(label, source);
+        if let Some((path, is_dir)) = setup {
+            let path = directory.join(path);
+            if is_dir {
+                fs::create_dir_all(&path).expect("create setup directory");
+            } else {
+                fs::write(&path, "x").expect("write setup file");
+            }
+        }
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "{label} build failed: {}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let native = engines.native.expect("native output");
+        assert_eq!(
+            engines.interpreter.status.code(),
+            Some(2),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert_eq!(
+            native.status.code(),
+            Some(2),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&engines.interpreter.stderr).contains("error[R0015]"),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&native.stderr).contains("error[R0015]"),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&engines.interpreter.stdout),
+            String::from_utf8_lossy(&native.stdout),
+            "{label}"
+        );
+    }
+}
+
+#[test]
+fn rename_and_copy_evaluate_arguments_left_to_right() {
+    let source = "fn note(label: Str) -> Str:\n\
+                  \x20   print(label)\n\
+                  \x20   return label\n\
+                  \n\
+                  fn main():\n\
+                  \x20   write_file(\"src.txt\", \"x\")\n\
+                  \x20   rename(note(\"src.txt\"), note(\"dst.txt\"))\n\
+                  \x20   copy_file(note(\"dst.txt\"), note(\"copy.txt\"))\n\
+                  \x20   print(read_file(\"copy.txt\"))\n";
+    let directory = workspace("rename-copy-order", source);
+    let Some(engines) = run_engines_in_mode(directory, "rename-copy-order", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "src.txt\ndst.txt\ndst.txt\ncopy.txt\nx\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn rename_and_copy_any_paths_are_rejected_with_e0401() {
+    let source = "fn move_it(src: Any, dst: Any):\n\
+                  \x20   rename(src, dst)\n\n\
+                  fn copy_it(src: Any, dst: Any):\n\
+                  \x20   copy_file(src, dst)\n\n\
+                  fn main():\n\
+                  \x20   write_file(\"data.txt\", \"data\")\n\
+                  \x20   move_it(\"data.txt\", \"moved.txt\")\n\
+                  \x20   print(read_file(\"moved.txt\"))\n\
+                  \x20   copy_it(\"moved.txt\", \"copy.txt\")\n\
+                  \x20   print(read_file(\"copy.txt\"))\n";
+    let directory = workspace("rename-copy-any", source);
+    let Some(engines) = run_engines_in_mode(directory, "rename-copy-any", true) else {
+        return;
+    };
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "data\ndata\n"
+    );
+    assert_eq!(engines.build.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&engines.build.stderr);
+    assert!(stderr.contains("error[E0401]"), "{stderr}");
+    assert!(stderr.contains("Any"), "{stderr}");
+}
+
+#[cfg(unix)]
+#[test]
+fn glob_matches_interpreter_in_both_engines() {
+    use std::os::unix::fs::symlink;
+
+    let source = "fn main():\n\
+                  \x20   print(glob(\"tree/*.txt\"))\n\
+                  \x20   print(glob(\"tree/**/*.txt\"))\n\
+                  \x20   print(glob(\"tree/**\"))\n\
+                  \x20   print(glob(\"tree/.*\"))\n\
+                  \x20   print(glob(\"tree/**/.*\"))\n\
+                  \x20   print(glob(\"tree/dir/[bs]*\"))\n\
+                  \x20   print(glob(\"tree/missing/*\"))\n\
+                  \x20   print(glob(\"tree/dangling\"))\n\
+                  \x20   print(glob(\"tree/./dir/*\"))\n\
+                  \x20   print(glob(\"tree/dir/**\"))\n\
+                  \x20   print(glob(\"tree/link/*\"))\n\
+                  \x20   print(glob(\"tree/link/**\"))\n";
+    let directory = workspace("glob-round-trip", source);
+    let tree = directory.join("tree");
+    fs::create_dir_all(tree.join("dir/sub/deep")).expect("create glob dirs");
+    fs::create_dir_all(tree.join(".hidden")).expect("create glob hidden dir");
+    fs::write(tree.join("a.txt"), "a").expect("write glob a");
+    fs::write(tree.join("b.vtx"), "b").expect("write glob b");
+    fs::write(tree.join("dir/b.txt"), "c").expect("write glob c");
+    fs::write(tree.join("dir/.dot"), "d").expect("write glob dot");
+    fs::write(tree.join("dir/sub/c.vtx"), "e").expect("write glob e");
+    fs::write(tree.join("dir/sub/deep/d.txt"), "f").expect("write glob f");
+    fs::write(tree.join(".hidden/h.txt"), "g").expect("write glob g");
+    symlink("dir", tree.join("link")).expect("create glob link");
+    symlink("missing", tree.join("dangling")).expect("create glob dangling link");
+    let Some(engines) = run_engines_in_mode(directory, "glob-round-trip", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(
+        engines.interpreter.status.code(),
+        Some(0),
+        "interpreter stderr: {}",
+        String::from_utf8_lossy(&engines.interpreter.stderr)
+    );
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "[\"tree/a.txt\"]\n\
+                    [\"tree/a.txt\", \"tree/dir/b.txt\", \"tree/dir/sub/deep/d.txt\"]\n\
+                    [\"tree/a.txt\", \"tree/b.vtx\", \"tree/dangling\", \"tree/dir\", \"tree/dir/b.txt\", \"tree/dir/sub\", \"tree/dir/sub/c.vtx\", \"tree/dir/sub/deep\", \"tree/dir/sub/deep/d.txt\", \"tree/link\"]\n\
+                    [\"tree/.hidden\"]\n\
+                    [\"tree/.hidden\", \"tree/dir/.dot\"]\n\
+                    [\"tree/dir/b.txt\", \"tree/dir/sub\"]\n\
+                    []\n\
+                    [\"tree/dangling\"]\n\
+                    [\"tree/./dir/b.txt\", \"tree/./dir/sub\"]\n\
+                    [\"tree/dir/b.txt\", \"tree/dir/sub\", \"tree/dir/sub/c.vtx\", \"tree/dir/sub/deep\", \"tree/dir/sub/deep/d.txt\"]\n\
+                    [\"tree/link/b.txt\", \"tree/link/sub\"]\n\
+                    [\"tree/link/b.txt\", \"tree/link/sub\", \"tree/link/sub/c.vtx\", \"tree/link/sub/deep\", \"tree/link/sub/deep/d.txt\"]\n";
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn glob_malformed_patterns_fail_in_both_engines() {
+    for (label, pattern) in [("glob-native-unclosed", "["), ("glob-native-descending", "[z-a]")] {
+        let source = format!("fn main():\n    print(glob(\"{pattern}\"))\n");
+        let directory = workspace(label, &source);
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "{label} build failed: {}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let native = engines.native.expect("native output");
+        assert_eq!(engines.interpreter.status.code(), Some(2), "{label}");
+        assert_eq!(native.status.code(), Some(2), "{label}");
+        for stderr in [&engines.interpreter.stderr, &native.stderr] {
+            let stderr = String::from_utf8_lossy(stderr);
+            assert!(stderr.contains("error[R0016]"), "{label}: {stderr}");
+        }
+    }
+}
+
+#[test]
+fn glob_depth_limit_matches_in_both_engines() {
+    let source = "fn main():\n    print(glob(\"**\"))\n";
+    let directory = workspace("glob-depth", source);
+    let mut path = directory.join("deep");
+    for index in 0..130 {
+        path.push(format!("d{index}"));
+    }
+    fs::create_dir_all(&path).expect("create deep glob tree");
+    let Some(engines) = run_engines_in_mode(directory, "glob-depth", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    for stderr in [&engines.interpreter.stderr, &native.stderr] {
+        let stderr = String::from_utf8_lossy(stderr);
+        assert!(stderr.contains("error[R0015]"), "{stderr}");
+        assert!(stderr.contains("maximum depth"), "{stderr}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn glob_rejects_non_utf8_names_in_both_engines() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let source = "fn main():\n    print(glob(\"*\"))\n";
+    let directory = workspace("glob-invalid-name", source);
+    fs::create_dir(directory.join(OsStr::from_bytes(b"bad-\xff"))).expect("create invalid name");
+    let Some(engines) = run_engines_in_mode(directory, "glob-invalid-name", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    for stderr in [&engines.interpreter.stderr, &native.stderr] {
+        let stderr = String::from_utf8_lossy(stderr);
+        assert!(stderr.contains("error[R0015]"), "{stderr}");
+        assert!(stderr.contains("UTF-8"), "{stderr}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn glob_result_cap_matches_in_both_engines() {
+    let source = "fn main():\n    print(glob(\"files/*\"))\n";
+    let directory = workspace("glob-result-cap", source);
+    let files = directory.join("files");
+    fs::create_dir(&files).expect("create glob cap directory");
+    let anchor = files.join("anchor.txt");
+    fs::write(&anchor, "x").expect("write glob cap anchor");
+    for index in 0..100_001 {
+        fs::hard_link(&anchor, files.join(format!("f{index:06}")))
+            .expect("create glob cap link");
+    }
+    let engines = run_engines_in_mode(directory, "glob-result-cap", true);
+    let _ = fs::remove_dir_all(&files);
+    let Some(engines) = engines else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    for stderr in [&engines.interpreter.stderr, &native.stderr] {
+        let stderr = String::from_utf8_lossy(stderr);
+        assert!(stderr.contains("error[R0015]"), "{stderr}");
+        assert!(stderr.contains("candidate paths"), "{stderr}");
+    }
+}
+
+#[test]
+fn glob_absolute_patterns_match_in_both_engines() {
+    let source = "fn main():\n    print(\"placeholder\")\n";
+    let directory = workspace("glob-absolute", source);
+    fs::create_dir_all(directory.join("tree")).expect("create glob tree");
+    fs::write(directory.join("tree/a.txt"), "a").expect("write glob file");
+    let root = directory
+        .canonicalize()
+        .expect("canonicalize glob workspace")
+        .to_str()
+        .expect("utf-8 path")
+        .to_string();
+    let source = format!(
+        "fn main():\n\
+         \x20   print(glob(\"{root}/tree/*.txt\"))\n\
+         \x20   print(glob(\"{root}//tree//*.txt\"))\n"
+    );
+    fs::write(directory.join("main.vtx"), &source).expect("write absolute glob source");
+    let Some(engines) = run_engines_in_mode(directory, "glob-absolute", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = format!("[\"{root}/tree/a.txt\"]\n").repeat(2);
+    assert_eq!(String::from_utf8_lossy(&engines.interpreter.stdout), expected);
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn glob_component_cap_matches_in_both_engines() {
+    let source = format!(
+        "fn main():\n    print(glob(\"{}\"))\n",
+        "a/".repeat(1025)
+    );
+    let directory = workspace("glob-components", &source);
+    let Some(engines) = run_engines_in_mode(directory, "glob-components", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    for stderr in [&engines.interpreter.stderr, &native.stderr] {
+        let stderr = String::from_utf8_lossy(stderr);
+        assert!(stderr.contains("error[R0016]"), "{stderr}");
+    }
+}
+
+#[test]
+fn recursive_copy_matches_in_both_engines() {
+    let source = "fn main():\n\
+                  \x20   make_dir_all(\"tree/sub/empty\")\n\
+                  \x20   make_dir_all(\"tree/.hidden\")\n\
+                  \x20   write_file(\"tree/a.txt\", \"alpha\")\n\
+                  \x20   write_file(\"tree/sub/b.txt\", \"beta\")\n\
+                  \x20   write_file(\"tree/.hidden/dot\", \"dot\")\n\
+                  \x20   copy_dir_all(\"tree\", \"copy\")\n\
+                  \x20   print(read_file(\"copy/a.txt\"))\n\
+                  \x20   print(read_file(\"copy/sub/b.txt\"))\n\
+                  \x20   print(read_file(\"copy/.hidden/dot\"))\n\
+                  \x20   print(is_dir(\"copy/sub/empty\"))\n\
+                  \x20   print(glob(\"copy/**/*.txt\"))\n\
+                  \x20   copy_dir_all(\"tree\", \"copy-two\")\n\
+                  \x20   print(file_exists(\"copy-two/a.txt\"))\n\
+                  \x20   remove_dir_all(\"copy\")\n\
+                  \x20   remove_dir_all(\"copy-two\")\n\
+                  \x20   remove_dir_all(\"tree\")\n";
+    let directory = workspace("copy-roundtrip", source);
+    let Some(engines) = run_engines_in_mode(directory, "copy-roundtrip", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(
+        engines.interpreter.status.code(),
+        Some(0),
+        "interpreter stderr: {}",
+        String::from_utf8_lossy(&engines.interpreter.stderr)
+    );
+    assert_eq!(
+        native.status.code(),
+        Some(0),
+        "native stderr: {}",
+        String::from_utf8_lossy(&native.stderr)
+    );
+    let expected = "alpha\n\
+                    beta\n\
+                    dot\n\
+                    true\n\
+                    [\"copy/a.txt\", \"copy/sub/b.txt\"]\n\
+                    true\n";
+    assert_eq!(String::from_utf8_lossy(&engines.interpreter.stdout), expected);
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn recursive_copy_errors_match_in_both_engines() {
+    let cases: [(&str, &str, &str, bool); 8] = [
+        ("copy-missing-source", "copy_dir_all(\"missing\", \"copy\")", "cannot copy directory", false),
+        ("copy-file-source", "copy_dir_all(\"file.txt\", \"copy\")", "not a directory", false),
+        (
+            "copy-existing-target",
+            "copy_dir_all(\"tree\", \"existing\")",
+            "already exists",
+            true,
+        ),
+        (
+            "copy-missing-parent",
+            "copy_dir_all(\"tree\", \"missing/copy\")",
+            "target parent",
+            true,
+        ),
+        (
+            "copy-inside-source",
+            "copy_dir_all(\"tree\", \"tree/inside\")",
+            "inside the source",
+            true,
+        ),
+        (
+            "copy-empty-target",
+            "copy_dir_all(\"tree\", \"\")",
+            "must name a new directory",
+            true,
+        ),
+        (
+            "copy-dot-target",
+            "copy_dir_all(\"tree\", \".\")",
+            "must name a new directory",
+            true,
+        ),
+        ("copy-empty-source", "copy_dir_all(\"\", \"copy\")", "source path is empty", false),
+    ];
+    for (label, call, needle, needs_tree) in cases {
+        let source = format!("fn main():\n    {call}\n");
+        let directory = workspace(label, &source);
+        if needs_tree {
+            fs::create_dir(directory.join("tree")).expect("create copy tree");
+        }
+        if label == "copy-file-source" {
+            fs::write(directory.join("file.txt"), "x").expect("write copy file");
+        }
+        if label == "copy-existing-target" {
+            fs::create_dir(directory.join("existing")).expect("create copy target");
+        }
+        let Some(engines) = run_engines_in_mode(directory, label, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "{label} build failed: {}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let native = engines.native.expect("native output");
+        assert_eq!(
+            engines.interpreter.status.code(),
+            Some(2),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert_eq!(
+            native.status.code(),
+            Some(2),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        for stderr in [&engines.interpreter.stderr, &native.stderr] {
+            let stderr = String::from_utf8_lossy(stderr);
+            assert!(stderr.contains("error[R0015]"), "{label}: {stderr}");
+            assert!(stderr.contains(needle), "{label}: expected {needle:?} in {stderr}");
+        }
+    }
+}
+
+#[test]
+fn recursive_copy_any_paths_are_rejected_with_e0401() {
+    let source = "fn run(source: Any):\n\
+                  \x20   copy_dir_all(source, \"copy\")\n\
+                  \x20   print(is_dir(\"copy\"))\n\
+                  \n\
+                  fn main():\n\
+                  \x20   make_dir(\"tree\")\n\
+                  \x20   write_file(\"tree/a.txt\", \"a\")\n\
+                  \x20   run(\"tree\")\n";
+    let directory = workspace("copy-any", source);
+    let Some(engines) = run_engines_in_mode(directory, "copy-any", true) else {
+        return;
+    };
+    assert_eq!(
+        engines.interpreter.status.code(),
+        Some(0),
+        "interpreter stderr: {}",
+        String::from_utf8_lossy(&engines.interpreter.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&engines.interpreter.stdout), "true\n");
+    assert_eq!(engines.build.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&engines.build.stderr);
+    assert!(stderr.contains("error[E0401]"), "{stderr}");
+    assert!(stderr.contains("Any"), "{stderr}");
+}
+
+#[test]
+fn recursive_copy_depth_limit_matches_in_both_engines() {
+    if !compiler_available() {
+        eprintln!("skipping native test `copy-depth`: no C compiler available");
+        return;
+    }
+    let source = "fn main():\n    copy_dir_all(\"deep\", \"copy\")\n";
+    let directory = workspace("copy-depth", source);
+    let mut deep = directory.join("deep");
+    for index in 0..130 {
+        deep.push(format!("d{index}"));
+    }
+    fs::create_dir_all(&deep).expect("create deep copy tree");
+
+    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("run")
+        .arg(directory.join("main.vtx"))
+        .current_dir(&directory)
+        .output()
+        .expect("run copy-depth interpreter");
+    assert_eq!(interpreter.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&interpreter.stderr);
+    assert!(stderr.contains("error[R0015]"), "{stderr}");
+    assert!(stderr.contains("maximum depth"), "{stderr}");
+    let _ = fs::remove_dir_all(directory.join("copy"));
+
+    let executable = directory.join("program");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("build")
+        .arg(directory.join("main.vtx"))
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("build copy-depth native");
+    assert!(
+        build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let native = Command::new(&executable)
+        .current_dir(&directory)
+        .output()
+        .expect("run copy-depth native");
+    assert_eq!(native.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&native.stderr);
+    assert!(stderr.contains("error[R0015]"), "{stderr}");
+    assert!(stderr.contains("maximum depth"), "{stderr}");
+    let _ = fs::remove_dir_all(directory.join("copy"));
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_copy_symlink_rules_match_in_both_engines() {
+    fn setup_root(directory: &Path) {
+        use std::os::unix::fs::symlink;
+        let real = directory.join("real");
+        fs::create_dir_all(real.join("sub")).expect("create root target");
+        fs::write(real.join("sub/data.txt"), "data").expect("write root data");
+        symlink(&real, directory.join("root-link")).expect("create root link");
+    }
+
+    fn setup_inner(directory: &Path) {
+        use std::os::unix::fs::symlink;
+        let real = directory.join("real");
+        fs::create_dir_all(real.join("sub")).expect("create inner target");
+        fs::write(real.join("sub/data.txt"), "data").expect("write inner data");
+        fs::create_dir(directory.join("tree")).expect("create inner tree");
+        symlink(real.join("sub"), directory.join("tree/link")).expect("create inner link");
+    }
+
+    fn setup_dangling(directory: &Path) {
+        use std::os::unix::fs::symlink;
+        symlink("missing", directory.join("dangling")).expect("create dangling link");
+    }
+
+    fn run_case(
+        label: &str,
+        source: &str,
+        setup: fn(&Path),
+        expected_code: i32,
+        needle: &str,
+    ) {
+        if !compiler_available() {
+            return;
+        }
+        let interpreter_directory = workspace(&format!("{label}-interpreter"), source);
+        setup(&interpreter_directory);
+        let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+            .arg("run")
+            .arg(interpreter_directory.join("main.vtx"))
+            .current_dir(&interpreter_directory)
+            .output()
+            .expect("run copy link interpreter");
+        assert_eq!(
+            interpreter.status.code(),
+            Some(expected_code),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&interpreter.stderr)
+        );
+
+        let native_directory = workspace(&format!("{label}-native"), source);
+        setup(&native_directory);
+        let executable = native_directory.join("program");
+        let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+            .arg("build")
+            .arg(native_directory.join("main.vtx"))
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .expect("build copy link native");
+        assert!(
+            build.status.success(),
+            "{label} native build failed:\n{}",
+            String::from_utf8_lossy(&build.stderr)
+        );
+        let native = Command::new(&executable)
+            .current_dir(&native_directory)
+            .output()
+            .expect("run copy link native");
+        assert_eq!(
+            native.status.code(),
+            Some(expected_code),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+
+        if expected_code != 0 {
+            for stderr in [&interpreter.stderr, &native.stderr] {
+                let stderr = String::from_utf8_lossy(stderr);
+                assert!(stderr.contains("error[R0015]"), "{label}: {stderr}");
+                assert!(
+                    stderr.contains(needle),
+                    "{label}: expected {needle:?} in {stderr}"
+                );
+            }
+        } else {
+            assert_eq!(
+                String::from_utf8_lossy(&interpreter.stdout),
+                String::from_utf8_lossy(&native.stdout),
+                "{label}"
+            );
+            assert_eq!(String::from_utf8_lossy(&native.stdout), "data\n");
+        }
+    }
+
+    run_case(
+        "copy-link-root",
+        "fn main():\n\
+         \x20   copy_dir_all(\"root-link\", \"copy\")\n\
+         \x20   print(read_file(\"copy/sub/data.txt\"))\n",
+        setup_root,
+        0,
+        "",
+    );
+    run_case(
+        "copy-link-inner",
+        "fn main():\n    copy_dir_all(\"tree\", \"copy\")\n",
+        setup_inner,
+        2,
+        "symbolic link",
+    );
+    run_case(
+        "copy-link-dangling",
+        "fn main():\n    copy_dir_all(\"dangling\", \"copy\")\n",
+        setup_dangling,
+        2,
+        "cannot copy directory",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_copy_special_files_match_in_both_engines() {
+    use std::os::unix::net::UnixListener;
+
+    if !compiler_available() {
+        return;
+    }
+    let source = "fn main():\n    copy_dir_all(\"tree\", \"copy\")\n";
+    let needle = "not a regular file or directory";
+
+    let interpreter_directory = workspace("copy-special-interpreter", source);
+    fs::create_dir(interpreter_directory.join("tree")).expect("create special tree");
+    let interpreter_socket =
+        UnixListener::bind(interpreter_directory.join("tree/sock")).expect("bind interpreter socket");
+    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("run")
+        .arg(interpreter_directory.join("main.vtx"))
+        .current_dir(&interpreter_directory)
+        .output()
+        .expect("run special interpreter");
+    drop(interpreter_socket);
+    assert_eq!(
+        interpreter.status.code(),
+        Some(2),
+        "interpreter stderr: {}",
+        String::from_utf8_lossy(&interpreter.stderr)
+    );
+
+    let native_directory = workspace("copy-special-native", source);
+    fs::create_dir(native_directory.join("tree")).expect("create native special tree");
+    let native_socket =
+        UnixListener::bind(native_directory.join("tree/sock")).expect("bind native socket");
+    let executable = native_directory.join("program");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("build")
+        .arg(native_directory.join("main.vtx"))
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("build special native");
+    assert!(
+        build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let native = Command::new(&executable)
+        .current_dir(&native_directory)
+        .output()
+        .expect("run special native");
+    drop(native_socket);
+    assert_eq!(
+        native.status.code(),
+        Some(2),
+        "native stderr: {}",
+        String::from_utf8_lossy(&native.stderr)
+    );
+
+    for stderr in [&interpreter.stderr, &native.stderr] {
+        let stderr = String::from_utf8_lossy(stderr);
+        assert!(stderr.contains("error[R0015]"), "{stderr}");
+        assert!(stderr.contains(needle), "expected {needle:?} in {stderr}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_copy_non_utf8_names_match_in_both_engines() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    if !compiler_available() {
+        return;
+    }
+    let source = "fn main():\n    copy_dir_all(\"tree\", \"copy\")\n    print(is_dir(\"copy\"))\n";
+    let name = OsStr::from_bytes(b"bad-\xff");
+
+    let interpreter_directory = workspace("copy-non-utf8-interpreter", source);
+    fs::create_dir(interpreter_directory.join("tree")).expect("create non-utf8 tree");
+    fs::write(interpreter_directory.join("tree").join(name), "raw").expect("write non-utf8 file");
+    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("run")
+        .arg(interpreter_directory.join("main.vtx"))
+        .current_dir(&interpreter_directory)
+        .output()
+        .expect("run non-utf8 interpreter");
+    assert_eq!(
+        interpreter.status.code(),
+        Some(0),
+        "interpreter stderr: {}",
+        String::from_utf8_lossy(&interpreter.stderr)
+    );
+    assert_eq!(
+        fs::read(interpreter_directory.join("copy").join(name)).expect("read interpreter copy"),
+        b"raw"
+    );
+
+    let native_directory = workspace("copy-non-utf8-native", source);
+    fs::create_dir(native_directory.join("tree")).expect("create native non-utf8 tree");
+    fs::write(native_directory.join("tree").join(name), "raw").expect("write native non-utf8 file");
+    let executable = native_directory.join("program");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("build")
+        .arg(native_directory.join("main.vtx"))
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("build non-utf8 native");
+    assert!(
+        build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let native = Command::new(&executable)
+        .current_dir(&native_directory)
+        .output()
+        .expect("run non-utf8 native");
+    assert_eq!(
+        native.status.code(),
+        Some(0),
+        "native stderr: {}",
+        String::from_utf8_lossy(&native.stderr)
+    );
+    assert_eq!(
+        fs::read(native_directory.join("copy").join(name)).expect("read native copy"),
+        b"raw"
+    );
 }

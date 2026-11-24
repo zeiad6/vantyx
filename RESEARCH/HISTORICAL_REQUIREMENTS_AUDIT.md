@@ -1,6 +1,7 @@
 # Historical Requirements Audit
 
-Date: 2026-11-23; reconciled 2026-11-24 after T-054, T-013, and T-046
+Date: 2026-11-23; reconciled 2026-11-24 after T-064, T-063, T-062, T-061,
+T-060, T-059, T-058, T-057, T-054, T-013, and T-046
 Repository: RustZ (public name `vantyx`; renamed from `auren`)
 Auditor: autonomous engineering session
 Scope: every requirement recoverable from `TASKS.md`, `PROJECT_STATUS.md`,
@@ -40,7 +41,7 @@ because a document says so; the table cites code or an observed command.
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | **463 passed**: 301 library unit, 14 CLI unit, 31 AI integration, 44 e2e, 73 native (2026-11-24, after T-054); earlier 457-, 437-, 430-, 429-, 422-, 413-, 383-, 358-, 357-, and 340-test runs also passed |
+| `cargo test` | **581 passed**: 326 library unit, 15 CLI unit, 32 AI integration, 90 e2e, 118 native (2026-11-24, after T-069); earlier 573-, 571-, 550-, 526-, 517-, 516-, 507-, 501-, 491-, 485-, 478-, 469-, 463-, 457-, 437-, 430-, 429-, 422-, 413-, 383-, 358-, 357-, and 340-test runs also passed |
 | Map benchmark | `map_ops` native 3.597 ms, interpreter 121.728 ms, C 2.884 ms, Rust 4.495 ms (2026-11-24; `benchmarks/results/2026-11-24.*`) |
 | `cargo build` / `--release` | both succeeded after the AI foundation and rename |
 | `cargo clippy --all-targets -- -D warnings` | clean, zero warnings |
@@ -50,9 +51,10 @@ because a document says so; the table cites code or an observed command.
 | Embeddings | deterministic hash provider, batch limits, bounded cache, OpenAI-compatible `/v1/embeddings`, and `vantyx ai embed` implemented; offline/loopback tests pass |
 | Modules (T-013) | file imports, path confinement, cycles, declaration-only modules, interpreter/native differential test, and `E0501`–`E0512` |
 | RAG (T-046, T-054, T-057) | bounded ingestion, stable cited chunks, strict versioned JSON index, BM25/cosine/hybrid RRF search, source-prefix filtering, recall/precision/MRR evaluation, incremental vector reuse with deletion pruning, and deterministic MMR diversity reranking with duplicate suppression; 21 unit + 4 CLI tests and manual 3-document runs |
+| File, directory, metadata, and path builtins (T-058–T-064) | `read_file`, `write_file`, `append_file`, `file_exists`, `file_size`, `is_file`, `is_dir`, `is_symlink`, `list_dir`, `make_dir`, `remove_file`, `remove_dir`, `make_dir_all`, `remove_dir_all`, `rename`, `copy_file`, `path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, and `path_is_absolute` in both engines; 64 MiB UTF-8 read cap, NUL rejection, sorted listings, fatal `R0015`, recursive creation/removal with symlink-safe unlinking, trailing-separator trimming, and destructive-root refusal (ADR-0035), byte-preserving copies, read-only follow-symlink metadata probes with `lstat` symlink detection, lexical POSIX-style no-I/O paths, left-to-right evaluation, and `E0401` for dynamically typed arguments |
 | Or-patterns (T-047/T-050) | top-level `|` alternatives, shared binding-set checking (`E0317`), exhaustiveness integration, ordered interpreter matching, and native short-circuit lowering with conditional binding initialization; parser/checker/e2e/native tests; ADR-0021 |
 | Nested patterns (T-048/T-049) | recursive payload patterns, multi-level bindings, matrix exhaustiveness, guard exclusion, and native short-circuit lowering with path-based bindings; parser/checker/e2e/native tests; ADR-0019/ADR-0020 |
-| AI live evidence | none; no local server, embedding model, or cloud credentials available |
+| AI live evidence | Cloud path verified on 2026-11-24 against Gemini (discovery, chat, streaming, extraction, 768-dimension embeddings, semantic RAG/search, retrieval evaluation) and re-verified at 20:59Z with 21/21 checks using `MY_API_KEY`; an earlier retry was geo-blocked and one re-run hit a transient 503, so access is not guaranteed; no local server or model is installed |
 | Language-level AI | still blocked on async (T-017); the modules prerequisite (T-013) is complete |
 | Tensor / GPU / embedding model code | none; vector math, provider embeddings, and a persisted flat retrieval index exist, but no tensor runtime or trained local model ships |
 
@@ -60,15 +62,15 @@ because a document says so; the table cites code or an observed command.
 
 | Status | Core tasks | Directive requirements |
 | --- | ---: | ---: |
-| COMPLETE (including documented subsets) | 32 | 16 |
+| COMPLETE (including documented subsets) | 43 | 16 |
 | IN_PROGRESS | 0 | 0 |
 | READY | 0 | 0 |
-| MISSING | 10 | 11 |
+| MISSING | 10 | 10 |
 | BLOCKED | 0 | 3 |
-| PARTIAL | 0 | 15 |
+| PARTIAL | 0 | 16 |
 | BROKEN | 0 | 0 |
 | SUPERSEDED | 0 | 0 |
-| **Total tracked** | **42** | **45** |
+| **Total tracked** | **53** | **45** |
 
 Counts are derived from the rows below, not from prior reports. Core rows use
 the `TASKS.md` vocabulary; directive rows use
@@ -77,9 +79,9 @@ the `TASKS.md` vocabulary; directive rows use
 subset has tests and evidence; the missing scope is listed in the same row. The
 directive matrix includes 45 rows covering the AI extension plus the recovered
 cross-cutting requirements. Core rows T-036–T-043 are tracked in `TASKS.md` and
-the AI matrix rather than duplicated here; T-044–T-050 are included above.
+the AI matrix rather than duplicated here; T-044–T-064 are included above.
 
-## Core task matrix (T-001 … T-050)
+## Core task matrix (T-001 … T-064)
 
 | ID | Requirement | Implementation / evidence | Status | Missing work | Priority | Action |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -90,9 +92,9 @@ the AI matrix rather than duplicated here; T-044–T-050 are included above.
 | T-005 | Gradual checker | `src/checker.rs`, 47 unit tests | COMPLETE | Flow narrowing/generics are T-018 | P0 | Keep |
 | T-006 | Tree-walking runtime | `src/interp.rs`, 23 unit tests + e2e | COMPLETE | — | P0 | Keep |
 | T-007 | CLI | `src/main.rs`; `run/check/build/repl/version/help` plus `vantyx ai` host commands | COMPLETE | Keep command help and errors synchronized | P0 | Extend |
-| T-008 | E2E suite | `tests/e2e.rs`, 44 tests including modules, or-patterns, and integer ranges | COMPLETE | — | P0 | Keep |
+| T-008 | E2E suite | `tests/e2e.rs`, 88 tests including modules, or-patterns, integer ranges, file/directory I/O, metadata probes, glob expansion, and recursive copy | COMPLETE | — | P0 | Keep |
 | T-009 | REPL | `src/repl.rs`; persistence tests | COMPLETE | Multi-line recall, field completion (T-034) | P1 | Extend |
-| T-010 | IR + native backend | `src/ir.rs`, `src/codegen_c.rs`, 73 differential tests including imported modules, nested-pattern support, native or-patterns, and integer ranges | COMPLETE (subset) | Reclamation, debug info, optimization, more types | P0 | Extend |
+| T-010 | IR + native backend | `src/ir.rs`, `src/codegen_c.rs`, 118 differential tests including imported modules, nested-pattern support, native or-patterns, integer ranges, file/directory I/O, recursive directories with destructive-root refusal, metadata probes, lexical globbing, recursive directory copy, text builtins, and lexical path builtins | COMPLETE (subset) | Reclamation, debug info, optimization, more types | P0 | Extend |
 | T-011 | Bytecode VM | None | MISSING | Entire VM and benchmark | P2 | Defer |
 | T-012 | Ownership / escape analysis | None | MISSING | Design, analysis, tests | P2 | Defer |
 | T-013 | Modules and imports | `src/module.rs`, import AST/parser, `E0501`–`E0512`, 12 unit tests, e2e and native tests, manual interpreter/native smoke | COMPLETE (subset) | Namespaces, aliases, re-exports, package-relative lookup, incremental builds | P1 | Keep |
@@ -126,10 +128,22 @@ the AI matrix rather than duplicated here; T-044–T-050 are included above.
 | T-049 | Native nested-pattern lowering with path-based bindings and single-evaluation guards | `src/ir.rs` (recursive `IrPattern`, `IrFieldPath`), `src/codegen_c.rs` (recursive conditions, binding declarations), `tests/native.rs::nested_patterns_match`, extended e2e; ADR-0020 | COMPLETE (interpreter/native differential) | Tuple patterns; nested unreachable analysis | P1 | Extend |
 | T-050 | Native top-level or-pattern lowering with one shared binding set | `src/ir.rs` (`IrPattern::Or`, `collect_bindings`), `src/codegen_c.rs` (`or_binding_declarations`, alternative conditions), `tests/native.rs` or-pattern differential tests; ADR-0021 | COMPLETE (interpreter/native differential) | Nested or-patterns; tuple patterns; usefulness analysis | P1 | Extend |
 | T-051 | Integer range patterns with half-open and inclusive bounds | `src/token.rs`/`src/lexer.rs` (`DotDot`/`DotDotEq`), `src/ast.rs` (`Pattern::Range`), `src/parser.rs` (`finish_range_pattern`), `src/checker.rs` (`E0318`), `src/interp.rs`, `src/ir.rs` (`IrPattern::Range`), `src/codegen_c.rs`; parser + 3 checker + e2e + native differential tests; ADR-0022 | COMPLETE (interpreter/native differential) | Range expressions; float/character/computed bounds; interval usefulness analysis | P1 | Extend |
-| T-052 | Streamed OpenAI-compatible text chat through the provider, HTTP transport, and CLI | `src/ai/provider.rs` (`chat_stream`, `streaming` capability), `src/ai/sse.rs` (`push_bytes` UTF-8 carry), `src/ai/http.rs` (`Transport::stream`, content-length/chunked/close-delimited, `curl --include --no-buffer`), `src/ai/openai.rs` (`ChatStreamState`, streaming request JSON), `src/ai_cli.rs` (`--stream`), `tools/streaming_smoke.py`; unit, loopback CLI, and HTTP/HTTPS smoke tests; ADR-0023 | COMPLETE (offline/loopback; live provider blocked) | Streaming tool calls, interactive cancellation, live first-token/tokens-per-second evidence | P1 | Extend |
+| T-052 | Streamed OpenAI-compatible text chat through the provider, HTTP transport, and CLI | `src/ai/provider.rs` (`chat_stream`, `streaming` capability), `src/ai/sse.rs` (`push_bytes` UTF-8 carry), `src/ai/http.rs` (`Transport::stream`, content-length/chunked/close-delimited, `curl --include --no-buffer`), `src/ai/openai.rs` (`ChatStreamState`, streaming request JSON), `src/ai_cli.rs` (`--stream`), `tools/streaming_smoke.py`; unit, loopback CLI, and HTTP/HTTPS smoke tests; ADR-0023 | COMPLETE (offline/loopback; live cloud path verified later under T-067) | Streaming tool calls, interactive cancellation, throughput evidence (first-token latency observed once) | P1 | Extend |
 | T-053 | Remove the unrelated `auren` account from contributor attribution | `git filter-branch` over branches and tags, force-with-lease push of `main` and `v0.1.0`, `.mailmap`; contributor API and commit-identity checks | COMPLETE (history rewritten with explicit authorization) | None; old hashes are historical | P1 | Keep |
 | T-054 | Incremental RAG re-indexing with stable-chunk vector reuse, deletion pruning, and empty-index semantics | `src/ai/rag.rs` (`IncrementalPlan`, `ReuseStats`, `plan_incremental`, `validate_chunk_set`, 4 unit tests), `src/ai_cli.rs` (`--incremental`, compatibility checks, lazy provider, reuse reporting, parser test), `tests/ai.rs` (1 CLI integration test), `benchmarks/rag.py` incremental phases; ADR-0024 | COMPLETE (offline/loopback) | File-manifest shortcut, partial-prefix merge, sub-chunk diffing, trained-model evidence | P1 | Extend |
+| T-055 | Shared immutable ASCII character buffers for native string iteration and indexing | `src/codegen_c.rs` static single-byte character table; `string_ops` benchmark recorded 8.318 ms to the 1.6–3.2 ms range; differential native tests | COMPLETE | Multibyte iteration still allocates; concatenation still copies | P2 | Extend |
+| T-056 | Native enum construction and match benchmark | `benchmarks/run.py` `enum_ops` workload; seven-workload suite; measured native 3.646 ms vs C 3.766 ms and Rust 4.529 ms in the same run; ADR-level decision not to rewrite the representation | COMPLETE | No representation change justified by current evidence | P2 | Keep |
 | T-057 | Deterministic MMR diversity reranking for local RAG search | `src/ai/rag.rs` (`DEFAULT_MMR_LAMBDA`, `search_with_source_diverse`, `diversify_hits`, `deduplicate_hits`, `jaccard_similarity`, `mmr_select`, 3 unit tests), `src/ai_cli.rs` (`--diverse`, `rerank` reporting, parser test), `tests/ai.rs` (1 CLI integration test), `benchmarks/rag.py` diverse phase; ADR-0025 | COMPLETE (offline/loopback) | Measured retrieval-quality improvement; semantic paraphrase dedup; configurable CLI lambda | P1 | Extend |
+| T-058 | Basic UTF-8 file I/O builtins | `read_file`, `write_file`, `append_file`, and `file_exists` in `src/checker.rs`, `src/interp.rs`, `src/ir.rs`, and `src/codegen_c.rs`; 64 MiB read cap, UTF-8/NUL validation, fatal `R0015`, left-to-right evaluation; e2e and differential native tests; ADR-0026 | COMPLETE (interpreter/native differential) | Streaming/append validation, atomic writes, recoverable errors, sandbox | P1 | Extend |
+| T-059 | Single-level directory operations | `list_dir`, `make_dir`, `remove_file`, and `remove_dir` in both engines; deterministic byte-sorted UTF-8 listings, single-level semantics, `R0015`, left-to-right evaluation; directory-specific e2e and differential native tests; ADR-0027 | COMPLETE (interpreter/native differential) | Metadata objects/preservation, directory-entry cap (recursive creation/removal is T-063; probes are T-064; glob is T-065) | P1 | Extend |
+| T-060 | UTF-8 text builtins | `split`, `join`, `trim`, `starts_with`, `ends_with`, and `replace` in both engines; literal lossless splitting, Unicode scalar splitting for an empty separator, explicit `White_Space` trim, non-overlapping replacement, `R0016`; e2e and differential native tests; ADR-0028 | COMPLETE (interpreter/native differential) | Regex, case conversion, normalization, locale handling, grapheme-cluster APIs | P1 | Extend |
+| T-061 | Rename and byte-preserving regular-file copy | `rename` and `copy_file` in both engines; host-defined rename overwrite, regular-file source check, exact byte copy including NUL/invalid UTF-8, no metadata preservation, `R0015`, left-to-right evaluation, `E0401` for dynamically typed paths; e2e and differential native tests; ADR-0029 | COMPLETE (interpreter/native differential) | Recursive move (recursive copy is T-066), metadata preservation, atomic copy, fsync, recoverable errors | P1 | Extend |
+| T-062 | Lexical POSIX-style path builtins | `path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, and `path_is_absolute` in both engines; no filesystem access or normalization, UTF-8-preserving slices, final-dot extension rule, ordered `path_join`, `E0401` for dynamically typed paths; e2e and differential native tests; ADR-0030 | COMPLETE (interpreter/native differential) | `Path` type, normalization/containment, Windows drive/UNC support, multi-argument join | P1 | Extend |
+| T-063 | Recursive directory creation and removal | `make_dir_all` and `remove_dir_all` in both engines; component-by-component creation accepting existing directories and symlinks to directories, empty-path no-op creation, symlink-unlinking recursive removal with trailing-separator trimming before the root check, destructive-root refusal added by T-069/ADR-0035, `R0015` failures, `R0005` dynamic interpreter type errors, `E0401` for dynamically typed native paths; e2e, differential native, and Unix symlink-safety tests; ADR-0031 | COMPLETE (interpreter/native differential) | Metadata preservation, traversal callbacks, dry run/trash, recursion depth and entry caps, intermediate `link/sub` confinement, Windows evidence (probes are T-064; glob is T-065) | P1 | Extend |
+| T-064 | File metadata probes | `file_size`, `is_file`, `is_dir`, and `is_symlink` in both engines; follow-symlink size and type predicates, `lstat` symlink detection including dangling links, regular-file requirement and logical `st_size` with `R0015`, false-on-error predicates, `E0301`/`R0005`/`E0401` boundaries; e2e, differential native, and Unix symlink tests; ADR-0032 | COMPLETE (interpreter/native differential) | Metadata objects, mode/owner/timestamp/ACL/inode/device queries, recursive directory size, metadata preservation, atomic probes, Windows evidence | P1 | Extend |
+| T-065 | Lexical glob expansion | `glob` in both engines; `/` components, Unicode `*`/`?`/classes, whole-component `**` without symlink traversal, explicit-dot hidden rules, byte-sorted deduplicated lexical results, `lstat` literal probes, `R0016` malformed patterns/component cap, `R0015` I/O/depth/result caps/non-UTF-8 names, `E0301`/`R0005`/`E0401` boundaries; library, e2e, differential native, and Unix symlink tests; ADR-0033 | COMPLETE (interpreter/native differential) | Escaping/braces/extglobs, case-insensitive mode, normalization or `..` confinement, streaming/cancellation, result-count tuning, Windows evidence | P1 | Extend |
+| T-066 | Recursive directory copy | `copy_dir_all` in both engines; existing source directory and new target requirement, parent resolution, resolved-self containment, raw-name and byte copying, root-link following with inner-link and special-file rejection, no metadata preservation or rollback, 100,000-entry and 128-depth caps, `E0301`/`R0005`/`E0401` boundaries; library, e2e, differential native, and Unix link/non-UTF-8 tests; ADR-0034 | COMPLETE (interpreter/native differential) | Recursive move, metadata preservation, overwrite/merge modes, rollback or atomic staging, byte/entry-count tuning, sandbox, Windows evidence | P1 | Extend |
+| T-069 | Refuse destructive recursive-removal roots | `remove_dir_all` refuses `.`, `./`, `..`, `../`, every root whose final component is `.` or `..` (including `link/.` and `link/..`), and `/`/`//`/`///` with `R0015` before any filesystem access in both engines; ordinary roots such as `tree`, `tree/`, `./tree`, `/tmp/tree`, and `foo/.hidden` remain accepted; empty paths keep the ordinary missing-path failure; five `src/fs_safety.rs` unit tests, two e2e tests, and two differential native tests; the prior test that locked the destructive `.` behavior was replaced; ADR-0035 amends ADR-0031 | COMPLETE (interpreter/native differential) | Lexical only: no link resolution or intermediate normalization, `link/sub` still traverses, check-then-act races remain, and there is no confirmation, trash, dry run, rollback, depth/entry cap, `Result` recovery, or sandbox; Windows native evidence missing | P1 | Keep |
 
 ### Core partials that must not be described as finished
 
@@ -154,7 +168,7 @@ the AI matrix rather than duplicated here; T-044–T-050 are included above.
 | Profiling and optimization | MISSING | None | P2 | Measure first |
 | SIMD/vectorization | MISSING | None | P3 | Research |
 | Async/concurrency design | MISSING | T-017 | P3 | Defer |
-| Standard library | MISSING | Builtins only | P1 | Plan |
+| Standard library | MISSING | Builtins only; file/directory I/O, recursive directories, rename/copy, lexical paths, and basic text exist | P1 | Plan |
 | Formatter/linter/test runner | MISSING | T-019 | P3 | Defer |
 | Package manager/registry | MISSING | T-020 | P3 | Defer |
 | LSP/editor support | MISSING | None | P3 | Defer |
@@ -164,7 +178,7 @@ the AI matrix rather than duplicated here; T-044–T-050 are included above.
 | Independent external audit | MISSING | None | P3 | Before 1.0 |
 | Stability policy / release process | PARTIAL | SemVer implied; v0.1.0 pre-release | P2 | Document |
 | Cross-platform CI | MISSING | Ubuntu-only workflow | P2 | Add matrix |
-| Regression/stress suites | PARTIAL | 241 tests; fuzz smoke is manual | P2 | CI fuzz job |
+| Regression/stress suites | PARTIAL | 581 tests; fuzz smoke is manual | P2 | CI fuzz job |
 | Native map hash index | COMPLETE for scalar keys (T-044, ADR-0016) | ADR-0010 revisit criterion | P1 | Keep; consider structural keys |
 | Enum allocation benchmark | MISSING | T-030 scope limit | P3 | Benchmark |
 | Nested patterns | COMPLETE for interpreter and native payload nesting (T-048/T-049) | Matrix exhaustiveness; path-based native lowering | P1 | Keep |
@@ -186,7 +200,7 @@ exist but async does not.
 | AI-004 | Current AI ecosystem research | `docs/ai/AI_RESEARCH.md` with verified repository metadata | COMPLETE | Refresh before dependency decisions | P0 | Maintain |
 | AI-005 | AI security threat model | `docs/ai/AI_SECURITY.md` | COMPLETE | Revisit when tools gain write/network capability | P0 | Maintain |
 | AI-006 | Provider-independent interface | `src/ai/provider.rs`, mock/echo/OpenAI adapters, stable errors and capabilities | COMPLETE | Add new adapters behind the same trait | P0 | Maintain |
-| AI-007 | Working cloud provider | OpenAI-compatible adapter, opt-in remote HTTPS, loopback and stub tests | PARTIAL | Record one live provider request with user credentials | P1 | Verify live |
+| AI-007 | Working cloud provider | OpenAI-compatible adapter, opt-in remote HTTPS, loopback/stub tests, and a live Gemini run on 2026-11-24 covering discovery, chat, streaming, extraction, embeddings, RAG, and retrieval evaluation, re-verified at 20:59Z with 21/21 checks | COMPLETE | Provider access is not guaranteed: an earlier retry was rejected with HTTP 400 `User location is not supported` and one re-run hit a transient 503; no bypass attempted | P1 | Maintain |
 | AI-008 | Working local inference path | Compatible-endpoint path supports Ollama/llama.cpp/LM Studio; no installed server evidence | PARTIAL | Run against a real local server; add native Ollama discovery | P1 | Verify live |
 | AI-009 | Model manager CLI | `vantyx ai models` and `doctor` implemented; no info/pull/remove or integrity checks | PARTIAL | Add info/pull/remove with checksums, size, license, provenance | P2 | Implement |
 | AI-010 | Tokenization | Heuristic estimator explicitly labelled "not a model tokenizer" | PARTIAL | Model-specific tokenizer boundary when an engine is embedded | P2 | Research |
@@ -214,7 +228,7 @@ exist but async does not.
 | AI-032 | Language-level `from ai import Client` | None | BLOCKED | Depends on async (T-017); modules (T-013) are complete | P1 | Unblock via host CLI first |
 | AI-033 | `await` / async runtime | None | BLOCKED | T-017 | P3 | Defer |
 | AI-034 | Modules/imports | `src/module.rs`, import AST/parser, module tests, e2e/native differential coverage | COMPLETE (subset) | Namespaces, aliases, re-exports, package-relative imports | P1 | Keep |
-| AI-035 | Standard library / package manager | None | MISSING | T-019/T-020; needed for AI ecosystem | P2 | Core track |
+| AI-035 | Standard library / package manager | File/directory I/O, rename/copy, lexical paths, and basic text builtins exist in both engines; no package manager | PARTIAL | T-019/T-020; broader stdlib needed for AI ecosystem | P2 | Core track |
 | AI-036 | AI execution sandbox | None | MISSING | Process/WASM/OS sandbox; documented limits | P2 | Design |
 | AI-037 | Secrets and credentials | Generic policy only | PARTIAL | No AI credential store; env/keyring policy | P0 | Implement |
 | AI-038 | Prompt-injection defense | Model output treated as untrusted; tool arguments schema-validated; capabilities deny by default; denied-tool tests | PARTIAL | Dedicated prompt-injection fixture corpus and retrieval trust labels | P0 | Extend |
@@ -333,6 +347,103 @@ one-changed-chunk update at 48.049 ms (599 reused, 1 embedded), versus a
 still scans and chunks the corpus, the gain is avoided embedding calls rather
 than wall time.
 
+Re-verification after T-069 on 2026-11-24: `cargo test` — 581 passed
+(326 library unit + 15 CLI unit + 32 AI integration + 90 end-to-end + 118 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded. T-069 added five `src/fs_safety.rs` unit tests, two e2e tests, and
+two differential native tests covering `.`, `..`, final `.`/`..` components,
+and the filesystem root, and replaced the prior differential test that locked
+the destructive `remove_dir_all(".")` behavior. The HTTPS curl timeout mapping
+is covered by two unit tests (exit 28 → retryable `AI_E_TIMEOUT`; exit 7 →
+`AI_E_CONNECT`). Live cloud verification
+against the Gemini OpenAI-compatible endpoint covered model discovery (65
+models), chat (`VANTYX LIVE`), streaming, validated extraction (one repair),
+768-dimension embeddings, 3-document semantic RAG, semantic search
+(`vantyx.md` first at 0.606483), and retrieval evaluation (recall@2 = 1.0,
+precision@2 = 0.5, MRR = 1.0). The loopback failure harness passed 16 checks
+across 7 scenarios, including 401, 429, and timeout. A retry returned HTTP 400
+`User location is not supported` for both available credentials; a later
+re-verification at 20:59Z using `MY_API_KEY` passed all 21 live checks after a
+first re-run hit a transient HTTP 503 during extraction. No local model is
+installed. Evidence: `docs/ai/LIVE_VERIFICATION.md`,
+`docs/ai/live-evidence-2026-11-24.json`, and
+`docs/ai/live-evidence-2026-11-24-retry2.json`; no key value is stored.
+
+Re-verification after T-066 on 2026-11-24: `cargo test` — 571 passed
+(319 library unit + 15 CLI unit + 32 AI integration + 88 end-to-end + 117 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched; fuzz smoke produced controlled
+diagnostics. Recursive-copy tests cover round-trip trees with hidden and empty
+directories, binary files, source preservation, existing and missing-parent
+targets, file and missing sources, empty/`.`/`..` and NUL target names,
+resolved self-containment, depth and entry caps, static `E0301`, dynamic
+`R0005`, native `E0401`, root-link following, inner-link and dangling-link
+rejection, Unix socket rejection, and non-UTF-8 entry names. The native
+recursive-copy tests passed under `-fsanitize=address,undefined` with leak
+detection disabled for intentional v0.1 leaks.
+
+Re-verification after T-065 on 2026-11-24: `cargo test` — 550 passed
+(312 library unit + 15 CLI unit + 32 AI integration + 81 end-to-end + 110 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched; fuzz smoke produced controlled
+diagnostics. Glob tests cover wildcard, class, recursive, hidden, literal,
+absolute, repeated-separator, dangling-link, base-link, and symlink cases;
+byte-sorted deduplicated output; malformed patterns and component-cap `R0016`;
+depth-, result-, and component-cap limits; non-UTF-8 names and NUL `R0015`;
+static `E0301`, dynamic `R0005`, and native `E0401` boundaries; and the native
+tests ran under ASan/UBSan with leak detection disabled. Metadata-probe tests cover a written regular file and created
+directory, missing paths, an empty path, a directory-valued `file_size` target,
+false-on-error predicates, static `E0301` errors, dynamic interpreter `R0005`
+errors, native `E0401` rejection, and Unix file, directory, and dangling
+symlink rules; `file_size` follows file links and reports logical `st_size`.
+The four native metadata tests passed under `-fsanitize=address,undefined` with
+leak detection disabled for intentional v0.1 leaks.
+
+Re-verification after T-063 on 2026-11-24: `cargo test` — 517 passed
+(304 library unit + 15 CLI unit + 32 AI integration + 67 end-to-end + 99 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched; fuzz smoke produced controlled
+diagnostics. Recursive-directory tests cover nested creation, existing
+directories, empty-path creation, sorted listings, trailing-separator removal,
+and cleanup in both engines; regular files blocking creation and regular-file,
+missing, and empty removal targets fail with `R0015`; dynamic interpreter `Any`
+paths raise `R0005`; native `Any` paths are rejected with `E0401`; inner and
+root symbolic links are unlinked without traversing or altering their targets,
+including a root link with a trailing separator. T-069 later replaced the
+destructive `remove_dir_all(".")` behavior with a pre-access `R0015` refusal
+for `.`, `..`, final `.`/`..` components, and the filesystem root, and both
+engines preserve the tree in those cases. The
+five native recursive tests passed under `-fsanitize=address,undefined` with leak detection disabled
+for intentional v0.1 leaks.
+
+Re-verification after T-062 on 2026-11-24: `cargo test` — 507 passed
+(304 library unit + 15 CLI unit + 32 AI integration + 62 end-to-end + 94 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched; fuzz smoke produced controlled
+diagnostics; the link checker resolved 75 relative links in 100 Markdown files.
+Path tests cover empty paths, absolute children, repeated and trailing
+separators, root and dot parents, empty names, dotfiles, trailing dots,
+multiple dots, missing extensions, Unicode names, and relative/absolute probes,
+plus static `E0301` errors, dynamic `R0005` errors, and `E0401` rejection of
+dynamically typed arguments for all six builtins. The native path tests passed
+under `-fsanitize=address,undefined` with leak detection disabled for
+intentional v0.1 leaks.
+
+Re-verification after T-061 on 2026-11-24: `cargo test` — 501 passed
+(304 library unit + 15 CLI unit + 32 AI integration + 59 end-to-end + 91 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched; fuzz smoke produced controlled
+diagnostics; the link checker resolved 74 relative links in 97 Markdown files.
+Rename/copy tests cover file and directory renames, target truncation, cleanup,
+byte-preserving binary copies with NUL/invalid-UTF-8/high-bit bytes, static
+argument-type errors, fatal `R0015` cases (missing sources, directory copy
+sources, missing target parents, rename-over-directory), left-to-right argument
+evaluation, and `E0401` rejection of dynamically typed paths. The new native
+tests passed under `-fsanitize=address,undefined` with leak detection disabled
+for intentional v0.1 leaks. This gate also includes T-060's text builtins
+(491 tests: 304 + 15 + 32 + 54 + 86), T-059's directory operations (485-test
+gate), and T-058's file I/O (478-test gate).
+
 Re-verification after T-057 on 2026-11-24: `cargo test` — 469 passed
 (304 library unit + 15 CLI unit + 32 AI integration + 44 end-to-end + 74 native);
 `cargo clippy --all-targets -- -D warnings` clean; debug and release builds
@@ -428,11 +539,15 @@ complete in code, documentation, GitHub, and clean-clone CI; and the offline AI
 host foundation now includes embeddings, local RAG retrieval, citations, and
 retrieval evaluation with tests, plus incremental vector reuse, deletion
 pruning, and deterministic MMR diversity reranking; nested payload patterns and
-top-level or-patterns are implemented in the interpreter and native backend. The
+top-level or-patterns are implemented in the interpreter and native backend;
+and file/directory I/O, recursive directory creation/removal, rename/copy,
+lexical paths, and basic UTF-8 text builtins work in both engines with
+differential tests. The
 following previously requested items remain open: generics, traits, closures, iterators, `Result`/`?`, async, concurrency,
 FFI, formatter, linter, package manager, standard library, native reclamation,
 cycle handling, structural-key map hashing, REPL multi-line history, REPL field
 completion, enum benchmarks, cross-platform CI, debug info, compiler
-optimization, language-level AI syntax, live local/cloud AI and embedding-model
-evidence, PDF/HTML/Office ingestion, reranking, and
+optimization, language-level AI syntax, live local-model evidence (the cloud
+path was verified and re-verified on 2026-11-24, but access is not guaranteed),
+PDF/HTML/Office ingestion, reranking, and
 grounded generation. This audit is the baseline for closing them honestly.

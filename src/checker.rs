@@ -19,6 +19,11 @@ fn literal_key(value: &LiteralPattern) -> String {
 pub const BUILTINS: &[&str] = &[
     "print", "len", "range", "push", "pop", "contains", "keys", "values", "str", "int",
     "float", "bool", "type", "abs", "min", "max", "sqrt", "floor", "ceil", "assert",
+    "read_file", "write_file", "append_file", "file_exists", "list_dir", "make_dir", "remove_file",
+    "remove_dir", "make_dir_all", "remove_dir_all", "rename", "copy_file", "copy_dir_all", "split", "join", "trim",
+    "starts_with", "ends_with",
+    "replace", "path_join", "path_parent", "path_name", "path_stem", "path_extension",
+    "path_is_absolute", "file_size", "is_file", "is_dir", "is_symlink", "glob",
 ];
 
 pub fn is_builtin(name: &str) -> bool {
@@ -2514,6 +2519,144 @@ impl<'a> Checker<'a> {
                 }
                 Type::Bool
             }
+            "split" => {
+                if !arity(self, 2, 2) {
+                    return Type::List(Box::new(Type::Str));
+                }
+                let text_ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(&text_ty, &Type::Str, args[0].span, " as the text for `split`");
+                let separator_ty = arg_ty(self, 1, Some(&Type::Str));
+                self.expect(
+                    &separator_ty,
+                    &Type::Str,
+                    args[1].span,
+                    " as the separator for `split`",
+                );
+                Type::List(Box::new(Type::Str))
+            }
+            "join" => {
+                if !arity(self, 2, 2) {
+                    return Type::Str;
+                }
+                let list_ty = arg_ty(self, 0, None);
+                match &list_ty {
+                    Type::List(inner) if **inner == Type::Str || inner.is_any() => {}
+                    Type::Any => {}
+                    Type::List(inner) => {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E0301",
+                                format!("`join` expects List[Str], found `List[{inner}]`"),
+                                args[0].span,
+                            )
+                            .with_help("convert elements with `str(...)` first"),
+                        );
+                    }
+                    other => {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E0301",
+                            format!("`join` expects List[Str], found `{other}`"),
+                            args[0].span,
+                        ));
+                    }
+                }
+                let separator_ty = arg_ty(self, 1, Some(&Type::Str));
+                self.expect(
+                    &separator_ty,
+                    &Type::Str,
+                    args[1].span,
+                    " as the separator for `join`",
+                );
+                Type::Str
+            }
+            "trim" => {
+                if !arity(self, 1, 1) {
+                    return Type::Str;
+                }
+                let text_ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(&text_ty, &Type::Str, args[0].span, " as the text for `trim`");
+                Type::Str
+            }
+            "starts_with" | "ends_with" => {
+                if !arity(self, 2, 2) {
+                    return Type::Bool;
+                }
+                let text_ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &text_ty,
+                    &Type::Str,
+                    args[0].span,
+                    &format!(" as the text for `{name}`"),
+                );
+                let affix_ty = arg_ty(self, 1, Some(&Type::Str));
+                self.expect(
+                    &affix_ty,
+                    &Type::Str,
+                    args[1].span,
+                    &format!(" as the affix for `{name}`"),
+                );
+                Type::Bool
+            }
+            "replace" => {
+                if !arity(self, 3, 3) {
+                    return Type::Str;
+                }
+                for (index, context) in [
+                    (0, " as the text for `replace`"),
+                    (1, " as the pattern for `replace`"),
+                    (2, " as the replacement for `replace`"),
+                ] {
+                    let ty = arg_ty(self, index, Some(&Type::Str));
+                    self.expect(&ty, &Type::Str, args[index].span, context);
+                }
+                Type::Str
+            }
+            "path_join" => {
+                if !arity(self, 2, 2) {
+                    return Type::Str;
+                }
+                let base_ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &base_ty,
+                    &Type::Str,
+                    args[0].span,
+                    " as the base path for `path_join`",
+                );
+                let child_ty = arg_ty(self, 1, Some(&Type::Str));
+                self.expect(
+                    &child_ty,
+                    &Type::Str,
+                    args[1].span,
+                    " as the child path for `path_join`",
+                );
+                Type::Str
+            }
+            "path_parent" | "path_name" | "path_stem" | "path_extension" => {
+                if !arity(self, 1, 1) {
+                    return Type::Str;
+                }
+                let ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &ty,
+                    &Type::Str,
+                    args[0].span,
+                    &format!(" as the path for `{name}`"),
+                );
+                Type::Str
+            }
+            "path_is_absolute" => {
+                if !arity(self, 1, 1) {
+                    return Type::Bool;
+                }
+                let ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &ty,
+                    &Type::Str,
+                    args[0].span,
+                    " as the path for `path_is_absolute`",
+                );
+                Type::Bool
+            }
             "keys" | "values" => {
                 if !arity(self, 1, 1) {
                     return Type::List(Box::new(Type::Any));
@@ -2629,6 +2772,137 @@ impl<'a> Checker<'a> {
                 let ty = arg_ty(self, 0, Some(&Type::Bool));
                 self.expect(&ty, &Type::Bool, args[0].span, " for `assert`");
                 Type::Unit
+            }
+            "read_file" => {
+                if !arity(self, 1, 1) {
+                    return Type::Str;
+                }
+                let ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &ty,
+                    &Type::Str,
+                    args[0].span,
+                    " as a file path for `read_file`",
+                );
+                Type::Str
+            }
+            "write_file" | "append_file" => {
+                if !arity(self, 2, 2) {
+                    return Type::Unit;
+                }
+                let path_ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &path_ty,
+                    &Type::Str,
+                    args[0].span,
+                    &format!(" as a file path for `{name}`"),
+                );
+                let text_ty = arg_ty(self, 1, Some(&Type::Str));
+                self.expect(
+                    &text_ty,
+                    &Type::Str,
+                    args[1].span,
+                    &format!(" as the contents for `{name}`"),
+                );
+                Type::Unit
+            }
+            "list_dir" => {
+                if !arity(self, 1, 1) {
+                    return Type::List(Box::new(Type::Str));
+                }
+                let ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &ty,
+                    &Type::Str,
+                    args[0].span,
+                    " as a directory path for `list_dir`",
+                );
+                Type::List(Box::new(Type::Str))
+            }
+            "glob" => {
+                if !arity(self, 1, 1) {
+                    return Type::List(Box::new(Type::Str));
+                }
+                let ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &ty,
+                    &Type::Str,
+                    args[0].span,
+                    " as the pattern for `glob`",
+                );
+                Type::List(Box::new(Type::Str))
+            }
+            "make_dir" | "remove_file" | "remove_dir" | "make_dir_all" | "remove_dir_all" => {
+                if !arity(self, 1, 1) {
+                    return Type::Unit;
+                }
+                let ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &ty,
+                    &Type::Str,
+                    args[0].span,
+                    &format!(" as a path for `{name}`"),
+                );
+                Type::Unit
+            }
+            "rename" | "copy_file" | "copy_dir_all" => {
+                if !arity(self, 2, 2) {
+                    return Type::Unit;
+                }
+                let source_ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &source_ty,
+                    &Type::Str,
+                    args[0].span,
+                    &format!(" as the source path for `{name}`"),
+                );
+                let target_ty = arg_ty(self, 1, Some(&Type::Str));
+                self.expect(
+                    &target_ty,
+                    &Type::Str,
+                    args[1].span,
+                    &format!(" as the target path for `{name}`"),
+                );
+                Type::Unit
+            }
+            "file_size" => {
+                if !arity(self, 1, 1) {
+                    return Type::Int;
+                }
+                let ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &ty,
+                    &Type::Str,
+                    args[0].span,
+                    " as a file path for `file_size`",
+                );
+                Type::Int
+            }
+            "is_file" | "is_dir" | "is_symlink" => {
+                if !arity(self, 1, 1) {
+                    return Type::Bool;
+                }
+                let ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &ty,
+                    &Type::Str,
+                    args[0].span,
+                    &format!(" as a file path for `{name}`"),
+                );
+                Type::Bool
+            }
+            "file_exists" => {
+                if !arity(self, 1, 1) {
+                    return Type::Bool;
+                }
+                let ty = arg_ty(self, 0, Some(&Type::Str));
+                self.expect(
+                    &ty,
+                    &Type::Str,
+                    args[0].span,
+                    " as a file path for `file_exists`",
+                );
+                Type::Bool
             }
             _ => Type::Any,
         }

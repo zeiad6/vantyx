@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: Phase 0–1 complete; Phases 2–5 complete for the v0.1 language; Phase 6 in progress (typed IR + C11 backend for a statically typed subset including enums, guarded `match`, scalar literal patterns, nested payload patterns, top-level or-patterns, integer range patterns, and file-based modules); AI-0 through AI-4 host-side work complete offline (providers, streamed text chat, embeddings, RAG retrieval and evaluation); AI-2 live provider evidence and later AI phases remain open. Phases are ordered to avoid architectural debt; items can move when evidence justifies it.
+Status: Phase 0–1 complete; Phases 2–5 complete for the v0.1 language; Phase 6 in progress (typed IR + C11 backend for a statically typed subset including enums, guarded `match`, scalar literal patterns, nested payload patterns, top-level or-patterns, integer range patterns, and file-based modules); AI-0 through AI-4 host-side work complete offline (providers, streamed text chat, embeddings, RAG retrieval and evaluation); the AI-2 cloud path was verified live on 2026-11-24 and re-verified at 20:59Z with 21/21 checks, but access is not guaranteed; local-model evidence and later AI phases remain open. Phases are ordered to avoid architectural debt; items can move when evidence justifies it.
 
 High-level summary and current sequencing: [`ROADMAP.md`](../ROADMAP.md). This file retains the detailed phase checklist.
 
@@ -31,7 +31,7 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 ## Phase 4 — Execution ✅ (interpreter)
 - [x] Tree-walking runtime
 - [x] Values, environments, functions, recursion
-- [x] Control flow, structs, collections, builtins
+- [x] Control flow, structs, collections, builtins, basic UTF-8 file I/O (T-058), and text builtins (T-060)
 - [x] Runtime errors with spans and stack traces
 - [x] Basic REPL
 - [x] REPL persistence and error recovery (T-009)
@@ -50,7 +50,7 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 - [x] Typed IR and lowering for the static subset
 - [x] C11 backend via system clang (ADR-0008)
 - [x] `vantyx build`, linking, `-o`
-- [x] Differential interpreter/native test suite (73 tests)
+- [x] Differential interpreter/native test suite (98 tests)
 - [x] Native `List[T]` for statically typed elements (T-024, ADR-0009)
 - [x] Native UTF-8 string indexing/iteration (T-025)
 - [x] Native `Map[K,V]` with insertion order and structural keys (T-027, ADR-0010)
@@ -62,6 +62,12 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 - [x] Native top-level or-patterns with shared bindings (T-050, ADR-0021)
 - [x] Native integer range patterns with comparison lowering (T-051, ADR-0022)
 - [x] File-based modules and imports in the interpreter and native backend (T-013)
+- [x] Basic UTF-8 file I/O in the interpreter and native backend (T-058, ADR-0026)
+- [x] Single-level directory operations in both engines (T-059, ADR-0027)
+- [x] Recursive directory creation and removal in both engines (T-063, ADR-0031)
+- [x] UTF-8 text builtins in both engines (T-060, ADR-0028)
+- [x] Rename and byte-preserving file copy in both engines (T-061, ADR-0029)
+- [x] Lexical POSIX-style path helpers in both engines (T-062, ADR-0030)
 - [x] Cycle-safe structural equality for lists, maps, structs, and enums
 - [ ] Debug info and optimization pipeline
 - [ ] Cranelift/LLVM evaluation with benchmarks
@@ -83,7 +89,7 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 - [ ] Race/deadlock tests
 
 ## Phase 10 — Ecosystem
-- [ ] Standard library
+- [ ] Standard library (file I/O, single-level and recursive directories, lexical globbing, rename/copy, recursive directory copy, metadata probes, lexical paths, and basic text exist; metadata objects/preservation, recursive move, atomic copies, regex/case/normalization, grapheme-aware text, and recoverable errors remain)
 - [ ] Formatter, linter, test runner
 - [ ] Package manager and registry
 - [ ] LSP and editor support
@@ -97,8 +103,10 @@ Detailed plan and exit gates: `docs/ai/AI_ROADMAP.md`.
 - [x] AI-1 — dependency-free offline foundation: JSON, providers, budgets,
       embedding providers with a bounded cache, vector index, BM25, JSON Schema,
       tools, bounded agents, metrics, SSE, and `vantyx ai` CLI.
-- [ ] AI-2 — live local/cloud providers, model manager, keyring (compatible
-      endpoint path and `models`/`doctor` already work).
+- [ ] AI-2 — live local-model evidence, model manager, keyring (compatible
+      endpoint path and `models`/`doctor` work; the cloud OpenAI-compatible
+      path was verified live on 2026-11-24 and re-verified at 20:59Z with
+      21/21 checks, but access is not guaranteed).
 - [ ] AI-3 — streamed text output, typed extraction, constrained decoding
       (validated extraction, bounded repair, and streamed OpenAI-compatible
       text chat complete; streaming tool calls, cancellation, and constrained

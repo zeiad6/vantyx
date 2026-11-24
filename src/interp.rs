@@ -10,12 +10,111 @@ use crate::span::Span;
 use crate::types::{Type, VariantInfo, resolve_type_expr};
 use crate::value::{FieldSlot, Value, map_get, map_insert};
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::rc::Rc;
 
 pub const MAX_CALL_DEPTH: usize = 256;
 pub const MAX_EVAL_DEPTH: usize = 1024;
 pub const MAX_RANGE_LEN: usize = 10_000_000;
+pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Unicode `White_Space` code points, shared by `trim` in both engines.
+fn is_text_whitespace(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0009}'..='\u{000D}'
+            | '\u{0020}'
+            | '\u{0085}'
+            | '\u{00A0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200A}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202F}'
+            | '\u{205F}'
+            | '\u{3000}'
+    )
+}
+
+/// Byte range of the final path component after dropping trailing `/` bytes.
+fn path_name_range(path: &str) -> (usize, usize) {
+    let bytes = path.as_bytes();
+    let mut end = bytes.len();
+    while end > 0 && bytes[end - 1] == b'/' {
+        end -= 1;
+    }
+    let mut begin = end;
+    while begin > 0 && bytes[begin - 1] != b'/' {
+        begin -= 1;
+    }
+    (begin, end)
+}
+
+fn path_parent(path: &str) -> String {
+    let bytes = path.as_bytes();
+    let mut end = bytes.len();
+    while end > 0 && bytes[end - 1] == b'/' {
+        end -= 1;
+    }
+    if end == 0 {
+        return if bytes.first() == Some(&b'/') {
+            "/".to_string()
+        } else {
+            ".".to_string()
+        };
+    }
+    let mut slash = end;
+    while slash > 0 && bytes[slash - 1] != b'/' {
+        slash -= 1;
+    }
+    let mut parent_end = slash;
+    while parent_end > 0 && bytes[parent_end - 1] == b'/' {
+        parent_end -= 1;
+    }
+    if parent_end == 0 {
+        if bytes.first() == Some(&b'/') {
+            "/".to_string()
+        } else {
+            ".".to_string()
+        }
+    } else {
+        path[..parent_end].to_string()
+    }
+}
+
+fn path_stem(path: &str) -> &str {
+    let (begin, end) = path_name_range(path);
+    let name = &path[begin..end];
+    let bytes = name.as_bytes();
+    match bytes.iter().rposition(|byte| *byte == b'.') {
+        Some(dot) if dot > 0 && dot + 1 < bytes.len() => &name[..dot],
+        _ => name,
+    }
+}
+
+fn path_extension(path: &str) -> &str {
+    let (begin, end) = path_name_range(path);
+    let name = &path[begin..end];
+    let bytes = name.as_bytes();
+    match bytes.iter().rposition(|byte| *byte == b'.') {
+        Some(dot) if dot > 0 && dot + 1 < bytes.len() => &name[dot + 1..],
+        _ => "",
+    }
+}
+
+fn path_join(base: &str, child: &str) -> String {
+    if child.starts_with('/') || base.is_empty() {
+        return child.to_string();
+    }
+    if child.is_empty() {
+        return base.to_string();
+    }
+    if base.ends_with('/') {
+        format!("{base}{child}")
+    } else {
+        format!("{base}/{child}")
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct StackFrame {
@@ -1745,6 +1844,190 @@ impl<'a> Interpreter<'a> {
                     )),
                 }
             }
+            "split" => {
+                self.arity(name, &args, 2, 2, span)?;
+                let text = match &args[0] {
+                    Value::Str(text) => text,
+                    other => {
+                        return Err(self.type_error(
+                            " as the text for `split`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                let separator = match &args[1] {
+                    Value::Str(separator) => separator,
+                    other => {
+                        return Err(self.type_error(
+                            " as the separator for `split`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                let parts: Vec<Value> = if separator.is_empty() {
+                    text.chars().map(|c| Value::str(c.to_string())).collect()
+                } else {
+                    text.split(&**separator).map(Value::str).collect()
+                };
+                Ok(Value::list(parts))
+            }
+            "join" => {
+                self.arity(name, &args, 2, 2, span)?;
+                let items = match &args[0] {
+                    Value::List(items) => items.borrow(),
+                    other => {
+                        return Err(self.type_error(
+                            " in `join`",
+                            "`List[Str]`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                let separator = match &args[1] {
+                    Value::Str(separator) => separator,
+                    other => {
+                        return Err(self.type_error(
+                            " as the separator for `join`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                let mut parts = Vec::with_capacity(items.len());
+                for item in items.iter() {
+                    match item {
+                        Value::Str(part) => parts.push(&**part),
+                        other => {
+                            return Err(self.type_error(
+                                " as an element for `join`",
+                                "`Str`",
+                                other,
+                                span,
+                            ));
+                        }
+                    }
+                }
+                Ok(Value::str(parts.join(&**separator)))
+            }
+            "trim" => {
+                self.arity(name, &args, 1, 1, span)?;
+                match &args[0] {
+                    Value::Str(text) => Ok(Value::str(text.trim_matches(is_text_whitespace))),
+                    other => Err(self.type_error(" in `trim`", "`Str`", other, span)),
+                }
+            }
+            "starts_with" | "ends_with" => {
+                self.arity(name, &args, 2, 2, span)?;
+                let text = match &args[0] {
+                    Value::Str(text) => text,
+                    other => {
+                        return Err(self.type_error(
+                            &format!(" as the text for `{name}`"),
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                let affix = match &args[1] {
+                    Value::Str(affix) => affix,
+                    other => {
+                        return Err(self.type_error(
+                            &format!(" as the affix for `{name}`"),
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                let matched = if name == "starts_with" {
+                    text.starts_with(&**affix)
+                } else {
+                    text.ends_with(&**affix)
+                };
+                Ok(Value::Bool(matched))
+            }
+            "replace" => {
+                self.arity(name, &args, 3, 3, span)?;
+                let mut values = Vec::with_capacity(3);
+                for (index, context) in [
+                    (0, " as the text for `replace`"),
+                    (1, " as the pattern for `replace`"),
+                    (2, " as the replacement for `replace`"),
+                ] {
+                    match &args[index] {
+                        Value::Str(value) => values.push(value.clone()),
+                        other => {
+                            return Err(self.type_error(context, "`Str`", other, span));
+                        }
+                    }
+                }
+                if values[1].is_empty() {
+                    return Err(self.rt(
+                        "R0016",
+                        "`replace` requires a non-empty pattern",
+                        span,
+                    ));
+                }
+                Ok(Value::str(values[0].replace(&*values[1], &values[2])))
+            }
+            "path_join" => {
+                self.arity(name, &args, 2, 2, span)?;
+                let base = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            " as the base path for `path_join`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                let child = match &args[1] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            " as the child path for `path_join`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                Ok(Value::str(path_join(base, child)))
+            }
+            "path_parent" | "path_name" | "path_stem" | "path_extension"
+            | "path_is_absolute" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let path = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            &format!(" as the path for `{name}`"),
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                match name {
+                    "path_parent" => Ok(Value::str(path_parent(path))),
+                    "path_name" => {
+                        let (begin, end) = path_name_range(path);
+                        Ok(Value::str(&path[begin..end]))
+                    }
+                    "path_stem" => Ok(Value::str(path_stem(path))),
+                    "path_extension" => Ok(Value::str(path_extension(path))),
+                    _ => Ok(Value::Bool(path.starts_with('/'))),
+                }
+            }
             "keys" | "values" => {
                 self.arity(name, &args, 1, 1, span)?;
                 match &args[0] {
@@ -1912,6 +2195,418 @@ impl<'a> Interpreter<'a> {
                     Value::Bool(false) => Err(self.rt("R0006", "assertion failed", span)),
                     other => Err(self.type_error(" in `assert`", "`Bool`", other, span)),
                 }
+            }
+            "read_file" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let path = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            " as the path for `read_file`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                if path.contains('\0') {
+                    return Err(self.rt("R0015", "file path contains a NUL byte", span));
+                }
+                let file = std::fs::File::open(&**path).map_err(|error| {
+                    self.rt(
+                        "R0015",
+                        format!("cannot read file `{path}`: {error}"),
+                        span,
+                    )
+                })?;
+                if let Ok(metadata) = file.metadata()
+                    && metadata.len() > MAX_FILE_BYTES
+                {
+                    return Err(self.rt(
+                        "R0015",
+                        format!("file `{path}` exceeds the 64 MiB read limit"),
+                        span,
+                    ));
+                }
+                let mut bytes = Vec::new();
+                file.take(MAX_FILE_BYTES + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|error| {
+                        self.rt(
+                            "R0015",
+                            format!("cannot read file `{path}`: {error}"),
+                            span,
+                        )
+                    })?;
+                if bytes.len() as u64 > MAX_FILE_BYTES {
+                    return Err(self.rt(
+                        "R0015",
+                        format!("file `{path}` exceeds the 64 MiB read limit"),
+                        span,
+                    ));
+                }
+                if bytes.contains(&0) {
+                    return Err(self.rt(
+                        "R0015",
+                        format!("file `{path}` contains a NUL byte"),
+                        span,
+                    ));
+                }
+                let text = String::from_utf8(bytes).map_err(|_| {
+                    self.rt(
+                        "R0015",
+                        format!("file `{path}` contents are not valid UTF-8"),
+                        span,
+                    )
+                })?;
+                Ok(Value::str(text))
+            }
+            "write_file" | "append_file" => {
+                self.arity(name, &args, 2, 2, span)?;
+                let path = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            &format!(" as the path for `{name}`"),
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                let text = match &args[1] {
+                    Value::Str(text) => text,
+                    other => {
+                        return Err(self.type_error(
+                            &format!(" as the contents for `{name}`"),
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                if path.contains('\0') {
+                    return Err(self.rt("R0015", "file path contains a NUL byte", span));
+                }
+                if text.contains('\0') {
+                    return Err(self.rt(
+                        "R0015",
+                        "file contents contain a NUL byte",
+                        span,
+                    ));
+                }
+                let mut file = if name == "append_file" {
+                    std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&**path)
+                } else {
+                    std::fs::File::create(&**path)
+                }
+                .map_err(|error| {
+                    self.rt(
+                        "R0015",
+                        format!("cannot write file `{path}`: {error}"),
+                        span,
+                    )
+                })?;
+                file.write_all(text.as_bytes())
+                    .and_then(|_| file.flush())
+                    .map_err(|error| {
+                        self.rt(
+                            "R0015",
+                            format!("cannot write file `{path}`: {error}"),
+                            span,
+                        )
+                    })?;
+                Ok(Value::Unit)
+            }
+            "file_size" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let path = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            " as a file path for `file_size`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                if path.contains('\0') {
+                    return Err(self.rt("R0015", "file path contains a NUL byte", span));
+                }
+                let metadata = std::fs::metadata(&**path).map_err(|error| {
+                    self.rt(
+                        "R0015",
+                        format!("cannot read metadata for `{path}`: {error}"),
+                        span,
+                    )
+                })?;
+                if !metadata.is_file() {
+                    return Err(self.rt(
+                        "R0015",
+                        format!("`{path}` is not a regular file"),
+                        span,
+                    ));
+                }
+                let size = i64::try_from(metadata.len()).map_err(|_| {
+                    self.rt(
+                        "R0015",
+                        format!("file `{path}` is too large to represent as Int"),
+                        span,
+                    )
+                })?;
+                Ok(Value::Int(size))
+            }
+            "is_file" | "is_dir" | "is_symlink" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let path = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            &format!(" as a file path for `{name}`"),
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                if path.contains('\0') {
+                    return Err(self.rt("R0015", "file path contains a NUL byte", span));
+                }
+                let result = match name {
+                    "is_file" => std::path::Path::new(&**path).is_file(),
+                    "is_dir" => std::path::Path::new(&**path).is_dir(),
+                    _ => std::fs::symlink_metadata(&**path)
+                        .map(|metadata| metadata.file_type().is_symlink())
+                        .unwrap_or(false),
+                };
+                Ok(Value::Bool(result))
+            }
+            "file_exists" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let path = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            " as the path for `file_exists`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                if path.contains('\0') {
+                    return Err(self.rt("R0015", "file path contains a NUL byte", span));
+                }
+                Ok(Value::Bool(std::path::Path::new(&**path).exists()))
+            }
+            "list_dir" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let path = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            " as the directory path for `list_dir`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                if path.contains('\0') {
+                    return Err(self.rt("R0015", "file path contains a NUL byte", span));
+                }
+                let entries = std::fs::read_dir(&**path).map_err(|error| {
+                    self.rt(
+                        "R0015",
+                        format!("cannot list directory `{path}`: {error}"),
+                        span,
+                    )
+                })?;
+                let mut names = Vec::new();
+                for entry in entries {
+                    let entry = entry.map_err(|error| {
+                        self.rt(
+                            "R0015",
+                            format!("cannot list directory `{path}`: {error}"),
+                            span,
+                        )
+                    })?;
+                    let name = entry.file_name().into_string().map_err(|_| {
+                        self.rt(
+                            "R0015",
+                            format!("directory `{path}` contains a name that is not valid UTF-8"),
+                            span,
+                        )
+                    })?;
+                    names.push(name);
+                }
+                names.sort();
+                Ok(Value::list(names.into_iter().map(Value::str).collect()))
+            }
+            "glob" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let pattern = match &args[0] {
+                    Value::Str(pattern) => pattern,
+                    other => {
+                        return Err(self.type_error(
+                            " as the pattern for `glob`",
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                if pattern.contains('\0') {
+                    return Err(self.rt("R0015", "glob pattern contains a NUL byte", span));
+                }
+                let paths = crate::glob::glob(pattern).map_err(|error| {
+                    let code = match error.kind {
+                        crate::glob::GlobErrorKind::Invalid => "R0016",
+                        crate::glob::GlobErrorKind::Io => "R0015",
+                    };
+                    self.rt(code, error.message, span)
+                })?;
+                Ok(Value::list(paths.into_iter().map(Value::str).collect()))
+            }
+            "make_dir" | "remove_file" | "remove_dir" | "make_dir_all" | "remove_dir_all" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let path = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            &format!(" as the path for `{name}`"),
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                if path.contains('\0') {
+                    return Err(self.rt("R0015", "file path contains a NUL byte", span));
+                }
+                let outcome = match name {
+                    "make_dir" => std::fs::create_dir(&**path),
+                    "make_dir_all" => std::fs::create_dir_all(&**path),
+                    "remove_file" => std::fs::remove_file(&**path),
+                    "remove_dir_all" => {
+                        // Refuse destructive roots before touching the
+                        // filesystem, then trim trailing separators before the
+                        // root type check so a symlink named with a trailing
+                        // slash is unlinked rather than followed.
+                        if let Some(refusal) = crate::fs_safety::refused_removal_root(path) {
+                            return Err(self.rt(
+                                "R0015",
+                                format!(
+                                    "cannot remove directory `{path}`: {}",
+                                    refusal.message()
+                                ),
+                                span,
+                            ));
+                        }
+                        let trimmed = path.trim_end_matches('/');
+                        let target = if trimmed.is_empty() { &**path } else { trimmed };
+                        std::fs::remove_dir_all(target)
+                    }
+                    _ => std::fs::remove_dir(&**path),
+                };
+                outcome.map_err(|error| {
+                    let action = match name {
+                        "make_dir" | "make_dir_all" => "create directory",
+                        "remove_file" => "remove file",
+                        _ => "remove directory",
+                    };
+                    self.rt(
+                        "R0015",
+                        format!("cannot {action} `{path}`: {error}"),
+                        span,
+                    )
+                })?;
+                Ok(Value::Unit)
+            }
+            "rename" | "copy_file" | "copy_dir_all" => {
+                self.arity(name, &args, 2, 2, span)?;
+                let source = match &args[0] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            &format!(" as the source path for `{name}`"),
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                let target = match &args[1] {
+                    Value::Str(path) => path,
+                    other => {
+                        return Err(self.type_error(
+                            &format!(" as the target path for `{name}`"),
+                            "`Str`",
+                            other,
+                            span,
+                        ));
+                    }
+                };
+                if source.contains('\0') || target.contains('\0') {
+                    return Err(self.rt("R0015", "file path contains a NUL byte", span));
+                }
+                if name == "copy_dir_all" {
+                    crate::copy_tree::copy_dir_all(source, target)
+                        .map_err(|message| self.rt("R0015", message, span))?;
+                    return Ok(Value::Unit);
+                }
+                if name == "rename" {
+                    std::fs::rename(&**source, &**target).map_err(|error| {
+                        self.rt(
+                            "R0015",
+                            format!("cannot rename `{source}` to `{target}`: {error}"),
+                            span,
+                        )
+                    })?;
+                    return Ok(Value::Unit);
+                }
+                let metadata = std::fs::metadata(&**source).map_err(|error| {
+                    self.rt(
+                        "R0015",
+                        format!("cannot copy file `{source}`: {error}"),
+                        span,
+                    )
+                })?;
+                if !metadata.is_file() {
+                    return Err(self.rt(
+                        "R0015",
+                        format!("cannot copy file `{source}`: not a regular file"),
+                        span,
+                    ));
+                }
+                let mut input = std::fs::File::open(&**source).map_err(|error| {
+                    self.rt(
+                        "R0015",
+                        format!("cannot copy file `{source}`: {error}"),
+                        span,
+                    )
+                })?;
+                let mut output = std::fs::File::create(&**target).map_err(|error| {
+                    self.rt(
+                        "R0015",
+                        format!("cannot copy file `{source}` to `{target}`: {error}"),
+                        span,
+                    )
+                })?;
+                std::io::copy(&mut input, &mut output)
+                    .and_then(|_| output.flush())
+                    .map_err(|error| {
+                        self.rt(
+                            "R0015",
+                            format!("cannot copy file `{source}` to `{target}`: {error}"),
+                            span,
+                        )
+                    })?;
+                Ok(Value::Unit)
             }
             _ => Err(self.rt("R0010", format!("unknown built-in function `{name}`"), span)),
         }

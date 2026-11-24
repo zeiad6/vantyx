@@ -2,7 +2,9 @@
 
 Updated: 2026-11-24
 Status: core language at a verified v0.1 subset; AI host foundation verified
-offline; live model evidence and production hardening remain open.
+offline and the cloud OpenAI-compatible path verified live on 2026-11-24 and
+re-verified at 20:59Z with 21/21 checks, but local-model evidence is still
+missing, cloud access is not guaranteed, and production hardening remains open.
 
 This is the canonical high-level roadmap. The detailed phase checklist remains
 in [`docs/roadmap.md`](docs/roadmap.md), and AI phase exit gates remain in
@@ -40,7 +42,23 @@ no feature is claimed without implementation, tests, and observed evidence.
   or-patterns, guards, and imported declarations.
 - File-based modules (`import` and `from ... import`) confined to the entry
   directory, with cycle/path/limit diagnostics (`E0501`–`E0512`).
-- Differential interpreter/native testing (73 cases) and 44 end-to-end tests.
+- Basic UTF-8 file I/O (`read_file`, `write_file`, `append_file`,
+  `file_exists`), read-only metadata probes (`file_size`, `is_file`, `is_dir`,
+  `is_symlink`), single-level directory operations (`list_dir`, `make_dir`,
+  `remove_file`, `remove_dir`), recursive directory creation/removal
+  (`make_dir_all`, `remove_dir_all`), lexical `glob` expansion, rename and
+  byte-preserving `copy_file`, recursive `copy_dir_all`, text builtins (`split`,
+  `join`, `trim`, `starts_with`, `ends_with`, `replace`), and lexical
+  POSIX-style path helpers
+  (`path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`,
+  `path_is_absolute`) in the interpreter and native backend, with sorted
+  listings, a 64 MiB read cap, NUL/UTF-8 validation, follow-symlink metadata
+  with `lstat` link detection, Unicode `White_Space` trimming, lexical
+  extension splitting, symlink-safe recursive removal, hidden-aware globbing
+  without symlink traversal, new-target recursive copying with inner-link and
+  special-file rejection, and fatal `R0015`/`R0016` errors
+  (ADR-0026–ADR-0034).
+- Differential interpreter/native testing (117 cases) and 88 end-to-end tests.
 - REPL line editing, single-line history, top-level completion, and echo.
 - Benchmarks against Python, Rust, and C with raw results recorded.
 
@@ -54,11 +72,17 @@ no feature is claimed without implementation, tests, and observed evidence.
    language-level AI syntax.
 4. **Structural-key native map hashing** and removal of the fixed scalar hash
    seed once a benchmark justifies the design.
-5. **Tooling:** formatter, linter, test runner, multiline REPL history, field
+5. **Standard library:** expand beyond file I/O, single-level and recursive
+   directories, lexical globbing, rename/copy, recursive copy, metadata
+   probes, lexical paths, and basic text into metadata objects/preservation,
+   recursive move, atomic copies, regex/case/normalization, grapheme-aware
+   text, and recoverable `Result`-based errors, after the prerequisite
+   error-handling and module design.
+6. **Tooling:** formatter, linter, test runner, multiline REPL history, field
    completion, and package manager (T-019/T-020/T-034).
-6. **Generics, traits, closures, iterators, `Result`/`?`, and FFI** in
+7. **Generics, traits, closures, iterators, `Result`/`?`, and FFI** in
    evidence-driven order.
-7. **Debug information, optimization, cross-platform CI, and an independent
+8. **Debug information, optimization, cross-platform CI, and an independent
    security review.**
 
 ## Track B — AI host and ecosystem
@@ -92,9 +116,12 @@ Research evidence: [`docs/ai/AI_RESEARCH.md`](docs/ai/AI_RESEARCH.md).
 
 ### Next AI priorities
 
-1. **Live evidence:** one local and one cloud chat, plus one trained embedding
-   model, recorded with setup, version, hardware, and output. Currently
-   `BLOCKED` by unavailable servers/credentials.
+1. **Live evidence:** one local chat and one trained embedding model, recorded
+   with setup, version, hardware, and output. The cloud chat half was verified
+   against Gemini on 2026-11-24 (T-067) and re-verified at 20:59Z with 21/21
+   checks; an earlier retry was rejected with HTTP 400 `User location is not
+   supported`. The local half remains `BLOCKED` because no inference server or
+   model is installed.
 2. **Streaming follow-ups:** streaming tool calls and interactive cancellation
    on top of the verified text-delta path.
 3. **Retrieval quality:** arbitrary metadata filters (source-prefix filtering

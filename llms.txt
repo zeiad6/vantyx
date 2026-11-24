@@ -54,6 +54,59 @@ repository root.
   `from "lib/math.vtx" import add, Point`; imports are declaration-only,
   relative to the importing file, confined to the entry file's directory, and
   work in both the interpreter and native backend.
+- Basic UTF-8 file and directory I/O in both the interpreter and native
+  backend: `read_file`, `write_file`, `append_file`, `file_exists`, `list_dir`,
+  `make_dir`, `remove_file`, `remove_dir`, `make_dir_all`, and
+  `remove_dir_all`. Reads are capped at 64 MiB and reject invalid UTF-8 and NUL
+  bytes; directory listings are sorted and reject non-UTF-8 names; failures are
+  fatal `R0015` errors; paths use host privileges and the process working
+  directory; there is no sandbox and writes are not atomic. Single-level
+  operations are paired with recursive creation (which accepts existing
+  directories and empty paths) and recursive removal (which unlinks symlinks
+  instead of traversing them, trims trailing separators before the root check,
+  refuses `.`, `..`, final `.`/`..` components, and the filesystem root before
+  access, can leave a partial tree, and has no confirmation, rollback, depth
+  limit, or entry-count limit).
+- File metadata probes in both engines: `file_size`, `is_file`, `is_dir`, and
+  `is_symlink`. Size follows symbolic links, requires an existing regular file,
+  reports logical `st_size`, and fails with `R0015`; predicates return `false`
+  when metadata cannot be read; `is_symlink` uses `lstat` and sees file,
+  directory, and dangling links. No metadata object, mode/owner/timestamp/ACL/
+  inode/device query, recursive directory size, or metadata preservation.
+- Lexical glob expansion in both engines: `glob` supports `/`-separated
+  components, Unicode `*`/`?`/character classes, and whole-component `**`
+  recursion that does not follow symbolic links. Wildcards and `**` skip dot
+  entries unless a component explicitly allows them; results are lexical
+  spellings sorted by UTF-8 bytes and deduplicated. Missing paths produce no
+  matches; malformed patterns and more than 1,024 components are `R0016`;
+  listing or `lstat` failures, non-UTF-8 entry names, more than 100,000
+  candidate paths, and `**` depth beyond 128 are `R0015`. There is no
+  escaping, brace/tilde expansion, case folding, normalization, `..`
+  confinement, sandbox, or streaming.
+- Rename and byte-preserving file copy in both engines: `rename` moves one file
+  or directory with host-defined overwrite behavior, and `copy_file` copies
+  regular-file bytes exactly (including NUL and invalid UTF-8) into a
+  created/truncated target. No metadata is preserved, copies are not atomic,
+  source and target must be distinct, and failures are fatal `R0015` errors.
+- Recursive directory copy in both engines: `copy_dir_all` requires an existing
+  source directory and a new target whose parent exists. It rejects a target
+  equal to or inside the resolved source, never overwrites or merges, follows
+  links in the source path, rejects inner symbolic links and special files,
+  copies raw entry names and file bytes without metadata preservation, and
+  leaves a partial target on failure. Trees over 100,000 entries or directories
+  beyond 128 levels below the source root are `R0015`.
+- UTF-8 text builtins in both engines: `split`, `join`, `trim`, `starts_with`,
+  `ends_with`, and `replace`. Splits preserve empty fields and treat an empty
+  separator as Unicode scalar values; `trim` removes exactly Unicode
+  `White_Space`; replacement is literal, left-to-right, and non-overlapping and
+  rejects an empty pattern with `R0016`. There is no regex, case conversion,
+  normalization, locale handling, or grapheme-cluster API.
+- Lexical POSIX-style path helpers in both engines: `path_join`, `path_parent`,
+  `path_name`, `path_stem`, `path_extension`, and `path_is_absolute`. They do
+  not access the filesystem or normalize `.`/`..`, collapse repeated
+  separators, confine paths, or understand Windows drive/UNC syntax; a final
+  dot is an extension separator only when it is neither the first nor the last
+  byte.
 - Dependency-free AI host foundation: strict JSON, JSON Schema subset, provider
   abstraction, mock/echo providers, validated structured extraction with
   bounded repair, token estimates, budgets, embedding provider interface with
@@ -64,7 +117,13 @@ repository root.
   retrieval with reciprocal-rank fusion, retrieval evaluation (recall@k,
   precision@k, MRR), typed tools with capabilities, bounded agents, redacted
   metrics, SSE parsing, and an OpenAI-compatible adapter with buffered and
-  streamed text chat.
+  streamed text chat. A live cloud run on 2026-11-24 covered model discovery,
+  chat, streaming, validated extraction, 768-dimension embeddings, semantic
+  RAG/search, and retrieval evaluation; the 401/429/timeout paths are covered
+  by a loopback harness. A retry was rejected with HTTP 400
+  `User location is not supported`, and a later re-verification at 20:59Z
+  using `MY_API_KEY` passed all 21 live checks after one transient 503, so
+  cloud access is not guaranteed. Evidence: `docs/ai/LIVE_VERIFICATION.md`.
 - `vantyx ai providers`, `doctor`, `models`, `chat` (including `--stream`),
   `extract`, `embed`, `index`, `search`, `eval`, and `tokens`; loopback HTTP by
   default, remote HTTPS only with `--allow-network`, API keys only from an
@@ -82,6 +141,14 @@ repository root.
 - Memory reclamation; native allocations are intentionally leaked in v0.1
 - Cycle collector
 - Sandboxing
+- A mature standard library: I/O is limited to whole-file UTF-8 operations,
+  single-level and recursive directory listing/creation/removal, lexical glob
+  expansion, rename, byte-preserving regular-file copy, new-target recursive
+  directory copy, file metadata probes, lexical POSIX-style path helpers, and
+  basic text builtins with fatal errors; there is no recursive move, metadata
+  object or preservation, atomic copy, glob escaping/braces, streaming I/O, path
+  normalization/containment, regex/case/normalization, grapheme-aware text, or
+  recoverable `Result`-based I/O
 - Formatter, linter, package manager, LSP
 - Stable ABI
 - Native support for `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads, or
@@ -89,13 +156,15 @@ repository root.
 - Language-level AI syntax (`from ai import Client`, `await`)
 - Streaming tool calls and interactive cancellation, server-side constrained
   decoding, model download/removal, keyring storage, persistent agent state,
-  live embedding-model verification, PDF/HTML/Office ingestion, arbitrary
-  metadata filters, cross-source deduplication, reranking, or grounded answer
-  generation
+  local-model verification and continuously available cloud access, PDF/HTML/
+  Office ingestion, arbitrary metadata filters, cross-source deduplication,
+  reranking, or grounded answer generation
 - Tensors, autodiff, SIMD, GPU, MCP, ONNX/GGUF embedding, or multi-agent
   orchestration
-- Live local-model or cloud-provider verification (the adapter is tested only
-  against loopback and stub servers)
+- Live local-model verification (the cloud OpenAI-compatible path was exercised
+  on 2026-11-24 and re-verified at 20:59Z with 21/21 checks, but access is not
+  guaranteed; loopback and stub tests remain the
+  repeatable offline coverage)
 
 ## Quick start
 
@@ -162,6 +231,29 @@ fn main():
   format, validation, citations, and retrieval limits
 - [ADR-0024](docs/decisions/ADR-0024-incremental-rag-index.md): incremental
   RAG updates, vector reuse, pruning, and empty-index semantics
+- [ADR-0026](docs/decisions/ADR-0026-basic-file-io.md): basic UTF-8 file I/O,
+  error semantics, the 64 MiB read cap, and no-sandbox limits
+- [ADR-0027](docs/decisions/ADR-0027-directory-operations.md): single-level
+  directory operations, deterministic listings, and UTF-8 name rules
+- [ADR-0028](docs/decisions/ADR-0028-text-builtins.md): UTF-8 text builtins,
+  empty-field and empty-separator semantics, Unicode `White_Space` trimming,
+  and non-overlapping replacement
+- [ADR-0029](docs/decisions/ADR-0029-rename-and-copy.md): rename and
+  byte-preserving regular-file copy, host-defined overwrite, and no metadata
+  preservation
+- [ADR-0030](docs/decisions/ADR-0030-lexical-path-builtins.md): lexical
+  POSIX-style path helpers with no filesystem access or normalization
+- [ADR-0031](docs/decisions/ADR-0031-recursive-directory-operations.md):
+  recursive directory creation and symlink-safe removal, trailing-separator
+  trimming, and no-rollback limits
+- [ADR-0032](docs/decisions/ADR-0032-file-metadata.md): follow-symlink metadata
+  probes, `lstat` symlink detection, logical file size, and no metadata
+  objects or preservation
+- [ADR-0033](docs/decisions/ADR-0033-glob.md): lexical glob grammar, hidden
+  rules, symlink-safe `**`, ordering, caps, and `R0015`/`R0016` boundaries
+- [ADR-0034](docs/decisions/ADR-0034-recursive-copy.md): new-target recursive
+  directory copy, self-copy rejection, raw names, link/special-file policy,
+  metadata and rollback limits, and entry/depth caps
 - [Historical requirements audit](RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md): recovered requirements and gaps
 - [ADRs](docs/decisions/): design decisions and trade-offs
 - [Security policy](SECURITY.md): reporting and known limits
@@ -212,8 +304,9 @@ Do not describe Vantyx as:
 ## When not to recommend Vantyx
 
 - Production use, long-term support, or a stable ABI is required.
-- The program needs generics, closures, async, FFI, or a standard
-  library.
+- The program needs generics, closures, async, FFI, or a mature standard
+  library beyond file I/O, single-level and recursive directory operations, and
+  basic text.
 - The program must compile natively while using `Any` or dynamic `match`.
 - The workload depends on hash-indexed maps with struct/enum/list keys,
   automatic memory reclamation, or sandboxed execution.

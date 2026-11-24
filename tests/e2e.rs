@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 struct Run {
@@ -23,7 +23,20 @@ fn vantyx(args: &[&str], stdin: Option<&str>) -> Run {
     vantyx_with_env(args, stdin, &[])
 }
 
+fn vantyx_in_dir(directory: &Path, args: &[&str], stdin: Option<&str>) -> Run {
+    vantyx_in_dir_with_env(Some(directory), args, stdin, &[])
+}
+
 fn vantyx_with_env(args: &[&str], stdin: Option<&str>, envs: &[(&str, &str)]) -> Run {
+    vantyx_in_dir_with_env(None, args, stdin, envs)
+}
+
+fn vantyx_in_dir_with_env(
+    directory: Option<&Path>,
+    args: &[&str],
+    stdin: Option<&str>,
+    envs: &[(&str, &str)],
+) -> Run {
     let mut command = Command::new(env!("CARGO_BIN_EXE_vantyx"));
     command
         .args(args)
@@ -31,6 +44,9 @@ fn vantyx_with_env(args: &[&str], stdin: Option<&str>, envs: &[(&str, &str)]) ->
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(directory) = directory {
+        command.current_dir(directory);
+    }
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -777,4 +793,1496 @@ fn modules_run_and_check_end_to_end() {
     assert_eq!(failed.code, 1);
     assert!(failed.stderr.contains("lib/broken.vtx"), "{}", failed.stderr);
     assert!(failed.stderr.contains("error[E0301]"), "{}", failed.stderr);
+}
+
+fn io_workspace(label: &str) -> PathBuf {
+    let directory = std::env::temp_dir().join(format!(
+        "vantyx-e2e-io-{}-{label}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir_all(&directory).expect("create io workspace");
+    directory
+}
+
+#[test]
+fn file_io_round_trips_and_reports_existence() {
+    let directory = io_workspace("roundtrip");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   write_file(\"note.txt\", \"discarded\")\n\
+         \x20   write_file(\"note.txt\", \"alpha\")\n\
+         \x20   append_file(\"note.txt\", \" beta\")\n\
+         \x20   print(read_file(\"note.txt\"))\n\
+         \x20   print(file_exists(\"note.txt\"))\n\
+         \x20   print(file_exists(\"missing.txt\"))\n\
+         \x20   print(file_exists(\".\"))\n",
+    )
+    .expect("write io source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "alpha beta\ntrue\nfalse\ntrue\n");
+    assert_eq!(
+        fs::read_to_string(directory.join("note.txt")).expect("read note"),
+        "alpha beta"
+    );
+}
+
+#[test]
+fn file_io_rejects_invalid_utf8_and_nul_contents() {
+    let directory = io_workspace("invalid");
+    fs::write(directory.join("bad-utf8.bin"), [0xff, 0xfe]).expect("write invalid utf8");
+    fs::write(directory.join("nul.bin"), b"a\0b").expect("write nul");
+    let invalid = directory.join("invalid.vtx");
+    fs::write(&invalid, "fn main():\n    print(read_file(\"bad-utf8.bin\"))\n")
+        .expect("write invalid source");
+    let nul = directory.join("nul.vtx");
+    fs::write(&nul, "fn main():\n    print(read_file(\"nul.bin\"))\n")
+        .expect("write nul source");
+
+    let invalid_run = vantyx_in_dir(
+        &directory,
+        &["run", invalid.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(invalid_run.code, 2, "stderr: {}", invalid_run.stderr);
+    assert!(invalid_run.stdout.is_empty());
+    assert!(
+        invalid_run.stderr.contains("error[R0015]"),
+        "{}",
+        invalid_run.stderr
+    );
+    assert!(
+        invalid_run.stderr.contains("not valid UTF-8"),
+        "{}",
+        invalid_run.stderr
+    );
+
+    let nul_run = vantyx_in_dir(&directory, &["run", nul.to_str().expect("utf-8 path")], None);
+    assert_eq!(nul_run.code, 2, "stderr: {}", nul_run.stderr);
+    assert!(nul_run.stdout.is_empty());
+    assert!(nul_run.stderr.contains("error[R0015]"), "{}", nul_run.stderr);
+    assert!(
+        nul_run.stderr.contains("NUL byte"),
+        "{}",
+        nul_run.stderr
+    );
+}
+
+#[test]
+fn file_io_rejects_non_str_arguments_at_compile_time() {
+    let run = check_file(
+        "file-io-types",
+        "fn main():\n\
+         \x20   print(read_file(1))\n\
+         \x20   write_file(\"out.txt\", 2)\n\
+         \x20   append_file(3, \"text\")\n\
+         \x20   print(file_exists(true))\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("as a file path for `read_file`"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("as the contents for `write_file`"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("as a file path for `append_file`"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("as a file path for `file_exists`"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn directory_builtins_round_trip() {
+    let directory = io_workspace("dirs");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   make_dir(\"work\")\n\
+         \x20   make_dir(\"work/a\")\n\
+         \x20   make_dir(\"work/b\")\n\
+         \x20   write_file(\"work/a/note.txt\", \"hello\")\n\
+         \x20   print(list_dir(\"work\"))\n\
+         \x20   print(list_dir(\"work/a\"))\n\
+         \x20   print(file_exists(\"work/a/note.txt\"))\n\
+         \x20   remove_file(\"work/a/note.txt\")\n\
+         \x20   remove_dir(\"work/a\")\n\
+         \x20   remove_dir(\"work/b\")\n\
+         \x20   remove_dir(\"work\")\n\
+         \x20   print(file_exists(\"work\"))\n",
+    )
+    .expect("write directory source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "[\"a\", \"b\"]\n[\"note.txt\"]\ntrue\nfalse\n"
+    );
+    assert!(!directory.join("work").exists());
+}
+
+#[test]
+fn directory_builtins_reject_non_str_arguments() {
+    let run = check_file(
+        "dir-types",
+        "fn main():\n\
+         \x20   print(list_dir(1))\n\
+         \x20   make_dir(2)\n\
+         \x20   remove_file(3)\n\
+         \x20   remove_dir(4)\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    for message in [
+        "as a directory path for `list_dir`",
+        "as a path for `make_dir`",
+        "as a path for `remove_file`",
+        "as a path for `remove_dir`",
+    ] {
+        assert!(run.stderr.contains(message), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn directory_errors_are_fatal_r0015() {
+    for (label, setup, source) in [
+        (
+            "list-missing",
+            None,
+            "fn main():\n    print(list_dir(\"missing\"))\n",
+        ),
+        ("make-existing", None, "fn main():\n    make_dir(\".\")\n"),
+        (
+            "remove-file-dir",
+            Some(("sub", true)),
+            "fn main():\n    remove_file(\"sub\")\n",
+        ),
+        (
+            "remove-dir-nonempty",
+            Some(("nonempty/child.txt", false)),
+            "fn main():\n    remove_dir(\"nonempty\")\n",
+        ),
+        (
+            "list-file",
+            Some(("plain.txt", false)),
+            "fn main():\n    print(list_dir(\"plain.txt\"))\n",
+        ),
+    ] {
+        let directory = io_workspace(label);
+        if let Some((path, is_dir)) = setup {
+            let path = directory.join(path);
+            if is_dir {
+                fs::create_dir_all(&path).expect("create setup directory");
+            } else {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).expect("create setup parent");
+                }
+                fs::write(&path, "x").expect("write setup file");
+            }
+        }
+        let source_path = directory.join("main.vtx");
+        fs::write(&source_path, source).expect("write directory error source");
+        let run = vantyx_in_dir(
+            &directory,
+            &["run", source_path.to_str().expect("utf-8 path")],
+            None,
+        );
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0015]"),
+            "{label}: {}",
+            run.stderr
+        );
+    }
+}
+
+#[test]
+fn recursive_directory_builtins_round_trip() {
+    let directory = io_workspace("recursive-dirs");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   make_dir_all(\"work/a/b/c\")\n\
+         \x20   make_dir_all(\"work/a/b\")\n\
+         \x20   make_dir_all(\"\")\n\
+         \x20   write_file(\"work/a/b/c/note.txt\", \"hello\")\n\
+         \x20   print(list_dir(\"work/a/b/c\"))\n\
+         \x20   print(list_dir(\"work/a/b\"))\n\
+         \x20   remove_dir_all(\"work/a/b/\")\n\
+         \x20   print(file_exists(\"work/a/b\"))\n\
+         \x20   remove_dir_all(\"work\")\n\
+         \x20   print(file_exists(\"work\"))\n",
+    )
+    .expect("write recursive directory source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "[\"note.txt\"]\n[\"c\"]\nfalse\nfalse\n");
+    assert!(!directory.join("work").exists());
+}
+
+#[test]
+fn recursive_directory_builtins_reject_non_str_arguments() {
+    let run = check_file(
+        "recursive-dir-types",
+        "fn main():\n\
+         \x20   make_dir_all(1)\n\
+         \x20   remove_dir_all(true)\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    for message in [
+        "as a path for `make_dir_all`",
+        "as a path for `remove_dir_all`",
+    ] {
+        assert!(run.stderr.contains(message), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn recursive_directory_errors_are_fatal_r0015() {
+    for (label, setup, source) in [
+        (
+            "make-through-file",
+            Some(("plain.txt", false)),
+            "fn main():\n    make_dir_all(\"plain.txt/sub\")\n",
+        ),
+        (
+            "make-final-file",
+            Some(("plain.txt", false)),
+            "fn main():\n    make_dir_all(\"plain.txt\")\n",
+        ),
+        (
+            "remove-file",
+            Some(("plain.txt", false)),
+            "fn main():\n    remove_dir_all(\"plain.txt\")\n",
+        ),
+        (
+            "remove-missing",
+            None,
+            "fn main():\n    remove_dir_all(\"missing\")\n",
+        ),
+        (
+            "remove-empty",
+            None,
+            "fn main():\n    remove_dir_all(\"\")\n",
+        ),
+    ] {
+        let directory = io_workspace(label);
+        if let Some((path, is_dir)) = setup {
+            let path = directory.join(path);
+            if is_dir {
+                fs::create_dir_all(&path).expect("create setup directory");
+            } else {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).expect("create setup parent");
+                }
+                fs::write(&path, "x").expect("write setup file");
+            }
+        }
+        let source_path = directory.join("main.vtx");
+        fs::write(&source_path, source).expect("write recursive directory error source");
+        let run = vantyx_in_dir(
+            &directory,
+            &["run", source_path.to_str().expect("utf-8 path")],
+            None,
+        );
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0015]"),
+            "{label}: {}",
+            run.stderr
+        );
+    }
+}
+
+#[test]
+fn recursive_directory_dynamic_arguments_fail_at_runtime() {
+    for (label, builtin) in [
+        ("make-dir-all-dynamic", "make_dir_all"),
+        ("remove-dir-all-dynamic", "remove_dir_all"),
+    ] {
+        let source = format!(
+            "fn run(path: Any):\n    {builtin}(path)\n\nfn main():\n    run(1)\n"
+        );
+        let run = run_file(label, &source);
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0005]"),
+            "{label}: {}",
+            run.stderr
+        );
+        assert!(
+            run.stderr
+                .contains(&format!("as the path for `{builtin}`")),
+            "{label}: {}",
+            run.stderr
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_removal_refuses_destructive_roots() {
+    for (label, path) in [
+        ("dot", "."),
+        ("dot-slash", "./"),
+        ("dot-dot", ".."),
+        ("dot-dot-slash", "../"),
+        ("tree-dot", "tree/."),
+        ("tree-dot-dot", "tree/.."),
+        ("root", "/"),
+        ("root-double", "//"),
+    ] {
+        let directory = io_workspace(&format!("removal-root-{label}"));
+        fs::write(directory.join("sentinel.txt"), "keep").expect("write sentinel");
+        fs::create_dir_all(directory.join("tree/inner")).expect("create tree");
+        fs::write(directory.join("tree/inner/data.txt"), "keep").expect("write tree data");
+        let source = directory.join("main.vtx");
+        fs::write(
+            &source,
+            format!("fn main():\n    remove_dir_all(\"{path}\")\n"),
+        )
+        .expect("write destructive-root source");
+
+        let run = vantyx_in_dir(
+            &directory,
+            &["run", source.to_str().expect("utf-8 path")],
+            None,
+        );
+        assert_eq!(run.code, 2, "{label}: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0015]"),
+            "{label}: {}",
+            run.stderr
+        );
+        assert!(
+            run.stderr.contains("refusing to remove"),
+            "{label}: {}",
+            run.stderr
+        );
+        assert!(
+            directory.join("sentinel.txt").exists(),
+            "{label}: sentinel was deleted"
+        );
+        assert!(
+            directory.join("tree/inner/data.txt").exists(),
+            "{label}: tree was deleted"
+        );
+        assert!(source.exists(), "{label}: source was deleted");
+    }
+}
+
+#[test]
+fn recursive_removal_allows_a_leading_dot_prefix() {
+    let directory = io_workspace("removal-leading-dot");
+    fs::write(directory.join("sentinel.txt"), "keep").expect("write sentinel");
+    fs::create_dir_all(directory.join("tree/inner")).expect("create tree");
+    fs::write(directory.join("tree/inner/data.txt"), "keep").expect("write tree data");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   remove_dir_all(\"./tree\")\n\
+         \x20   print(file_exists(\"tree\"))\n\
+         \x20   print(file_exists(\"sentinel.txt\"))\n",
+    )
+    .expect("write leading-dot source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "false\ntrue\n");
+    assert!(!directory.join("tree").exists());
+    assert!(directory.join("sentinel.txt").exists());
+}
+
+#[test]
+fn recursive_directory_removal_does_not_follow_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let directory = io_workspace("recursive-symlink");
+    let target = directory.join("target");
+    fs::create_dir_all(target.join("inner")).expect("create symlink target");
+    fs::write(target.join("inner/data.txt"), "keep").expect("write target data");
+    fs::create_dir_all(directory.join("tree/sub")).expect("create tree");
+    symlink(&target, directory.join("tree/sub/link")).expect("create inner symlink");
+    symlink(&target, directory.join("root-link")).expect("create root symlink");
+    symlink(&target, directory.join("make-link")).expect("create make symlink");
+
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   make_dir_all(\"make-link\")\n\
+         \x20   remove_dir_all(\"tree\")\n\
+         \x20   print(file_exists(\"tree\"))\n\
+         \x20   print(file_exists(\"target/inner/data.txt\"))\n\
+         \x20   remove_dir_all(\"root-link/\")\n\
+         \x20   print(file_exists(\"root-link\"))\n\
+         \x20   print(file_exists(\"target/inner/data.txt\"))\n",
+    )
+    .expect("write symlink source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "false\ntrue\nfalse\ntrue\n");
+    assert!(!directory.join("tree").exists());
+    assert!(directory
+        .join("root-link")
+        .symlink_metadata()
+        .is_err());
+    assert_eq!(
+        fs::read_to_string(target.join("inner/data.txt")).expect("read target data"),
+        "keep"
+    );
+}
+
+#[test]
+fn file_metadata_builtins_round_trip() {
+    let directory = io_workspace("file-metadata");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   write_file(\"data.txt\", \"hello\")\n\
+         \x20   make_dir(\"folder\")\n\
+         \x20   print(file_size(\"data.txt\"))\n\
+         \x20   print(is_file(\"data.txt\"))\n\
+         \x20   print(is_file(\"folder\"))\n\
+         \x20   print(is_dir(\"folder\"))\n\
+         \x20   print(is_dir(\"data.txt\"))\n\
+         \x20   print(is_symlink(\"data.txt\"))\n\
+         \x20   print(is_file(\"missing\"))\n\
+         \x20   print(is_dir(\"missing\"))\n\
+         \x20   print(is_symlink(\"missing\"))\n\
+         \x20   remove_file(\"data.txt\")\n\
+         \x20   remove_dir(\"folder\")\n",
+    )
+    .expect("write metadata source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "5\ntrue\nfalse\ntrue\nfalse\nfalse\nfalse\nfalse\nfalse\n"
+    );
+}
+
+#[test]
+fn file_metadata_builtins_reject_non_str_arguments() {
+    let run = check_file(
+        "file-metadata-types",
+        "fn main():\n\
+         \x20   file_size(1)\n\
+         \x20   is_file(true)\n\
+         \x20   is_dir(1.5)\n\
+         \x20   is_symlink([\"x\"])\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    for message in [
+        "as a file path for `file_size`",
+        "as a file path for `is_file`",
+        "as a file path for `is_dir`",
+        "as a file path for `is_symlink`",
+    ] {
+        assert!(run.stderr.contains(message), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn file_metadata_errors_are_fatal_r0015() {
+    for (label, setup, source) in [
+        (
+            "metadata-directory",
+            true,
+            "fn main():\n    print(file_size(\"folder\"))\n",
+        ),
+        (
+            "metadata-missing",
+            false,
+            "fn main():\n    print(file_size(\"missing\"))\n",
+        ),
+        (
+            "metadata-empty",
+            false,
+            "fn main():\n    print(file_size(\"\"))\n",
+        ),
+    ] {
+        let directory = io_workspace(label);
+        if setup {
+            fs::create_dir(directory.join("folder")).expect("create folder");
+        }
+        let source_path = directory.join("main.vtx");
+        fs::write(&source_path, source).expect("write metadata error source");
+        let run = vantyx_in_dir(
+            &directory,
+            &["run", source_path.to_str().expect("utf-8 path")],
+            None,
+        );
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0015]"),
+            "{label}: {}",
+            run.stderr
+        );
+    }
+}
+
+#[test]
+fn file_metadata_dynamic_arguments_fail_at_runtime() {
+    for (label, builtin) in [
+        ("file-size-dynamic", "file_size"),
+        ("is-file-dynamic", "is_file"),
+        ("is-dir-dynamic", "is_dir"),
+        ("is-symlink-dynamic", "is_symlink"),
+    ] {
+        let source = format!(
+            "fn run(path: Any):\n    print({builtin}(path))\n\nfn main():\n    run(1)\n"
+        );
+        let run = run_file(label, &source);
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0005]"),
+            "{label}: {}",
+            run.stderr
+        );
+        assert!(
+            run.stderr
+                .contains(&format!("as a file path for `{builtin}`")),
+            "{label}: {}",
+            run.stderr
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn file_metadata_symlink_rules() {
+    use std::os::unix::fs::symlink;
+
+    let directory = io_workspace("file-metadata-symlinks");
+    fs::write(directory.join("target.txt"), "hello").expect("write target");
+    fs::create_dir(directory.join("target-dir")).expect("create target dir");
+    symlink("target.txt", directory.join("link.txt")).expect("create file link");
+    symlink("target-dir", directory.join("link-dir")).expect("create dir link");
+    symlink("absent", directory.join("dangling")).expect("create dangling link");
+
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   print(file_size(\"link.txt\"))\n\
+         \x20   print(is_file(\"link.txt\"))\n\
+         \x20   print(is_symlink(\"link.txt\"))\n\
+         \x20   print(is_dir(\"link-dir\"))\n\
+         \x20   print(is_symlink(\"link-dir\"))\n\
+         \x20   print(is_file(\"dangling\"))\n\
+         \x20   print(is_dir(\"dangling\"))\n\
+         \x20   print(is_symlink(\"dangling\"))\n",
+    )
+    .expect("write symlink metadata source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "5\ntrue\ntrue\ntrue\ntrue\nfalse\nfalse\ntrue\n"
+    );
+}
+
+#[test]
+fn rename_and_copy_round_trip() {
+    let directory = io_workspace("rename-copy");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   write_file(\"source.txt\", \"hello\")\n\
+         \x20   rename(\"source.txt\", \"renamed.txt\")\n\
+         \x20   print(file_exists(\"source.txt\"))\n\
+         \x20   print(read_file(\"renamed.txt\"))\n\
+         \x20   copy_file(\"renamed.txt\", \"copy.txt\")\n\
+         \x20   print(read_file(\"copy.txt\"))\n\
+         \x20   write_file(\"copy.txt\", \"stale\")\n\
+         \x20   copy_file(\"renamed.txt\", \"copy.txt\")\n\
+         \x20   print(read_file(\"copy.txt\"))\n\
+         \x20   make_dir(\"folder\")\n\
+         \x20   copy_file(\"renamed.txt\", \"folder/inner.txt\")\n\
+         \x20   print(list_dir(\"folder\"))\n\
+         \x20   rename(\"folder\", \"moved\")\n\
+         \x20   print(file_exists(\"folder\"))\n\
+         \x20   print(list_dir(\"moved\"))\n\
+         \x20   remove_file(\"moved/inner.txt\")\n\
+         \x20   remove_dir(\"moved\")\n\
+         \x20   remove_file(\"renamed.txt\")\n\
+         \x20   remove_file(\"copy.txt\")\n\
+         \x20   print(file_exists(\"moved\"))\n",
+    )
+    .expect("write rename/copy source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "false\nhello\nhello\nhello\n[\"inner.txt\"]\nfalse\n[\"inner.txt\"]\nfalse\n"
+    );
+    assert!(!directory.join("source.txt").exists());
+    assert!(!directory.join("renamed.txt").exists());
+    assert!(!directory.join("copy.txt").exists());
+    assert!(!directory.join("moved").exists());
+}
+
+#[test]
+fn copy_file_preserves_bytes() {
+    let directory = io_workspace("copy-bytes");
+    let bytes: Vec<u8> = vec![0, 0xff, 0xfe, 1, 2, 3, 0, 0x80, 0x7f];
+    fs::write(directory.join("blob.bin"), &bytes).expect("write binary source");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   copy_file(\"blob.bin\", \"blob-copy.bin\")\n\
+         \x20   print(file_exists(\"blob-copy.bin\"))\n",
+    )
+    .expect("write copy source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "true\n");
+    assert_eq!(
+        fs::read(directory.join("blob-copy.bin")).expect("read copied bytes"),
+        bytes
+    );
+}
+
+#[test]
+fn rename_and_copy_reject_non_str_arguments() {
+    let run = check_file(
+        "rename-copy-types",
+        "fn main():\n\
+         \x20   rename(1, 2)\n\
+         \x20   copy_file(3, 4)\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    for message in [
+        "as the source path for `rename`",
+        "as the target path for `rename`",
+        "as the source path for `copy_file`",
+        "as the target path for `copy_file`",
+    ] {
+        assert!(run.stderr.contains(message), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn rename_and_copy_dynamic_arguments_fail_at_runtime() {
+    for (label, builtin) in [("rename", "rename"), ("copy", "copy_file")] {
+        let source = format!(
+            "fn move_it(src: Any, dst: Any):\n    {builtin}(src, dst)\n\nfn main():\n    move_it(1, 2)\n"
+        );
+        let run = run_file(&format!("{label}-dynamic"), &source);
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0005]"),
+            "{label}: {}",
+            run.stderr
+        );
+        assert!(
+            run.stderr
+                .contains(&format!("as the source path for `{builtin}`")),
+            "{label}: {}",
+            run.stderr
+        );
+    }
+}
+
+#[test]
+fn rename_and_copy_errors_are_fatal_r0015() {
+    for (label, setup, source) in [
+        (
+            "rename-missing",
+            None,
+            "fn main():\n    rename(\"missing\", \"x\")\n",
+        ),
+        (
+            "copy-missing",
+            None,
+            "fn main():\n    copy_file(\"missing\", \"x\")\n",
+        ),
+        (
+            "copy-directory",
+            Some(("dir", true)),
+            "fn main():\n    copy_file(\"dir\", \"x\")\n",
+        ),
+        (
+            "copy-missing-parent",
+            Some(("file.txt", false)),
+            "fn main():\n    copy_file(\"file.txt\", \"missing/x\")\n",
+        ),
+        (
+            "rename-over-directory",
+            Some(("file.txt", false)),
+            "fn main():\n    make_dir(\"dir\")\n    rename(\"file.txt\", \"dir\")\n",
+        ),
+    ] {
+        let directory = io_workspace(label);
+        if let Some((path, is_dir)) = setup {
+            let path = directory.join(path);
+            if is_dir {
+                fs::create_dir_all(&path).expect("create setup directory");
+            } else {
+                fs::write(&path, "x").expect("write setup file");
+            }
+        }
+        let source_path = directory.join("main.vtx");
+        fs::write(&source_path, source).expect("write error source");
+        let run = vantyx_in_dir(
+            &directory,
+            &["run", source_path.to_str().expect("utf-8 path")],
+            None,
+        );
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0015]"),
+            "{label}: {}",
+            run.stderr
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn list_dir_rejects_non_utf8_entry_names() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = io_workspace("dir-invalid-name");
+    fs::create_dir(directory.join(OsStr::from_bytes(b"bad-\xff"))).expect("create invalid name");
+    let source = directory.join("main.vtx");
+    fs::write(&source, "fn main():\n    print(list_dir(\".\"))\n").expect("write source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0015]"), "{}", run.stderr);
+    assert!(run.stderr.contains("not valid UTF-8"), "{}", run.stderr);
+}
+
+#[test]
+fn text_builtins_round_trip() {
+    let run = run_file(
+        "text-builtins",
+        "fn main():\n\
+         \x20   print(split(\"a,b,,c,\", \",\"))\n\
+         \x20   print(split(\"aéb\", \"\"))\n\
+         \x20   print(join([\"a\", \"b\", \"c\"], \"-\"))\n\
+         \x20   let empty: List[Str] = []\n\
+         \x20   print(join(empty, \",\"))\n\
+         \x20   print(trim(\" \\t\\n\u{a0}héllo\u{3000} \"))\n\
+         \x20   print(len(trim(\"\u{200b}x\u{200b}\")))\n\
+         \x20   print(len(trim(\"\u{1c}z\u{1f}\")))\n\
+         \x20   print(starts_with(\"hello\", \"he\"))\n\
+         \x20   print(starts_with(\"hello\", \"lo\"))\n\
+         \x20   print(ends_with(\"hello\", \"lo\"))\n\
+         \x20   print(ends_with(\"hello\", \"he\"))\n\
+         \x20   print(replace(\"one two two\", \"two\", \"2\"))\n\
+         \x20   print(replace(\"aaa\", \"aa\", \"b\"))\n\
+         \x20   print(replace(\"abc\", \"x\", \"\"))\n\
+         \x20   print(split(\"\", \"\"))\n\
+         \x20   print(split(\"\", \",\"))\n\
+         \x20   print(starts_with(\"\", \"\"))\n\
+         \x20   print(ends_with(\"\", \"\"))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "[\"a\", \"b\", \"\", \"c\", \"\"]\n\
+         [\"a\", \"é\", \"b\"]\n\
+         a-b-c\n\
+         \n\
+         héllo\n\
+         3\n\
+         3\n\
+         true\n\
+         false\n\
+         true\n\
+         false\n\
+         one 2 2\n\
+         ba\n\
+         abc\n\
+         []\n\
+         [\"\"]\n\
+         true\n\
+         true\n"
+    );
+}
+
+#[test]
+fn text_builtins_reject_non_str_arguments() {
+    let run = check_file(
+        "text-types",
+        "fn main():\n\
+         \x20   print(split(1, \",\"))\n\
+         \x20   print(join([1, 2], \",\"))\n\
+         \x20   print(trim(true))\n\
+         \x20   print(starts_with(\"a\", 1))\n\
+         \x20   print(ends_with(1, \"a\"))\n\
+         \x20   print(replace(\"a\", \"b\", 1))\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    for message in [
+        "as the text for `split`",
+        "`join` expects List[Str], found `List[Int]`",
+        "as the text for `trim`",
+        "as the affix for `starts_with`",
+        "as the text for `ends_with`",
+        "as the replacement for `replace`",
+    ] {
+        assert!(run.stderr.contains(message), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn text_replace_rejects_empty_pattern() {
+    let run = run_file(
+        "text-empty-pattern",
+        "fn main():\n    print(replace(\"abc\", \"\", \"x\"))\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0016]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("non-empty pattern"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn path_builtins_round_trip() {
+    let run = run_file(
+        "path-builtins",
+        "fn main():\n\
+         \x20   print(path_join(\"a\", \"b\"))\n\
+         \x20   print(path_join(\"a/\", \"b\"))\n\
+         \x20   print(path_join(\"a\", \"/b\"))\n\
+         \x20   print(path_join(\"\", \"b\"))\n\
+         \x20   print(path_join(\"a\", \"\"))\n\
+         \x20   print(path_join(\"a//\", \"b\"))\n\
+         \x20   print(path_parent(\"a/b/c\"))\n\
+         \x20   print(path_parent(\"a\"))\n\
+         \x20   print(path_parent(\"/a\"))\n\
+         \x20   print(path_parent(\"/\"))\n\
+         \x20   print(path_parent(\"a//b\"))\n\
+         \x20   print(path_parent(\"a/b/\"))\n\
+         \x20   print(path_name(\"a/b/\"))\n\
+         \x20   print(path_name(\"/\"))\n\
+         \x20   print(path_name(\"naïve/文件.txt\"))\n\
+         \x20   print(path_stem(\"a/b.tar.gz\"))\n\
+         \x20   print(path_stem(\".bashrc\"))\n\
+         \x20   print(path_stem(\"a.\"))\n\
+         \x20   print(path_stem(\"archive\"))\n\
+         \x20   print(path_extension(\"a/b.tar.gz\"))\n\
+         \x20   print(path_extension(\".bashrc\"))\n\
+         \x20   print(path_extension(\"a.\"))\n\
+         \x20   print(path_extension(\"archive\"))\n\
+         \x20   print(path_extension(\"archive.tar\"))\n\
+         \x20   print(path_is_absolute(\"/a\"))\n\
+         \x20   print(path_is_absolute(\"a\"))\n\
+         \x20   print(path_is_absolute(\"\"))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "a/b\na/b\n/b\nb\na\na//b\na/b\n.\n/\n/\na\na\nb\n\n文件.txt\nb.tar\n.bashrc\na.\narchive\ngz\n\n\n\ntar\ntrue\nfalse\nfalse\n"
+    );
+}
+
+#[test]
+fn path_builtins_reject_non_str_arguments() {
+    let run = check_file(
+        "path-types",
+        "fn main():\n\
+         \x20   print(path_join(1, \"a\"))\n\
+         \x20   print(path_join(\"a\", 2))\n\
+         \x20   print(path_parent(1))\n\
+         \x20   print(path_name(true))\n\
+         \x20   print(path_stem(1))\n\
+         \x20   print(path_extension(1))\n\
+         \x20   print(path_is_absolute(1))\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    for message in [
+        "as the base path for `path_join`",
+        "as the child path for `path_join`",
+        "as the path for `path_parent`",
+        "as the path for `path_name`",
+        "as the path for `path_stem`",
+        "as the path for `path_extension`",
+        "as the path for `path_is_absolute`",
+    ] {
+        assert!(run.stderr.contains(message), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn path_builtins_dynamic_arguments_fail_at_runtime() {
+    let run = run_file(
+        "path-dynamic",
+        "fn parent(path: Any) -> Str:\n\
+         \x20   return path_parent(path)\n\
+         \n\
+         fn main():\n\
+         \x20   print(parent(1))\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0005]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("as the path for `path_parent`"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn glob_round_trip() {
+    use std::os::unix::fs::symlink;
+
+    let directory = io_workspace("glob");
+    let tree = directory.join("tree");
+    fs::create_dir_all(tree.join("dir/sub/deep")).expect("create glob dirs");
+    fs::create_dir_all(tree.join(".hidden")).expect("create glob hidden dir");
+    fs::write(tree.join("a.txt"), "a").expect("write glob a");
+    fs::write(tree.join("b.vtx"), "b").expect("write glob b");
+    fs::write(tree.join("dir/b.txt"), "c").expect("write glob c");
+    fs::write(tree.join("dir/.dot"), "d").expect("write glob dot");
+    fs::write(tree.join("dir/sub/c.vtx"), "e").expect("write glob e");
+    fs::write(tree.join("dir/sub/deep/d.txt"), "f").expect("write glob f");
+    fs::write(tree.join(".hidden/h.txt"), "g").expect("write glob g");
+    symlink("dir", tree.join("link")).expect("create glob link");
+    symlink("missing", tree.join("dangling")).expect("create glob dangling link");
+
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   print(glob(\"tree/*.txt\"))\n\
+         \x20   print(glob(\"tree/**/*.txt\"))\n\
+         \x20   print(glob(\"tree/**\"))\n\
+         \x20   print(glob(\"tree/.*\"))\n\
+         \x20   print(glob(\"tree/**/.*\"))\n\
+         \x20   print(glob(\"tree/dir/[bs]*\"))\n\
+         \x20   print(glob(\"tree/missing/*\"))\n\
+         \x20   print(glob(\"tree/dangling\"))\n\
+         \x20   print(glob(\"tree/./dir/*\"))\n\
+         \x20   print(glob(\"tree/dir/**\"))\n\
+         \x20   print(glob(\"tree/link/*\"))\n\
+         \x20   print(glob(\"tree/link/**\"))\n",
+    )
+    .expect("write glob source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "[\"tree/a.txt\"]\n\
+         [\"tree/a.txt\", \"tree/dir/b.txt\", \"tree/dir/sub/deep/d.txt\"]\n\
+         [\"tree/a.txt\", \"tree/b.vtx\", \"tree/dangling\", \"tree/dir\", \"tree/dir/b.txt\", \"tree/dir/sub\", \"tree/dir/sub/c.vtx\", \"tree/dir/sub/deep\", \"tree/dir/sub/deep/d.txt\", \"tree/link\"]\n\
+         [\"tree/.hidden\"]\n\
+         [\"tree/.hidden\", \"tree/dir/.dot\"]\n\
+         [\"tree/dir/b.txt\", \"tree/dir/sub\"]\n\
+         []\n\
+         [\"tree/dangling\"]\n\
+         [\"tree/./dir/b.txt\", \"tree/./dir/sub\"]\n\
+         [\"tree/dir/b.txt\", \"tree/dir/sub\", \"tree/dir/sub/c.vtx\", \"tree/dir/sub/deep\", \"tree/dir/sub/deep/d.txt\"]\n\
+         [\"tree/link/b.txt\", \"tree/link/sub\"]\n\
+         [\"tree/link/b.txt\", \"tree/link/sub\", \"tree/link/sub/c.vtx\", \"tree/link/sub/deep\", \"tree/link/sub/deep/d.txt\"]\n"
+    );
+}
+
+#[test]
+fn glob_rejects_malformed_patterns_with_r0016() {
+    for (label, pattern) in [
+        ("glob-unclosed", "["),
+        ("glob-empty-class", "[]"),
+        ("glob-negated-unclosed", "[!]"),
+        ("glob-descending", "[z-a]"),
+        ("glob-empty-pattern", ""),
+    ] {
+        let source = format!("fn main():\n    print(glob(\"{pattern}\"))\n");
+        let run = run_file(label, &source);
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0016]"),
+            "{label}: {}",
+            run.stderr
+        );
+    }
+}
+
+#[test]
+fn glob_rejects_non_str_arguments() {
+    let run = check_file(
+        "glob-types",
+        "fn main():\n\
+         \x20   print(glob(1))\n\
+         \x20   print(glob())\n\
+         \x20   print(glob(\"a\", \"b\"))\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    assert!(run.stderr.contains("error[E0302]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("as the pattern for `glob`"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn glob_dynamic_arguments_fail_at_runtime() {
+    let run = run_file(
+        "glob-dynamic",
+        "fn probe(pattern: Any):\n\
+         \x20   print(glob(pattern))\n\
+         \n\
+         fn main():\n\
+         \x20   probe(1)\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0005]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("as the pattern for `glob`"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn glob_depth_limit_is_fatal_r0015() {
+    let directory = io_workspace("glob-depth");
+    let mut path = directory.join("deep");
+    for index in 0..130 {
+        path.push(format!("d{index}"));
+    }
+    fs::create_dir_all(&path).expect("create deep glob tree");
+    let source = directory.join("main.vtx");
+    fs::write(&source, "fn main():\n    print(glob(\"**\"))\n").expect("write depth source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0015]"), "{}", run.stderr);
+    assert!(run.stderr.contains("maximum depth"), "{}", run.stderr);
+}
+
+#[cfg(unix)]
+#[test]
+fn glob_rejects_non_utf8_entry_names() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = io_workspace("glob-invalid-name");
+    fs::create_dir(directory.join(OsStr::from_bytes(b"bad-\xff"))).expect("create invalid name");
+    let source = directory.join("main.vtx");
+    fs::write(&source, "fn main():\n    print(glob(\"*\"))\n").expect("write source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0015]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("non-UTF-8 entry name"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn glob_rejects_nul_patterns_with_r0015() {
+    let directory = io_workspace("glob-nul");
+    let source = directory.join("main.vtx");
+    fs::write(&source, "fn main():\n    print(glob(\"a\0b\"))\n").expect("write nul source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0015]"), "{}", run.stderr);
+    assert!(run.stderr.contains("NUL byte"), "{}", run.stderr);
+}
+
+#[test]
+fn glob_absolute_and_repeated_separators_are_lexical() {
+    let directory = io_workspace("glob-absolute");
+    fs::create_dir_all(directory.join("tree")).expect("create glob tree");
+    fs::write(directory.join("tree/a.txt"), "a").expect("write glob file");
+    let root = directory.to_str().expect("utf-8 path");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        format!(
+            "fn main():\n\
+             \x20   print(glob(\"{root}/tree/*.txt\"))\n\
+             \x20   print(glob(\"{root}//tree//*.txt\"))\n"
+        ),
+    )
+    .expect("write absolute glob source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    let expected = format!("[\"{root}/tree/a.txt\"]\n");
+    assert_eq!(run.stdout, expected.repeat(2));
+}
+
+#[test]
+fn glob_component_cap_is_r0016() {
+    let source = format!(
+        "fn main():\n    print(glob(\"{}\"))\n",
+        "a/".repeat(1025)
+    );
+    let run = run_file("glob-components", &source);
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0016]"), "{}", run.stderr);
+}
+
+#[test]
+fn recursive_copy_round_trip() {
+    let directory = io_workspace("copy-roundtrip");
+    let tree = directory.join("tree");
+    fs::create_dir_all(tree.join("sub/empty")).expect("create copy tree");
+    fs::create_dir_all(tree.join(".hidden")).expect("create copy hidden dir");
+    fs::write(tree.join("a.txt"), "alpha").expect("write copy a");
+    fs::write(tree.join("sub/b.bin"), [0_u8, 255, 1]).expect("write copy binary");
+    fs::write(tree.join("sub/b.txt"), "beta").expect("write copy b");
+    fs::write(tree.join(".hidden/dot"), "dot").expect("write copy dot");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   copy_dir_all(\"tree\", \"copy\")\n\
+         \x20   print(read_file(\"copy/a.txt\"))\n\
+         \x20   print(read_file(\"copy/sub/b.txt\"))\n\
+         \x20   print(read_file(\"copy/.hidden/dot\"))\n\
+         \x20   print(is_dir(\"copy/sub/empty\"))\n\
+         \x20   print(glob(\"copy/**/*.txt\"))\n\
+         \x20   print(file_exists(\"tree/a.txt\"))\n",
+    )
+    .expect("write copy source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "alpha\n\
+         beta\n\
+         dot\n\
+         true\n\
+         [\"copy/a.txt\", \"copy/sub/b.txt\"]\n\
+         true\n"
+    );
+    assert_eq!(
+        fs::read(directory.join("copy/sub/b.bin")).expect("read copied binary"),
+        [0, 255, 1]
+    );
+    assert!(directory.join("copy/sub/empty").is_dir());
+    assert_eq!(
+        fs::read_to_string(tree.join("a.txt")).expect("read source a"),
+        "alpha"
+    );
+    assert!(tree.join("sub/b.bin").is_file());
+}
+
+#[test]
+fn recursive_copy_rejects_non_str_arguments() {
+    let run = check_file(
+        "copy-types",
+        "fn main():\n\
+         \x20   copy_dir_all(1, \"copy\")\n\
+         \x20   copy_dir_all(\"tree\", [])\n\
+         \x20   copy_dir_all(\"tree\")\n\
+         \x20   copy_dir_all(\"tree\", \"copy\", \"extra\")\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    assert!(run.stderr.contains("error[E0302]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("as the source path for `copy_dir_all`"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("as the target path for `copy_dir_all`"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn recursive_copy_dynamic_arguments_fail_at_runtime() {
+    let run = run_file(
+        "copy-dynamic",
+        "fn probe(source: Any):\n\
+         \x20   copy_dir_all(source, \"copy\")\n\
+         \n\
+         fn main():\n\
+         \x20   probe(1)\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0005]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("as the source path for `copy_dir_all`"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn recursive_copy_errors_are_fatal_r0015() {
+    let directory = io_workspace("copy-errors");
+    fs::create_dir_all(directory.join("tree")).expect("create copy tree");
+    fs::write(directory.join("tree/a.txt"), "a").expect("write copy file");
+    fs::write(directory.join("file.txt"), "x").expect("write copy file source");
+    fs::create_dir(directory.join("existing")).expect("create copy target");
+
+    let cases = [
+        ("copy-missing-source", "copy_dir_all(\"missing\", \"copy-missing\")", "cannot copy directory"),
+        (
+            "copy-file-source",
+            "copy_dir_all(\"file.txt\", \"copy-file\")",
+            "not a directory",
+        ),
+        (
+            "copy-existing-target",
+            "copy_dir_all(\"tree\", \"existing\")",
+            "already exists",
+        ),
+        (
+            "copy-missing-parent",
+            "copy_dir_all(\"tree\", \"missing/copy\")",
+            "target parent",
+        ),
+        (
+            "copy-inside-source",
+            "copy_dir_all(\"tree\", \"tree/inside\")",
+            "inside the source",
+        ),
+        (
+            "copy-empty-target",
+            "copy_dir_all(\"tree\", \"\")",
+            "must name a new directory",
+        ),
+        (
+            "copy-dot-target",
+            "copy_dir_all(\"tree\", \".\")",
+            "must name a new directory",
+        ),
+        (
+            "copy-nul-target",
+            "copy_dir_all(\"tree\", \"a\0b\")",
+            "NUL byte",
+        ),
+    ];
+    for (label, call, needle) in cases {
+        let source = directory.join(format!("{label}.vtx"));
+        fs::write(&source, format!("fn main():\n    {call}\n")).expect("write copy error source");
+        let run = vantyx_in_dir(
+            &directory,
+            &["run", source.to_str().expect("utf-8 path")],
+            None,
+        );
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(run.stderr.contains("error[R0015]"), "{label}: {}", run.stderr);
+        assert!(
+            run.stderr.contains(needle),
+            "{label}: expected {needle:?} in {}",
+            run.stderr
+        );
+    }
+}
+
+#[test]
+fn recursive_copy_depth_limit_is_fatal_r0015() {
+    let directory = io_workspace("copy-depth");
+    let mut deep = directory.join("deep");
+    for index in 0..130 {
+        deep.push(format!("d{index}"));
+    }
+    fs::create_dir_all(&deep).expect("create deep copy tree");
+    let source = directory.join("main.vtx");
+    fs::write(&source, "fn main():\n    copy_dir_all(\"deep\", \"copy\")\n")
+        .expect("write copy depth source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0015]"), "{}", run.stderr);
+    assert!(run.stderr.contains("maximum depth"), "{}", run.stderr);
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_copy_symlink_rules() {
+    use std::os::unix::fs::symlink;
+
+    let directory = io_workspace("copy-links");
+    let real = directory.join("real");
+    fs::create_dir_all(real.join("sub")).expect("create copy link target");
+    fs::write(real.join("sub/data.txt"), "data").expect("write copy link data");
+    symlink(&real, directory.join("root-link")).expect("create copy root link");
+    fs::create_dir(directory.join("inner-tree")).expect("create inner copy tree");
+    symlink(real.join("sub"), directory.join("inner-tree/link"))
+        .expect("create copy inner link");
+    symlink("missing", directory.join("dangling")).expect("create copy dangling link");
+
+    let source = directory.join("root.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   copy_dir_all(\"root-link\", \"copy-root\")\n\
+         \x20   print(read_file(\"copy-root/sub/data.txt\"))\n",
+    )
+    .expect("write copy root source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "data\n");
+
+    let inner = directory.join("inner-source.vtx");
+    fs::write(
+        &inner,
+        "fn main():\n    copy_dir_all(\"inner-tree\", \"copy-inner\")\n",
+    )
+    .expect("write copy inner source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", inner.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0015]"), "{}", run.stderr);
+    assert!(run.stderr.contains("symbolic link"), "{}", run.stderr);
+
+    let dangling = directory.join("dangling-source.vtx");
+    fs::write(
+        &dangling,
+        "fn main():\n    copy_dir_all(\"dangling\", \"copy-dangling\")\n",
+    )
+    .expect("write copy dangling source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", dangling.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0015]"), "{}", run.stderr);
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_copy_preserves_non_utf8_names() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = io_workspace("copy-non-utf8");
+    let tree = directory.join("tree");
+    fs::create_dir(&tree).expect("create copy tree");
+    let name = OsStr::from_bytes(b"bad-\xff");
+    fs::write(tree.join(name), "raw").expect("write invalid name");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n    copy_dir_all(\"tree\", \"copy\")\n    print(is_dir(\"copy\"))\n",
+    )
+    .expect("write copy source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "true\n");
+    assert_eq!(
+        fs::read(directory.join("copy").join(name)).expect("read copied raw name"),
+        b"raw"
+    );
+    assert!(tree.join(name).is_file());
 }

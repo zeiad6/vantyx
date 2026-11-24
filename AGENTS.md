@@ -55,6 +55,8 @@ python3 benchmarks/run.py --reps 5
 | `src/module.rs` | File-based module loader, path confinement, cycles, declaration flattening |
 | `src/checker.rs` | Scopes, gradual typing, enums, exhaustiveness |
 | `src/interp.rs` | Reference tree-walking runtime |
+| `src/copy_tree.rs` | Recursive directory copy, source containment, entry/depth caps (ADR-0034) |
+| `src/glob.rs` | Lexical glob parser, matcher, and bounded walk (ADR-0033) |
 | `src/ir.rs` | Typed, backend-neutral IR; `E0401` boundary |
 | `src/codegen_c.rs` | GNU C11 backend and runtime helpers |
 | `src/repl.rs` | Zero-dependency REPL editor, history, and completion (ADR-0013) |
@@ -73,17 +75,22 @@ python3 benchmarks/run.py --reps 5
   clone of the rewritten history passed 457 tests). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 457 passed (297 library unit + 13 CLI unit + 30 AI integration +
-  44 e2e + 73 native).
+- `cargo test`: 581 passed (326 library unit + 15 CLI unit + 32 AI integration +
+  90 e2e + 118 native).
 - Clippy clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
 - Native support: scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key
   hash index, structs, enums, `match` with nested payload patterns, top-level
-  or-patterns, integer range patterns and guards, imported modules, checked
-  arithmetic, bounds checks, structural equality.
+  or-patterns, integer range patterns and guards, imported modules, basic
+  UTF-8 file I/O, file metadata probes, single-level directory operations,
+  recursive directory creation and symlink-safe removal, lexical glob
+  expansion, rename and byte-preserving file copy, recursive directory copy,
+  UTF-8 text builtins, lexical path builtins, checked arithmetic, bounds
+  checks, structural equality.
 - Native rejects: `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads,
-  `match` on `Any`, tuple/float patterns, unannotated value-returning
-  functions.
+  `match` on `Any`, dynamically typed file/directory/glob/recursive-copy/
+  rename/copy/metadata/text/path arguments, tuple/float patterns, unannotated
+  value-returning functions.
 - AI host support: offline mock/echo chat, OpenAI-compatible chat and model
   listing, streamed text chat with SSE and incremental HTTP/curl transport,
   strict JSON and JSON Schema subset, validated structured extraction with
@@ -92,16 +99,39 @@ python3 benchmarks/run.py --reps 5
   OpenAI-compatible `/v1/embeddings`, in-memory vector index, BM25, local RAG
   ingestion/chunking/citations, lexical/semantic/hybrid retrieval, retrieval
   evaluation, typed tools with capabilities, bounded agents, redacted metrics,
-  and `vantyx ai`.
+  and `vantyx ai`. A live cloud OpenAI-compatible run on 2026-11-24 covered
+  model discovery, chat, streaming, validated extraction, 768-dimension
+  embeddings, semantic RAG/search, and retrieval evaluation; the 401/429/
+  timeout paths are covered by a loopback harness. A later retry was rejected
+  with HTTP 400 `User location is not supported`, and a re-verification at
+  20:59Z using `MY_API_KEY` passed all 21 live checks after one transient 503,
+  so cloud access can change and is not guaranteed. Evidence:
+  `docs/ai/LIVE_VERIFICATION.md`.
 - Known gaps: no reclamation, O(n) structural-key native maps and a fixed hash
-  seed for scalar keys, no generics/closures/async/FFI, block-shaped `match`
+  seed for scalar keys, no generics/closures/async/FFI, basic whole-file I/O,
+  single-level and recursive directory operations, lexical glob expansion,
+  rename/copy, recursive directory copy, metadata probes, text builtins, and
+  lexical POSIX-style path helpers only (no escaping/braces/case folding in
+  globs and no metadata objects or preservation, recursive move, streaming,
+  atomic copy/write, recoverable errors, or sandbox; glob materializes sorted
+  results under candidate/depth/component caps; recursive removal refuses
+  final `.`/`..` and the filesystem root but still has no confirmation,
+  rollback, trash, depth limit, or entry-count limit and intermediate links
+  can still traverse;
+  `copy_dir_all` requires a new target, rejects inner links and special files,
+  leaves partial targets, avoids metadata preservation by design, and caps
+  trees at 100,000 entries and depth 128), text builtins
+  without regex/case/normalization/grapheme APIs, block-shaped
+  `match`
   cannot appear inside parentheses, native or-pattern conditions re-test
   alternatives when initializing bindings,
   REPL history recall is single-line and completion is
-  top-level-only, no live local/cloud AI or embedding-model evidence, no
+  top-level-only, no live local-model evidence (the cloud OpenAI-compatible
+  path was verified and re-verified on 2026-11-24, but access is not
+  guaranteed), no
   streaming tool calls or interactive cancellation, no constrained
-  decoding/model manager/keyring, no PDF/HTML/Office ingestion, incremental
-  re-indexing, reranking, or grounded generation, no language-level AI syntax,
+  decoding/model manager/keyring, no PDF/HTML/Office ingestion, or grounded
+  generation, no language-level AI syntax,
   no tensors or GPU support.
 - Attribution: the developer is **Zeidex** (`zeiad6`,
   https://zeidexlink.zeidexsoft.com/zeidex). The 2026-11-24 history correction

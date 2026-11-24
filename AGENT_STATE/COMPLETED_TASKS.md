@@ -3,6 +3,66 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-069 — Destructive recursive-removal roots refused (2026-11-24; 581-test
+  gate; `remove_dir_all` refuses `.`, `./`, `..`, `../`, final `.`/`..`
+  components including `link/.` and `link/..`, and `/`/`//`/`///` with
+  `R0015` before any filesystem access in both engines; ordinary roots such
+  as `tree`, `./tree`, and `/tmp/tree` remain accepted; five unit tests, two
+  e2e tests, two differential native tests; the prior destructive-dot test
+  was replaced; ADR-0035 amends ADR-0031).
+- T-068 — Curl timeout error mapping (2026-11-24; 573-test gate; curl exit 28
+  maps to retryable `AI_E_TIMEOUT` on buffered and streaming HTTPS paths,
+  while exit 7 remains `AI_E_CONNECT`; two unit tests; T-067 evidence in
+  `docs/ai/LIVE_VERIFICATION.md`).
+- T-067 — Live cloud OpenAI-compatible verification (2026-11-24; 581-test
+  gate; Gemini discovery, chat, streaming, validated extraction, 768-dimension
+  embeddings, semantic RAG/search, and retrieval evaluation; 16-check
+  loopback failure harness; re-verified at 20:59Z with 21/21 checks using
+  `MY_API_KEY` after a transient 503; an earlier retry was rejected with HTTP
+  400 `User location is not supported`; no key stored).
+- T-066 — Recursive directory copy (2026-11-24; 571-test gate; `copy_dir_all`
+  with new-target semantics, resolved self-containment, raw-name/byte
+  copying, inner-link and special-file rejection, 100,000-entry / 128-depth
+  caps, `E0301`/`R0005`/`E0401` boundaries, ASan/UBSan differential tests;
+  ADR-0034).
+- T-065 — Lexical glob expansion (2026-11-24; 550-test gate; `glob` with
+  Unicode `*`/`?`/classes, whole-component `**` without symlink traversal,
+  explicit-dot hidden rules, byte-sorted deduplicated lexical results,
+  `R0015`/`R0016` boundaries, `R0005`/`E0301`/`E0401` type boundaries,
+  ASan/UBSan differential tests; ADR-0033).
+- T-064 — File metadata probes (2026-11-24; 526-test gate;
+  `file_size`/`is_file`/`is_dir`/`is_symlink`; follow-symlink type predicates,
+  `lstat` symlink detection including dangling links, logical `st_size` with a
+  regular-file requirement and `R0015` failures, `R0005`/`E0301`/`E0401`
+  boundaries, ASan/UBSan differential tests; ADR-0032).
+- T-063 — Recursive directory creation and removal (2026-11-24; 517-test gate;
+  `make_dir_all`/`remove_dir_all`; component-by-component creation accepting
+  existing directories and symlinks to directories, empty-path no-op creation,
+  symlink-unlinking recursive removal with trailing-separator trimming before
+  the root check, `R0015` failures, `R0005`/`E0401` dynamic boundaries,
+  ASan/UBSan differential tests; ADR-0031).
+- T-062 — Lexical POSIX-style path builtins (2026-11-24; 507-test gate;
+  `path_join`/`path_parent`/`path_name`/`path_stem`/`path_extension`/
+  `path_is_absolute`; no filesystem access or normalization, UTF-8-preserving
+  slices, ordered `path_join`, `E0401` for dynamically typed paths, ASan/UBSan
+  differential tests; ADR-0030).
+- T-061 — Rename and byte-preserving file copy (2026-11-24; 501-test gate;
+  `rename`/`copy_file`; host-defined rename overwrite, regular-file source
+  check, exact byte copies including NUL/invalid UTF-8, no metadata
+  preservation, `R0015` failures, left-to-right evaluation, ASan/UBSan
+  differential tests; ADR-0029).
+- T-060 — UTF-8 text builtins (2026-11-24; 491-test gate;
+  `split`/`join`/`trim`/`starts_with`/`ends_with`/`replace`; Unicode
+  `White_Space` trimming, literal non-overlapping replacement, `R0016`,
+  left-to-right evaluation, ASan/UBSan differential tests; ADR-0028).
+- T-059 — Single-level directory operations (2026-11-24; 485-test gate;
+  `list_dir`/`make_dir`/`remove_file`/`remove_dir`; sorted UTF-8 listings,
+  single-level semantics, `R0015` failures, ASan/UBSan differential tests;
+  ADR-0027).
+- T-058 — Basic UTF-8 file I/O builtins (2026-11-24; 478-test gate;
+  `read_file`/`write_file`/`append_file`/`file_exists`; 64 MiB read cap,
+  UTF-8/NUL validation, `R0015` failures, ASan/UBSan differential tests;
+  ADR-0026).
 - T-056 — Native enum construction and match benchmark (2026-11-24;
   seven-workload suite; `enum_ops` native 3.646 ms vs C 3.766 ms and Rust
   4.529 ms; representation rewrite not justified).

@@ -611,14 +611,7 @@ impl HttpTransport {
         let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
         let _ = fs::remove_file(&stderr_path);
         if !status.success() {
-            return Err(AiError::new(
-                AI_E_CONNECT,
-                format!(
-                    "curl failed for {}: {}",
-                    parsed.host_header(),
-                    redact::sanitize(&stderr, &[], 512)
-                ),
-            ));
+            return Err(curl_failure(&parsed.host_header(), status.code(), &stderr));
         }
         let text = String::from_utf8(output)
             .map_err(|_| AiError::new(AI_E_PROVIDER, "HTTPS response is not valid UTF-8"))?;
@@ -794,14 +787,7 @@ impl HttpTransport {
         let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
         let _ = fs::remove_file(&stderr_path);
         if !status.success() {
-            return Err(AiError::new(
-                AI_E_CONNECT,
-                format!(
-                    "curl failed for {}: {}",
-                    parsed.host_header(),
-                    redact::sanitize(&stderr, &[], 512)
-                ),
-            ));
+            return Err(curl_failure(&parsed.host_header(), status.code(), &stderr));
         }
         Ok(())
     }
@@ -839,6 +825,18 @@ impl Transport for HttpTransport {
         handlers: &mut StreamHandlers<'_>,
     ) -> Result<(), AiError> {
         self.stream_request(method, url, headers, body, timeout, handlers)
+    }
+}
+
+fn curl_failure(host: &str, code: Option<i32>, stderr: &str) -> AiError {
+    let message = format!(
+        "curl failed for {host}: {}",
+        redact::sanitize(stderr, &[], 512)
+    );
+    if code == Some(28) {
+        AiError::retryable(AI_E_TIMEOUT, message)
+    } else {
+        AiError::new(AI_E_CONNECT, message)
     }
 }
 
@@ -1698,5 +1696,20 @@ mod tests {
         let error = collect_stream(&transport, &url, &[], None).unwrap_err();
         assert_eq!(error.code, AI_E_CONNECT);
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn curl_timeout_maps_to_a_retryable_timeout() {
+        let error = curl_failure("example.com", Some(28), "curl: (28) Operation timed out");
+        assert_eq!(error.code, AI_E_TIMEOUT);
+        assert!(error.retryable);
+        assert!(error.message.contains("example.com"));
+    }
+
+    #[test]
+    fn curl_connect_failure_stays_a_connect_error() {
+        let error = curl_failure("example.com", Some(7), "curl: (7) failed to connect");
+        assert_eq!(error.code, AI_E_CONNECT);
+        assert!(!error.retryable);
     }
 }

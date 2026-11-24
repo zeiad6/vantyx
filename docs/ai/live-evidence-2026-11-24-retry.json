@@ -1,0 +1,407 @@
+{
+  "binary": "/home/kali/Downloads/RustZ/target/debug/vantyx",
+  "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+  "model": "gemini-3.1-flash-lite",
+  "embedding_model": "gemini-embedding-001",
+  "api_key_env": "MY_API_KEY",
+  "generated_at": "2026-11-24T20:58:27Z",
+  "checks": [
+    {
+      "name": "doctor exits 0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "doctor reports ok",
+      "ok": true,
+      "detail": "provider: openai\nendpoint: https://generativelanguage.googleapis.com/v1beta/openai\nnetwork: remote HTTPS enabled\nstatus: ok\nmodels: 65\n  models/gemini-2.5-flash\n  models/gemini-2.5-pro\n  models/gemini-2.5-flash-preview-tts\n  models/gemini-2.5-pro-preview-tts\n  models/gemma-4-26b-a4b-it\n  models/gemma-4-31b-it\n  models/gemini-flash-latest\n  models/gemini-flash-lite-latest\n  models/gemini-pro-latest\n  models/gemini-2.5-flash-lite\n  ... 55 more\n"
+    },
+    {
+      "name": "doctor lists models",
+      "ok": true,
+      "detail": "provider: openai\nendpoint: https://generativelanguage.googleapis.com/v1beta/openai\nnetwork: remote HTTPS enabled\nstatus: ok\nmodels: 65\n  models/gemini-2.5-flash\n  models/gemini-2.5-pro\n  models/gemini-2.5-flash-preview-tts\n  models/gemini-2.5-pro-preview-tts\n  models/gemma-4-26b-a4b-it\n  models/gemma-4-31b-it\n  models/gemini-flash-latest\n  models/gemini-flash-lite-latest\n  models/gemini-pro-latest\n  models/gemini-2.5-flash-lite\n  ... 55 more\n"
+    },
+    {
+      "name": "chat exits 0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "chat contains VANTYX LIVE",
+      "ok": true,
+      "detail": "VANTYX LIVE"
+    },
+    {
+      "name": "json chat exits 0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json chat reports usage",
+      "ok": true,
+      "detail": "{\"model\":\"gemini-3.1-flash-lite\",\"text\":\"VANTYX LIVE\",\"finish_reason\":\"stop\",\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17},\"tool_calls\":[],\"id\":\"efoFa_jrO96mxN8PwbaKiAE\"}\n"
+    },
+    {
+      "name": "stream exits 0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stream has a first byte",
+      "ok": true,
+      "detail": "{'command': ['/home/kali/Downloads/RustZ/target/debug/vantyx', 'ai', 'chat', '--provider', 'openai', '--endpoint', 'https://generativelanguage.googleapis.com/v1beta/openai', '--model', 'gemini-3.1-flash-lite', '--api-key-env', 'MY_API_KEY', '--allow-network', '--temperature', '0', '--max-tokens', '96', '--stream', 'Count from one to five in words, separated by spaces, with no other text.'], 'exit_code': 0, 'first_byte_ms': 7151, 'duration_ms': 7157, 'stdout': 'one two three four five\\n', 'stderr': ''}"
+    },
+    {
+      "name": "stream contains counted words",
+      "ok": true,
+      "detail": "one two three four five"
+    },
+    {
+      "name": "extract exits 0",
+      "ok": false,
+      "detail": "error: AI_E_PROVIDER: provider failed with HTTP 503: [{   \"error\": {     \"code\": 503,     \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",     \"status\": \"UNAVAILABLE\"   } } ]\nnote: this failure is retryable\n"
+    },
+    {
+      "name": "extract returns a validated person",
+      "ok": false,
+      "detail": ""
+    },
+    {
+      "name": "extract reports bounded attempts",
+      "ok": false,
+      "detail": ""
+    },
+    {
+      "name": "embed exits 0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "embed returns requested dimensions",
+      "ok": true,
+      "detail": "{\"provider\":\"openai\",\"model\":\"gemini-embedding-001\",\"dimensions\":768,\"vectors\":[[-0.005523312371224165,-0.002001035725697875,-0.0007639818941242993,-0.07276470959186554,-0.023130470886826515,0.0042762"
+    },
+    {
+      "name": "index exits 0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "index stores one vector per chunk",
+      "ok": true,
+      "detail": "{\"index\":\"/tmp/vantyx-live-rag-k8voij5o/index.json\",\"mode\":\"semantic\",\"incremental\":false,\"provider\":\"openai\",\"model\":\"gemini-embedding-001\",\"dimensions\":768,\"documents\":3,\"chunks\":3,\"vectors\":3,\"bytes\":50591,\"usage\":{\"prompt_tokens\":206,\"total_tokens\":206}}\n"
+    },
+    {
+      "name": "search exits 0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "semantic search ranks the native-backend document first",
+      "ok": true,
+      "detail": "[{'id': 'vantyx.md#L1-L1#f4679e7e2be6eaca', 'source': 'vantyx.md', 'start_line': 1, 'end_line': 1, 'score': 0.6064831018447876, 'lexical_score': None, 'semantic_score': 0.6064831018447876, 'lexical_rank': None, 'semantic_rank': None, 'text': 'Vantyx is a gradual-typing language implemented in Rust. It provides a tree-walking interpreter as the semantic oracle and a native GNU C11 backend that invokes the system C compiler. Native behavior must match the interpreter, and unsupported constructs are rejected rather than miscompiled.'}]"
+    },
+    {
+      "name": "eval exits 0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "eval recalls every relevant document",
+      "ok": true,
+      "detail": "{\"mode\":\"semantic\",\"k\":2,\"queries\":3,\"recall_at_k\":1,\"precision_at_k\":0.5,\"mrr\":1,\"per_query\":[{\"query\":\"Which engine compiles through the system C compiler?\",\"recall_at_k\":1,\"precision_at_k\":0.5,\"reciprocal_rank\":1,\"retrieved\":[\"vantyx.md#L1-L1#f4679e7e2be6eaca\",\"copy.md#L1-L1#44182ae3cc68131d\"]},{\"query\":\"Where can I call chat completions and embeddings on Google's API?\",\"recall_at_k\":1,\"precision_at_k\":0.5,\"reciprocal_rank\":1,\"retrieved\":[\"gemini.md#L1-L1#c7a64d7fcd1fedd6\",\"vantyx.md#L1-L1#f4679e7e2be6eaca\"]},{\"query\":\"Does recursive copy follow links inside the tree?\",\"recall_at_k\":1,\"precision_at_k\":0.5,\"reciprocal_rank\":1,\"retrieved\":[\"copy.md#L1-L1#44182ae3cc68131d\",\"vantyx.md#L1-L1#f4679e7e2be6eaca\"]}]}\n"
+    }
+  ],
+  "ok": false,
+  "doctor": {
+    "command": [
+      "/home/kali/Downloads/RustZ/target/debug/vantyx",
+      "ai",
+      "doctor",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "--model",
+      "gemini-3.1-flash-lite",
+      "--api-key-env",
+      "MY_API_KEY",
+      "--allow-network"
+    ],
+    "exit_code": 0,
+    "duration_ms": 1511,
+    "retry_history": [],
+    "stdout": "provider: openai\nendpoint: https://generativelanguage.googleapis.com/v1beta/openai\nnetwork: remote HTTPS enabled\nstatus: ok\nmodels: 65\n  models/gemini-2.5-flash\n  models/gemini-2.5-pro\n  models/gemini-2.5-flash-preview-tts\n  models/gemini-2.5-pro-preview-tts\n  models/gemma-4-26b-a4b-it\n  models/gemma-4-31b-it\n  models/gemini-flash-latest\n  models/gemini-flash-lite-latest\n  models/gemini-pro-latest\n  models/gemini-2.5-flash-lite\n  ... 55 more\n",
+    "stderr": ""
+  },
+  "chat": {
+    "command": [
+      "/home/kali/Downloads/RustZ/target/debug/vantyx",
+      "ai",
+      "chat",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "--model",
+      "gemini-3.1-flash-lite",
+      "--api-key-env",
+      "MY_API_KEY",
+      "--allow-network",
+      "--temperature",
+      "0",
+      "--max-tokens",
+      "64",
+      "Reply with exactly VANTYX LIVE and no other text."
+    ],
+    "exit_code": 0,
+    "duration_ms": 4239,
+    "retry_history": [],
+    "stdout": "VANTYX LIVE\n",
+    "stderr": ""
+  },
+  "chat_text": "VANTYX LIVE",
+  "chat_json": {
+    "command": [
+      "/home/kali/Downloads/RustZ/target/debug/vantyx",
+      "ai",
+      "chat",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "--model",
+      "gemini-3.1-flash-lite",
+      "--api-key-env",
+      "MY_API_KEY",
+      "--allow-network",
+      "--temperature",
+      "0",
+      "--max-tokens",
+      "64",
+      "--json",
+      "Reply with exactly VANTYX LIVE and no other text."
+    ],
+    "exit_code": 0,
+    "duration_ms": 11859,
+    "retry_history": [],
+    "stdout": "{\"model\":\"gemini-3.1-flash-lite\",\"text\":\"VANTYX LIVE\",\"finish_reason\":\"stop\",\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17},\"tool_calls\":[],\"id\":\"efoFa_jrO96mxN8PwbaKiAE\"}\n",
+    "stderr": ""
+  },
+  "chat_usage": {
+    "prompt_tokens": 13,
+    "completion_tokens": 4,
+    "total_tokens": 17
+  },
+  "stream": {
+    "command": [
+      "/home/kali/Downloads/RustZ/target/debug/vantyx",
+      "ai",
+      "chat",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "--model",
+      "gemini-3.1-flash-lite",
+      "--api-key-env",
+      "MY_API_KEY",
+      "--allow-network",
+      "--temperature",
+      "0",
+      "--max-tokens",
+      "96",
+      "--stream",
+      "Count from one to five in words, separated by spaces, with no other text."
+    ],
+    "exit_code": 0,
+    "first_byte_ms": 7151,
+    "duration_ms": 7157,
+    "stdout": "one two three four five\n",
+    "stderr": ""
+  },
+  "stream_text": "one two three four five",
+  "extract": {
+    "command": [
+      "/home/kali/Downloads/RustZ/target/debug/vantyx",
+      "ai",
+      "extract",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "--model",
+      "gemini-3.1-flash-lite",
+      "--api-key-env",
+      "MY_API_KEY",
+      "--allow-network",
+      "--temperature",
+      "0",
+      "--schema",
+      "/home/kali/Downloads/RustZ/examples/ai/person.schema.json",
+      "--json",
+      "Extract the person record: Ada Lovelace is an engineer with 12 years of experience in mathematics and computing."
+    ],
+    "exit_code": 1,
+    "duration_ms": 17803,
+    "retry_history": [
+      {
+        "attempt": 1,
+        "exit_code": 1,
+        "stderr": "error: AI_E_PROVIDER: provider failed with HTTP 503: [{   \"error\": {     \"code\": 503,     \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",     \"status\": \"UNAVAILABLE\"   } } ]\nnote: this failure is retryable\n"
+      },
+      {
+        "attempt": 2,
+        "exit_code": 1,
+        "stderr": "error: AI_E_PROVIDER: provider failed with HTTP 503: [{   \"error\": {     \"code\": 503,     \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",     \"status\": \"UNAVAILABLE\"   } } ]\nnote: this failure is retryable\n"
+      }
+    ],
+    "stdout": "",
+    "stderr": "error: AI_E_PROVIDER: provider failed with HTTP 503: [{   \"error\": {     \"code\": 503,     \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",     \"status\": \"UNAVAILABLE\"   } } ]\nnote: this failure is retryable\n"
+  },
+  "extract_value": null,
+  "extract_attempts": null,
+  "embed": {
+    "command": [
+      "/home/kali/Downloads/RustZ/target/debug/vantyx",
+      "ai",
+      "embed",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "--model",
+      "gemini-embedding-001",
+      "--api-key-env",
+      "MY_API_KEY",
+      "--allow-network",
+      "--dimensions",
+      "768",
+      "--json",
+      "Vantyx is a gradual-typing language with a native backend.",
+      "The quick brown fox jumps over the lazy dog."
+    ],
+    "exit_code": 0,
+    "duration_ms": 2805,
+    "retry_history": [],
+    "stdout": "{\"provider\":\"openai\",\"model\":\"gemini-embedding-001\",\"dimensions\":768,\"vectors\":[[-0.005523312371224165,-0.002001035725697875,-0.0007639818941242993,-0.07276470959186554,-0.023130470886826515,0.004276277497410774,-0.0041564758867025375,0.0005760861677117646,0.019606413319706917,0.018938643857836723,-0.009809354320168495,0.007798151578754187,-0.010018322616815567,0.0007226911839097738,0.13253289461135864,-0.0029025794938206673,-0.014136253856122494,0.00954273622483015,-0.023606786504387856,-0.015519191510975361,0.008535048924386501,0.013150983490049839,-0.01294251624494791,-0.019937802106142044,... [truncated 32528 chars]",
+    "stderr": ""
+  },
+  "embed_dimensions": 768,
+  "embed_count": 2,
+  "embed_usage": {
+    "prompt_tokens": 28,
+    "total_tokens": 28
+  },
+  "index": {
+    "command": [
+      "/home/kali/Downloads/RustZ/target/debug/vantyx",
+      "ai",
+      "index",
+      "--root",
+      "/tmp/vantyx-live-rag-k8voij5o/corpus",
+      "--out",
+      "/tmp/vantyx-live-rag-k8voij5o/index.json",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "--model",
+      "gemini-embedding-001",
+      "--api-key-env",
+      "MY_API_KEY",
+      "--allow-network",
+      "--dimensions",
+      "768",
+      "--chunk-chars",
+      "512",
+      "--json"
+    ],
+    "exit_code": 0,
+    "duration_ms": 1058,
+    "retry_history": [],
+    "stdout": "{\"index\":\"/tmp/vantyx-live-rag-k8voij5o/index.json\",\"mode\":\"semantic\",\"incremental\":false,\"provider\":\"openai\",\"model\":\"gemini-embedding-001\",\"dimensions\":768,\"documents\":3,\"chunks\":3,\"vectors\":3,\"bytes\":50591,\"usage\":{\"prompt_tokens\":206,\"total_tokens\":206}}\n",
+    "stderr": ""
+  },
+  "index_stats": {
+    "documents": 3,
+    "chunks": 3,
+    "vectors": 3,
+    "dimensions": 768,
+    "usage": {
+      "prompt_tokens": 206,
+      "total_tokens": 206
+    }
+  },
+  "search": {
+    "command": [
+      "/home/kali/Downloads/RustZ/target/debug/vantyx",
+      "ai",
+      "search",
+      "--index",
+      "/tmp/vantyx-live-rag-k8voij5o/index.json",
+      "--query",
+      "Which engine compiles through the system C compiler?",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "--model",
+      "gemini-embedding-001",
+      "--api-key-env",
+      "MY_API_KEY",
+      "--allow-network",
+      "--dimensions",
+      "768",
+      "--mode",
+      "semantic",
+      "--top-k",
+      "3",
+      "--json"
+    ],
+    "exit_code": 0,
+    "duration_ms": 920,
+    "retry_history": [],
+    "stdout": "{\"index\":\"/tmp/vantyx-live-rag-k8voij5o/index.json\",\"mode\":\"semantic\",\"rerank\":\"none\",\"query\":\"Which engine compiles through the system C compiler?\",\"hits\":[{\"id\":\"vantyx.md#L1-L1#f4679e7e2be6eaca\",\"source\":\"vantyx.md\",\"start_line\":1,\"end_line\":1,\"score\":0.6064831018447876,\"lexical_score\":null,\"semantic_score\":0.6064831018447876,\"lexical_rank\":null,\"semantic_rank\":null,\"text\":\"Vantyx is a gradual-typing language implemented in Rust. It provides a tree-walking interpreter as the semantic oracle and a native GNU C11 backend that invokes the system C compiler. Native behavior must match the inter... [truncated 1039 chars]",
+    "stderr": ""
+  },
+  "search_top_source": "vantyx.md",
+  "eval": {
+    "command": [
+      "/home/kali/Downloads/RustZ/target/debug/vantyx",
+      "ai",
+      "eval",
+      "--index",
+      "/tmp/vantyx-live-rag-k8voij5o/index.json",
+      "--fixture",
+      "/tmp/vantyx-live-rag-k8voij5o/fixture.json",
+      "--provider",
+      "openai",
+      "--endpoint",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      "--model",
+      "gemini-embedding-001",
+      "--api-key-env",
+      "MY_API_KEY",
+      "--allow-network",
+      "--dimensions",
+      "768",
+      "--mode",
+      "semantic",
+      "--top-k",
+      "2",
+      "--json"
+    ],
+    "exit_code": 0,
+    "duration_ms": 2515,
+    "retry_history": [],
+    "stdout": "{\"mode\":\"semantic\",\"k\":2,\"queries\":3,\"recall_at_k\":1,\"precision_at_k\":0.5,\"mrr\":1,\"per_query\":[{\"query\":\"Which engine compiles through the system C compiler?\",\"recall_at_k\":1,\"precision_at_k\":0.5,\"reciprocal_rank\":1,\"retrieved\":[\"vantyx.md#L1-L1#f4679e7e2be6eaca\",\"copy.md#L1-L1#44182ae3cc68131d\"]},{\"query\":\"Where can I call chat completions and embeddings on Google's API?\",\"recall_at_k\":1,\"precision_at_k\":0.5,\"reciprocal_rank\":1,\"retrieved\":[\"gemini.md#L1-L1#c7a64d7fcd1fedd6\",\"vantyx.md#L1-L1#f4679e7e2be6eaca\"]},{\"query\":\"Does recursive copy follow links inside the tree?\",\"recall_at_k\":1,\"prec... [truncated 121 chars]",
+    "stderr": ""
+  },
+  "eval_metrics": {
+    "queries": 3,
+    "recall_at_k": 1,
+    "precision_at_k": 0.5,
+    "mrr": 1
+  }
+}

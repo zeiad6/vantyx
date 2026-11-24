@@ -1,0 +1,105 @@
+{
+  "date": "2026-11-24",
+  "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+  "api_key_env": "GOOGLE_API_KEY",
+  "chat_model": "gemini-3.1-flash-lite",
+  "embedding_model": "gemini-embedding-001",
+  "embedding_dimensions": 768,
+  "observations": {
+    "doctor": {
+      "status": "ok",
+      "models": 65,
+      "observed_at": "2026-11-24T19:24Z"
+    },
+    "chat_json": {
+      "text": "VANTYX LIVE",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 22,
+        "completion_tokens": 4,
+        "total_tokens": 26
+      },
+      "observed_at": "2026-11-24T19:24Z"
+    },
+    "stream": {
+      "text": "one two three four five six seven eight nine ten",
+      "observed_at": "2026-11-24T19:26Z"
+    },
+    "extract": {
+      "value": {
+        "name": "Ada Lovelace",
+        "role": "engineer",
+        "years": 12,
+        "skills": ["mathematics", "computing"]
+      },
+      "attempts": 2,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 237,
+        "completion_tokens": 105,
+        "total_tokens": 342
+      },
+      "observed_at": "2026-11-24T19:26Z"
+    },
+    "embed": {
+      "inputs": 2,
+      "dimensions": 768,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 28
+      },
+      "observed_at": "2026-11-24T19:25Z"
+    },
+    "index": {
+      "documents": 3,
+      "chunks": 3,
+      "vectors": 3,
+      "dimensions": 768,
+      "usage": {
+        "prompt_tokens": 206,
+        "total_tokens": 206
+      },
+      "observed_at": "2026-11-24T19:26Z"
+    },
+    "semantic_search": {
+      "query": "Which engine compiles through the system C compiler?",
+      "top_sources": ["vantyx.md", "copy.md", "gemini.md"],
+      "scores": [0.606483, 0.487423, 0.485869],
+      "observed_at": "2026-11-24T19:26Z"
+    },
+    "retrieval_eval": {
+      "mode": "semantic",
+      "k": 2,
+      "queries": 3,
+      "recall_at_k": 1.0,
+      "precision_at_k": 0.5,
+      "mrr": 1.0,
+      "observed_at": "2026-11-24T19:27Z"
+    }
+  },
+  "failure_harness": {
+    "command": "python3 tools/ai_failure_harness.py --binary target/debug/vantyx",
+    "checks": 16,
+    "scenarios": 7,
+    "observed": {
+      "http_401": "AI_E_AUTH: provider authentication failed (HTTP 401)",
+      "http_429": "AI_E_RATE_LIMIT: provider rate limit reached (HTTP 429); retryable",
+      "timeout": "AI_E_TIMEOUT: HTTP request timed out"
+    },
+    "observed_at": "2026-11-24T19:27Z"
+  },
+  "later_access_attempt": {
+    "observed_at": "2026-11-24T19:50Z",
+    "result": "AI_E_PROVIDER: provider returned HTTP 400: User location is not supported for the API use.",
+    "also_observed_with": "MY_API_KEY from the shell configuration",
+    "interpretation": "External geographic restriction; no bypass attempted."
+  },
+  "limitations": [
+    "No local Ollama or llama.cpp server/model is installed.",
+    "Live tool-calling is not exposed by the CLI; offline tests cover the library and agent loop.",
+    "The CLI reports retryable errors but does not run an automatic retry loop.",
+    "First-token latency was observed once (1,976 ms); it is not a throughput benchmark.",
+    "Provider model names and availability changed during the session.",
+    "No API key value is recorded; only the environment-variable name is stored."
+  ]
+}

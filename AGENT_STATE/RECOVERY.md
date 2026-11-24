@@ -21,6 +21,14 @@
 5. Never repeat completed operations or hammer a rate-limited service.
 6. Leave a resumable note in `ACTIVE_TASK.md` if the session ends.
 
+Last recorded external state (2026-11-24): the Gemini OpenAI-compatible cloud
+run succeeded and is documented in `docs/ai/LIVE_VERIFICATION.md`; an earlier
+retry returned HTTP 400 `User location is not supported` for both available
+credentials, a later re-run hit a transient HTTP 503, and a 20:59Z
+re-verification using `MY_API_KEY` passed all 21 checks. Access can change and
+is not guaranteed. No local inference server/model is installed. Do not retry
+indefinitely or attempt to bypass provider restrictions.
+
 ## If a build or test is slow
 
 - Native integration tests build and link C binaries; the full AI test binary

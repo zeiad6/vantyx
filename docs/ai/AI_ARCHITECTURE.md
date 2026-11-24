@@ -1,6 +1,6 @@
 # AI Architecture
 
-Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented but live verification blocked; AI-3 structured output and streamed text chat complete (streaming tool calls and live evidence pending); AI-4 host-side embeddings and retrieval complete (live embedding models pending)
+Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented and the cloud path verified live on 2026-11-24 (local-model verification still blocked); AI-3 structured output and streamed text chat complete (streaming tool calls and cancellation pending); AI-4 host-side embeddings and retrieval complete (a cloud embedding model was exercised on 2026-11-24; local embedding models pending)
 Date: 2026-11-24
 Related: `AI_RESEARCH.md`, `AI_SECURITY.md`, `AI_ROADMAP.md`, ADR-0007,
 ADR-0014, ADR-0015, ADR-0017, ADR-0018, ADR-0024, ADR-0025
@@ -24,7 +24,7 @@ This avoids two failure modes:
 | Track | Scope | Current state |
 | --- | --- | --- |
 | A — Core Vantyx | Lexer, parser, checker, interpreter, native backend, memory, modules, tooling | v0.1 subset verified; modules implemented; async/generics missing |
-| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, streamed text chat, embedding providers/cache, local retrieval/evaluation, incremental vector reuse, and MMR diversity reranking implemented; live providers, streaming tool calls, and grounded generation pending |
+| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, streamed text chat, embedding providers/cache, local retrieval/evaluation, incremental vector reuse, and MMR diversity reranking implemented; a live cloud provider and embedding model were verified on 2026-11-24 and re-verified at 20:59Z with 21/21 checks, while local live providers, streaming tool calls, and grounded generation remain pending; cloud access is not guaranteed |
 
 Track B must not wait for the entire Track A roadmap. It may use the host CLI and
 Rust API while language-level integration remains blocked.
@@ -316,6 +316,11 @@ query     → embed → cosine + BM25 → reciprocal-rank fusion → cited top-k
 | Schema mismatch | `AI_E_SCHEMA` with the failing path |
 | Budget exhausted | `AI_E_BUDGET` naming the limit |
 | Tool denied | `AI_E_CAPABILITY` naming the missing capability |
+
+On the HTTPS path, system `curl` exit code 28 (operation timeout) maps to
+retryable `AI_E_TIMEOUT`; other transport failures such as exit 7 remain
+`AI_E_CONNECT`. Both buffered and streaming requests share this mapping
+(T-068).
 | Agent step limit | `AI_E_STEPS` with partial state |
 
 ## Testing strategy

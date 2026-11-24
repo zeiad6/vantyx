@@ -391,6 +391,12 @@ fn classify(code: Int) -> Str:
 | `contains(list: List[T], value: T) -> Bool` | List membership |
 | `contains(text: Str, needle: Str) -> Bool` | Substring test |
 | `contains(map: Map[K, V], key: K) -> Bool` | Key membership |
+| `split(text: Str, separator: Str) -> List[Str]` | Literal split; empty fields preserved, empty separator splits into scalar values |
+| `join(parts: List[Str], separator: Str) -> Str` | Joins parts with a separator; empty list is `""` |
+| `trim(text: Str) -> Str` | Removes leading/trailing Unicode `White_Space` |
+| `starts_with(text: Str, prefix: Str) -> Bool` | Byte-exact prefix test; empty prefix is `true` |
+| `ends_with(text: Str, suffix: Str) -> Bool` | Byte-exact suffix test; empty suffix is `true` |
+| `replace(text: Str, pattern: Str, replacement: Str) -> Str` | Replaces every non-overlapping match; empty pattern is `R0016` |
 | `keys(map: Map[K, V]) -> List[K]` | Keys in insertion order |
 | `values(map: Map[K, V]) -> List[V]` | Values in insertion order |
 | `str(x: Any) -> Str` | Display conversion |
@@ -401,8 +407,137 @@ fn classify(code: Int) -> Str:
 | `abs(x)`, `min(a, b)`, `max(a, b)` | Numeric helpers; same-type Int or Float |
 | `sqrt(x: Float) -> Float`, `floor(Float) -> Int`, `ceil(Float) -> Int` | Numeric helpers |
 | `assert(cond: Bool) -> Unit` | Runtime error `R0006` if false |
+| `read_file(path: Str) -> Str` | Reads a UTF-8 file up to 64 MiB; failures are `R0015` |
+| `write_file(path: Str, text: Str) -> Unit` | Creates or truncates a file, then writes UTF-8; failures are `R0015` |
+| `append_file(path: Str, text: Str) -> Unit` | Creates if missing and appends UTF-8; failures are `R0015` |
+| `file_exists(path: Str) -> Bool` | `true` when `stat` succeeds, otherwise `false` |
+| `file_size(path: Str) -> Int` | Follows symbolic links; requires an existing regular file; returns logical `st_size`; failures are `R0015` |
+| `is_file(path: Str) -> Bool` | Follows symbolic links; `true` only for a regular file; `false` when metadata cannot be read |
+| `is_dir(path: Str) -> Bool` | Follows symbolic links; `true` only for a directory; `false` when metadata cannot be read |
+| `is_symlink(path: Str) -> Bool` | Uses `lstat`; `true` when the path itself is a symbolic link, including a dangling link |
+| `list_dir(path: Str) -> List[Str]` | Entry names without `.`/`..`, sorted by UTF-8 bytes; failures are `R0015` |
+| `glob(pattern: Str) -> List[Str]` | Expands `/`-separated lexical patterns with `*`, `?`, classes, and `**`; results are byte-sorted and deduplicated; malformed patterns are `R0016`, filesystem failures and caps are `R0015` |
+| `make_dir(path: Str) -> Unit` | Creates one directory; an existing path is `R0015` |
+| `remove_file(path: Str) -> Unit` | Removes a file or symbolic link; directories are rejected with `R0015` |
+| `remove_dir(path: Str) -> Unit` | Removes one empty directory; non-empty directories are `R0015` |
+| `make_dir_all(path: Str) -> Unit` | Creates a directory and missing parents; an existing directory is accepted; failures are `R0015` |
+| `remove_dir_all(path: Str) -> Unit` | Removes a directory tree; symbolic links are unlinked, never followed; refuses `.`, `..`, final `.`/`..` components, and `/` before access; failures are `R0015` |
+| `rename(from: Str, to: Str) -> Unit` | Renames or moves one file or directory; failures are `R0015` |
+| `copy_file(from: Str, to: Str) -> Unit` | Copies bytes from a regular file to a created/truncated target; failures are `R0015` |
+| `copy_dir_all(from: Str, to: Str) -> Unit` | Copies a directory tree into a new target; rejects existing or nested targets, inner symbolic links, and special files; failures are `R0015` |
+| `path_join(base: Str, child: Str) -> Str` | Appends a child path; an absolute child replaces the base |
+| `path_parent(path: Str) -> Str` | Parent component after trimming trailing `/`, or `.`/`/` |
+| `path_name(path: Str) -> Str` | Final path component, or `""` |
+| `path_stem(path: Str) -> Str` | Final component without its extension |
+| `path_extension(path: Str) -> Str` | Extension after the final dot, or `""` |
+| `path_is_absolute(path: Str) -> Bool` | `true` exactly when the path starts with `/` |
 
-Built-ins are statically known names and cannot be shadowed in v0.1.
+Built-ins are statically known names and cannot be shadowed in v0.1. File and
+directory builtins use host paths with the process's privileges. Relative paths
+resolve against the process working directory, not the source file. There is no
+sandbox. Reads reject invalid UTF-8, NUL bytes, and files larger than 64 MiB.
+`write_file` and `append_file` are not atomic and do not accept NUL bytes in
+the path or contents. `file_exists`, `is_file`, `is_dir`, and `is_symlink` are the
+non-failing probes; they return `false` when a path cannot be inspected.
+`file_size` follows symbolic links and requires an existing regular file; it
+returns the host logical byte size and raises `R0015` for missing paths,
+dangling links, directories, other non-regular targets, permission or I/O
+failures, and sizes that cannot be represented as `Int`. `is_file` and `is_dir`
+follow symbolic links, while `is_symlink` observes the link itself and is
+`true` for a link to a file, a link to a directory, and a dangling link. A path
+containing NUL is `R0015` in the interpreter; native strings cannot contain
+NUL, so a NUL literal is rejected with `E0401` before runtime. No mode, owner,
+group, timestamp, ACL, extended attribute, inode, device, birthtime, or
+recursive directory size is exposed, and no metadata is modified or preserved.
+`glob` splits its pattern on `/` and discards empty components; a leading `/`
+makes the pattern absolute. `*` matches zero or more Unicode scalar values and
+`?` matches one within a component. `[abc]`, `[a-z]`, and `[!a-z]` classes match
+Unicode scalar values; `]` first in a class and `-` first or last are literal.
+A whole-component `**` matches zero or more directory levels and descends only
+through real directories, never symbolic links. A final `**` returns
+non-hidden descendants but not the base. Wildcards and `**` skip names that
+begin with `.` unless the component starts with a literal `.` or a positive
+class containing `.`. There is no escaping, brace, tilde, case-insensitive, or
+normalizing behavior. Missing paths and non-directories produce no matches, as
+does an `lstat` failure on a final literal component. Listing or `**` `lstat`
+failures, non-UTF-8 entry names, and result or depth limit overruns are
+`R0015`. Results are lexical spellings sorted by UTF-8 bytes and
+deduplicated. Expansion is capped at 100,000 candidate paths, `**` depth 128,
+and 1,024 components; result and depth caps are `R0015` and the component cap is
+`R0016`. See [ADR-0033](decisions/ADR-0033-glob.md).
+`list_dir` reads the complete directory
+into memory and rejects non-UTF-8 entry names. `make_dir` and `remove_dir` are
+single-level; `remove_file` removes a file or symbolic link. `make_dir_all`
+creates every missing parent and accepts an existing directory, including a
+symbolic link to a directory; an empty path is a successful no-op, while a
+regular file in the way is `R0015`. `remove_dir_all` removes the whole tree.
+It unlinks symbolic links instead of traversing them, including a root link, and
+trims trailing separators before the root type check so `link/` is unlinked
+rather than followed. Before any filesystem access it refuses `.`, `./`, `..`,
+`../`, every root whose final component is `.` or `..` (including `link/.` and
+`link/..`), and the filesystem root `/` including repeated-separator spellings;
+each refusal is `R0015` with a stable explanation. Ordinary roots such as
+`tree`, `tree/`, `./tree`, and `/tmp/tree` remain accepted. It rejects a regular
+file, a missing path, or an empty path with `R0015`. A failed recursive removal
+can leave a partially removed tree; there is no confirmation, rollback, trash,
+depth limit, entry-count limit, or atomic staging. Intermediate components can
+still reach through a symbolic link (`link/sub`), and check-then-act races
+remain, so callers must validate untrusted roots. The classifier recognizes
+`/` separators; Windows interpreter paths that use `\` are not classified, and
+Windows native support is unverified. See
+[ADR-0035](decisions/ADR-0035-refuse-destructive-removal-roots.md).
+`rename` delegates to the host for one file or directory and does not create
+parents; overwrite behavior follows the host (POSIX replaces an existing file
+target within a filesystem). `copy_file` requires a regular source file and
+copies bytes only: permissions, timestamps, ownership, extended attributes,
+and hard-link identity are not preserved, and the copied bytes are not
+validated as UTF-8 or NUL-free. Source and target must be distinct; passing the
+same path can truncate the source. Copies are not atomic and a failure can
+leave a partial target. `copy_dir_all` requires an existing source directory
+and a target that does not exist; the target's parent must already exist, and
+the final target name cannot be empty, `.`, or `..`. The resolved target must
+not equal or lie inside the resolved source, which prevents copying a tree into
+itself. It creates the target once, copies regular files byte for byte and
+directories recursively, follows symbolic links in the source path including a
+final source link, and rejects symbolic links and special files below the
+source root with `R0015` instead of following, copying, or skipping them. Entry
+names are copied as raw bytes, so non-UTF-8 names are supported. Permissions,
+ownership, timestamps, extended attributes, ACLs, hard-link identity, and
+sparse layout are not preserved. A failed copy leaves a partial target; there
+is no overwrite or merge mode, rollback, atomic staging, cancellation, or
+sandbox. More than 100,000 entries or a directory beyond 128 levels below the
+source root is `R0015`; the source root is level 1. See
+[ADR-0034](decisions/ADR-0034-recursive-copy.md). Metadata objects, recursive
+move, streamed or recursive listing, atomic copies, and recoverable
+`Result`-based errors are not implemented.
+
+Path builtins are lexical and never access the filesystem. `/` is the only
+separator; backslash, drive letters, and UNC prefixes are ordinary text. No
+function normalizes `.`/`..` or collapses repeated separators.
+`path_join(base, child)` returns `child` when it is absolute, returns the other
+side when either argument is empty, keeps a base that already ends in `/`, and
+otherwise inserts one `/`. `path_parent` trims trailing separators, then
+returns the prefix before the final separator run, or `.` for a relative path
+and `/` for an absolute path when no component remains. `path_name` returns the
+final component or `""`. `path_stem` and `path_extension` split at the final
+dot only when it is neither the first nor the last byte, so `.bashrc` and `a.`
+have no extension. `path_is_absolute` is true exactly when the first byte is
+`/`. Results preserve UTF-8 names. These helpers do not confine paths: an
+absolute child or a `..` component can escape the base, and callers must
+validate untrusted components themselves. Windows path syntax is not supported.
+`path_join` evaluates its arguments left to right.
+
+Text builtins operate on Unicode scalar values and UTF-8 bytes, not grapheme
+clusters. `split` with a non-empty separator is literal and lossless: empty
+fields and a trailing empty field are preserved, and an empty input yields
+`[""]`; an empty separator yields one element per Unicode scalar value.
+`join` requires `List[Str]`. `trim` removes exactly the Unicode `White_Space`
+set (U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028,
+U+2029, U+202F, U+205F, U+3000), not zero-width spaces or other format
+characters. `replace` is left-to-right and non-overlapping, does not rescan the
+replacement, and rejects an empty pattern with `R0016`. There is no regular
+expression engine, case conversion, normalization, locale handling, or
+grapheme-cluster API. Results are bounded by available memory.
 
 ## 7. Program entry
 
@@ -467,7 +602,7 @@ and 8 MiB of total module source. The entry file counts toward these limits.
 
 Runtime errors print `error[Rxxxx]`, a source span, a message, and a call stack, then exit with status 2. Compile errors exit with status 1. Usage errors exit with status 64.
 
-Dynamic match failures use `R0014` ("no match arm matched"). `R0005` remains the general dynamic type-boundary error, and `R0010` reports internal or unsupported runtime forms.
+Dynamic match failures use `R0014` ("no match arm matched"). `R0005` remains the general dynamic type-boundary error, and `R0010` reports internal or unsupported runtime forms. `R0016` reports an invalid builtin argument value: an empty `replace` pattern, a malformed glob pattern (empty, unclosed or empty class, descending range), or a glob pattern with more than 1,024 components. File and directory I/O failures use `R0015`; this includes missing paths, permission errors, directories opened for reading, wrong file/directory kinds, non-regular copy sources, cross-device renames, non-empty directories, regular files blocking recursive creation, refused destructive recursive-removal roots, paths that cannot be removed recursively, non-UTF-8 entry names, invalid UTF-8 contents, NUL bytes, the 64 MiB read limit, glob listing or `**` `lstat` failures, glob result or depth caps, invalid or existing recursive-copy targets, recursive-copy self-containment, inner symbolic links, special files, and recursive-copy entry or depth caps.
 
 ## 10. Safety guarantees (v0.1)
 
@@ -477,7 +612,11 @@ Interpreter guarantees:
 - no uninitialized reads;
 - checked integer arithmetic;
 - no null values;
-- no user-visible `unsafe`.
+- no user-visible `unsafe`;
+- file reads return only valid UTF-8 without NUL bytes and are capped at 64 MiB;
+- metadata probes accept only valid in-memory paths: the interpreter rejects a
+  NUL path with `R0015`, while native source strings containing NUL are rejected
+  with `E0401`.
 
 Native backend guarantees (supported subset):
 - checked integer arithmetic, division, and range operations;
@@ -487,6 +626,11 @@ Native backend guarantees (supported subset):
 - list/map allocation growth checks overflow and `SIZE_MAX` (`R0004`);
 - native calls are limited to depth 256 (`R0012`);
 - structural equality of lists, maps, and structs is cycle-safe and matches the interpreter;
+- native file reads enforce the same 64 MiB limit and UTF-8/NUL validation as the interpreter before a string enters the runtime;
+- native `copy_file` is an explicit byte-copy boundary: it does not validate UTF-8 or NUL, does not preserve metadata, and is not atomic;
+- native `copy_dir_all` requires a new target outside the resolved source, rejects inner symbolic links and special files, copies raw entry-name bytes and file bytes, does not preserve metadata, leaves a partial target on failure, and enforces the same 100,000-entry and 128-depth caps as the interpreter;
+- native metadata probes report host `st_size` and POSIX path kinds through `stat`/`lstat`; they do not modify metadata;
+- native glob expansion validates entry names as UTF-8, does not descend through symbolic links during `**`, and enforces the same 100,000-candidate, 128-depth, and 1,024-component caps as the interpreter;
 - generated code uses only libc/libm and does not expose user `unsafe`.
 
 Known limitations:
@@ -495,21 +639,21 @@ Known limitations:
 - native maps use an insertion-ordered hash index for scalar keys (ADR-0016), but struct/enum/list/map keys still use O(n) structural equality;
 - collections are dynamically typed containers after construction in the interpreter; violations produce runtime errors, not memory unsafety;
 - resource exhaustion is bounded by explicit limits where implemented (range length, nesting depth, call depth) and otherwise by available memory;
-- no sandboxing; do not run untrusted code without OS-level isolation.
+- no sandboxing; file builtins can read and write any path the process can access, and writes are not atomic; do not run untrusted code without OS-level isolation.
 
 ## 11. Native compilation (v0.1 subset)
 
 `vantyx build file.vtx [-o output]` lowers the checked program to a typed IR and emits GNU C11, then invokes `clang` (override with `VANTYX_CC`) and links with libc/libm.
 
-Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals and integer ranges; `return`/`break`/`continue`; `print`, `len(Str/List/Map)`, `push`, `pop`, `contains(List/Str/Map)`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`. Match guards, nested payload patterns, integer range patterns, and top-level or-patterns are supported.
+Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals and integer ranges; `return`/`break`/`continue`; `print`, `len(Str/List/Map)`, `push`, `pop`, `contains(List/Str/Map)`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`, `read_file`, `write_file`, `append_file`, `file_exists`, `file_size`, `is_file`, `is_dir`, `is_symlink`, `list_dir`, `glob`, `make_dir`, `remove_file`, `remove_dir`, `make_dir_all`, `remove_dir_all`, `rename`, `copy_file`, `copy_dir_all`, `split`, `join`, `trim`, `starts_with`, `ends_with`, `replace`, `path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, `path_is_absolute`. Match guards, nested payload patterns, integer range patterns, and top-level or-patterns are supported. Native file and directory I/O validates UTF-8 and NUL bytes in C, sorts directory entries by byte order, and enforces the same 64 MiB read limit. Native recursive creation uses component-by-component `mkdir` with directory confirmation; native recursive removal uses the same lexical destructive-root refusal as the interpreter, then `lstat`, `opendir`/`readdir`, `unlink`, and `rmdir` without following symbolic links, and trims a trailing root separator before the link check. Native metadata probes use POSIX `stat`/`lstat` with the same follow-symlink rules, regular-file rule for `file_size`, and `R0015` failures as the interpreter. Native glob expansion uses POSIX `opendir`/`readdir`/`lstat`, a component matcher over Unicode scalar values, the same hidden and symlink rules, byte sorting, deduplication, limits, and `R0016`/`R0015` error split as the interpreter. Native `rename` delegates to POSIX `rename`; native `copy_file` copies regular-file bytes with libc streams and does not validate or preserve metadata. Native `copy_dir_all` resolves source and target parents with POSIX `realpath`, creates only a new target outside the source, walks with `opendir`/`readdir`/`lstat`, rejects inner symbolic links and special files, copies raw names and bytes with `mkdir` and libc streams, and does not preserve metadata. Native text builtins use the same UTF-8 decoder, Unicode `White_Space` table, literal split rules, and non-overlapping replacement as the interpreter, and evaluate multi-argument calls left to right. Native path builtins use byte-scanned C helpers with the same POSIX-style, non-normalizing rules and ordered `path_join` evaluation as the interpreter. Statically non-`Str` arguments are rejected by the checker with `E0301`; dynamically typed (`Any`) file, directory, glob, rename/copy, metadata, text, and path arguments reach the native boundary and are rejected with `E0401`.
 
 Enum layout: each enum is a heap-allocated tagged struct with a union of per-variant payload structs; variant declaration order defines the tag. Construction, payload binding, wildcard arms, nested payload patterns, top-level or-patterns, display, equality, and `type` match the interpreter. Nested patterns lower to short-circuit tag and literal tests; every binding is declared from its recorded payload path, and a guard sees all nested bindings. Or-patterns test alternatives in order and initialize the shared binding set from the matched alternative. Integer ranges lower to checked `>=`/`<` or `<=` comparisons. Enum values are never freed in v0.1, like native strings, structs, lists, and maps. See ADR-0012, ADR-0020, ADR-0021, and ADR-0022.
 
-Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported `for` iterables, and unannotated value-returning functions. String index assignment is rejected with `E0306`. Unsupported programs must be run with `vantyx run`.
+Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported `for` iterables, unannotated value-returning functions, and dynamically typed file, directory, glob, recursive-copy, rename/copy, metadata, text, or path arguments. String index assignment is rejected with `E0306`. Unsupported programs must be run with `vantyx run`.
 
 ## 12. Explicitly not implemented yet
 
-Generic enums, explicit discriminants, traits, generics, closures, iterators, `Result`/`?`, async/concurrency, FFI, package manager, formatter, LSP. Nested payload patterns (T-048/T-049), top-level or-patterns (T-047/T-050), and integer range patterns (T-051) are implemented in the interpreter and native backend. See `TASKS.md`.
+Generic enums, explicit discriminants, traits, generics, closures, iterators, `Result`/`?`, async/concurrency, FFI, package manager, formatter, LSP. Basic file I/O is implemented in the interpreter and native backend (ADR-0026), single-level directory listing, creation, and removal (ADR-0027), recursive creation and removal (ADR-0031), rename plus byte-preserving regular-file copy (ADR-0029), metadata probes (ADR-0032), lexical glob expansion (ADR-0033), and recursive directory copy (ADR-0034), but recursive move, metadata objects or preservation, streaming I/O, atomic copies, and recoverable I/O errors are not. Basic UTF-8 text splitting, joining, trimming, affix tests, and literal replacement are implemented in both engines (ADR-0028), but regular expressions, case conversion, normalization, locale handling, and grapheme-cluster APIs are not. Lexical POSIX-style path join/parent/name/stem/extension/absolute helpers are implemented in both engines (ADR-0030), and `glob` performs lexical pattern expansion in both engines (ADR-0033), but there is no `Path` type, normalization, `..` confinement, or Windows path support. Nested payload patterns (T-048/T-049), top-level or-patterns (T-047/T-050), and integer range patterns (T-051) are implemented in the interpreter and native backend. See `TASKS.md`.
 
 ## 13. Interactive REPL (tooling)
 

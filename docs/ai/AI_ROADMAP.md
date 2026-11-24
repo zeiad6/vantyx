@@ -1,8 +1,9 @@
 # AI Roadmap
 
-Status: AI-0 and AI-1 complete; AI-2 compatible adapters implemented but live
-evidence blocked; AI-3 structured extraction and streamed text chat complete
-(streaming tool calls and live evidence open); AI-4
+Status: AI-0 and AI-1 complete; AI-2 compatible adapters implemented and the
+cloud path verified live on 2026-11-24, but local-model evidence remains
+blocked; AI-3 structured extraction and streamed text chat complete (streaming
+tool calls and cancellation open; cloud live evidence recorded); AI-4
 host-side embeddings, retrieval, citations, evaluation, and MMR diversity
 reranking complete
 Date: 2026-11-24
@@ -66,16 +67,30 @@ run end-to-end; security tests cover denied capabilities and redaction.
 - [x] Environment resolution for provider, model, endpoint, key variable,
       timeout, and response size.
 - [x] `vantyx ai models` and `vantyx ai doctor` against a compatible endpoint.
+- [x] Live cloud OpenAI-compatible verification on 2026-11-24: model discovery,
+      chat, streaming, validated extraction, 768-dimension embeddings, semantic
+      RAG/search, and retrieval evaluation against Gemini; 401/429/timeout
+      paths covered by `tools/ai_failure_harness.py`; evidence in
+      `docs/ai/LIVE_VERIFICATION.md` and
+      `docs/ai/live-evidence-2026-11-24.json`.
+- [ ] Live local-model verification against Ollama, llama.cpp, or LM Studio;
+      no server or model is installed in this environment.
 - [ ] Ollama native adapter and model discovery beyond the compatible endpoint.
 - [ ] Config file and keyring adapter (environment variables only today).
 - [ ] `vantyx ai info`, `pull`, and `remove` with integrity and license display;
       downloads remain out of scope until checksums and provenance exist.
-- [ ] Live tests, opt-in and documented; no keys in CI.
+- [x] Live tests, opt-in and documented (`tools/live_ai_check.py`); no keys
+      in CI.
 
 Exit gate: one real local model and one cloud provider complete a chat with
-recorded evidence; failure paths (401, 429, timeout) are tested. Live evidence
-is `BLOCKED` in this environment; loopback/stub tests cover the protocol and
-error mapping, not real model behavior.
+recorded evidence; failure paths (401, 429, timeout) are tested. The cloud half
+is met: a real OpenAI-compatible provider completed chat, streaming, validated
+extraction, embeddings, RAG, and retrieval evaluation on 2026-11-24, and the
+failure paths have a reproducible loopback harness. A re-verification at 20:59Z
+passed all 21 live checks. The local half remains `BLOCKED` because no inference
+server or model is installed. An earlier cloud retry from this environment was
+rejected with HTTP 400 `User location is not supported`, and one re-run hit a
+transient 503, so continuous cloud access is not claimed.
 
 ## Phase AI-3 — Streaming and structured output 🚧
 
@@ -92,8 +107,9 @@ error mapping, not real model behavior.
 
 Exit gate: streamed output matches non-streamed content; invalid JSON is rejected
 with a path; a repair retry is bounded and observable. Streamed text is
-implemented and tested offline; streaming tool calls, cancellation, and live
-model evidence remain open.
+implemented and tested offline; live cloud chat and streaming were verified on
+2026-11-24 (T-067) and re-verified at 20:59Z with 21/21 checks. Streaming tool
+calls, cancellation, and local-model evidence remain open.
 
 ## Phase AI-4 — Embeddings and retrieval ✅ (host-side; follow-ups open)
 
@@ -120,7 +136,9 @@ model evidence remain open.
 - [ ] Licensed multi-document corpus; latency and memory measurements.
 - [ ] Grounded generation after retrieval evaluation.
 
-Evidence (2026-11-24): the full gate passes 469 tests, including deterministic
+Evidence (2026-11-24): the full gate passes 507 tests (the 469-test T-057 gate
+plus twenty-two language I/O tests from T-058–T-060, ten rename/copy tests
+from T-061, and six lexical path tests from T-062), including deterministic
 hash embeddings, batch limits, cache hits/eviction/deduplication, loopback
 `/v1/embeddings`, `vantyx ai embed` JSON/stdin/error paths, RAG unit tests, and
 offline CLI integration tests. A manual run indexed three Markdown documents
@@ -130,8 +148,9 @@ MRR = 1.0. `benchmarks/rag.py` indexed 200 generated Markdown documents (600
 chunks) at 64 hash dimensions: index median 43.482 ms, hybrid search median
 27.175 ms, MMR diverse search median 28.292 ms with 10 hits and 0 duplicate
 texts, index 1,247,300 bytes. The hash provider is lexical and is not a trained
-semantic model; live trained embedding-model verification and measured
-retrieval-quality gains remain open.
+semantic model; a live cloud embedding model was exercised on 2026-11-24
+(T-067) and re-verified at 20:59Z, while local trained embedding-model
+verification and measured retrieval-quality gains remain open.
 
 Exit gate: met for retrieval only. A local fixture produces reproducible
 retrieval metrics and every hit carries source and line citations. No answer is
@@ -204,8 +223,9 @@ The host API is not blocked by these; language-level syntax is.
 ## Priority order
 
 1. **P0:** AI-1 foundation, secrets, capability policy, offline tests.
-2. **P1:** AI-2 live local/cloud evidence, streaming tool calls/cancellation,
-   structured output, embeddings, retrieval quality, bounded agents.
+2. **P1:** AI-2 local-model evidence (the cloud path was verified and
+   re-verified, but access is not guaranteed), streaming tool calls/cancellation, structured output,
+   embeddings, retrieval quality, bounded agents.
 3. **P1 core:** native reclamation, async design, tuple patterns.
 4. **P2:** model manager, retrieval metadata/deduplication and measured
    reranking quality, observability, cross-platform CI.

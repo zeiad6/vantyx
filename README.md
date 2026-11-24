@@ -93,6 +93,201 @@ Imports are declaration-only, confined to the entry file's directory, checked
 for cycles and limits, and work in both the interpreter and the native backend.
 See the [language specification](docs/language_specification.md).
 
+Basic file I/O works in both engines:
+
+```vantyx
+fn main():
+    write_file("notes.txt", "compiled\n")
+    append_file("notes.txt", "and verified\n")
+    if file_exists("notes.txt"):
+        print(read_file("notes.txt"))
+```
+
+Paths are host paths with the process's privileges, relative paths use the
+process working directory, reads are capped at 64 MiB and must be valid UTF-8
+without NUL bytes, and failures raise `R0015`. There is no sandbox and writes
+are not atomic. See [ADR-0026](docs/decisions/ADR-0026-basic-file-io.md).
+
+Single-level directory operations work in both engines:
+
+```vantyx
+fn main():
+    make_dir("output")
+    write_file("output/report.txt", "done\n")
+    for name in list_dir("output"):
+        print(name)
+    remove_file("output/report.txt")
+    remove_dir("output")
+```
+
+`list_dir` omits `.` and `..`, rejects non-UTF-8 entry names, and sorts entries
+by UTF-8 bytes so output is stable. `make_dir` does not create parents,
+`remove_dir` requires an empty directory, and `remove_file` removes a file or
+symbolic link rather than a directory. These single-level operations follow
+host permissions and fail with `R0015`. See
+[ADR-0027](docs/decisions/ADR-0027-directory-operations.md).
+
+Recursive directory creation and removal work in both engines:
+
+```vantyx
+fn main():
+    make_dir_all("build/assets/icons")
+    write_file("build/assets/icons/app.txt", "icon\n")
+    remove_dir_all("build/assets")
+    print(file_exists("build/assets"))
+```
+
+`make_dir_all` creates every missing parent, accepts an existing directory
+(including a symbolic link to a directory), and treats an empty path as a
+successful no-op. `remove_dir_all` removes a whole tree and unlinks symbolic
+links instead of traversing them; trailing separators are trimmed before the
+root type check so `remove_dir_all("link/")` unlinks the link. It fails with
+`R0015` for a regular file, a missing path, or an empty path, and a failure can
+leave a partial tree. Before any filesystem access it refuses `.`, `./`, `..`,
+`../`, every root whose final component is `.` or `..` (including `link/.` and
+`link/..`), and the filesystem root `/` including repeated-separator spellings;
+ordinary roots such as `tree`, `./tree`, and `/tmp/tree` remain accepted. There
+is no confirmation, rollback, trash, depth limit, entry-count limit, or sandbox,
+and intermediate components such as `link/sub` can still reach through a
+symlinked directory. See
+[ADR-0031](docs/decisions/ADR-0031-recursive-directory-operations.md) and
+[ADR-0035](docs/decisions/ADR-0035-refuse-destructive-removal-roots.md).
+
+File metadata probes work in both engines:
+
+```vantyx
+fn main():
+    write_file("notes.txt", "hello\n")
+    print(file_size("notes.txt"))
+    print(is_file("notes.txt"))
+    print(is_dir("notes.txt"))
+    print(is_symlink("notes.txt"))
+    remove_file("notes.txt")
+```
+
+`file_size` follows symbolic links and requires an existing regular file; it
+reports the host logical byte size (`st_size`), not allocated blocks or a
+recursive directory size. `is_file` and `is_dir` follow symbolic links and
+return `false` when metadata cannot be read, including missing paths, dangling
+links, and permission failures. `is_symlink` observes the path itself and is
+`true` for a link to a file, a link to a directory, and a dangling link.
+`file_size` failures raise `R0015`; the predicates do not distinguish missing
+paths from permission errors. No mode, owner, timestamp, ACL, inode, device, or
+recursive-size query is exposed, and no metadata is modified or preserved. See
+[ADR-0032](docs/decisions/ADR-0032-file-metadata.md).
+
+Lexical glob expansion works in both engines:
+
+```vantyx
+fn main():
+    make_dir_all("src/util")
+    write_file("src/main.vtx", "fn main():\n    print(1)\n")
+    write_file("src/util/math.vtx", "fn add(a: Int, b: Int) -> Int:\n    return a + b\n")
+    write_file("src/.hidden.vtx", "")
+    print(glob("src/**/*.vtx"))
+    print(glob("src/*.vtx"))
+    print(glob("src/.*"))
+    remove_dir_all("src")
+```
+
+`glob` splits patterns on `/`; `*` matches zero or more Unicode scalar values,
+`?` matches one, `[a-z]`/`[!a-z]` classes match scalar values, and a
+whole-component `**` recurses without following symbolic links. Wildcards and
+`**` skip dot entries unless the component explicitly allows them. Results are
+lexical spellings sorted by UTF-8 bytes and deduplicated. Missing paths produce
+no matches. Malformed patterns and more than 1,024 components raise `R0016`;
+listing or `lstat` failures, non-UTF-8 entry names, more than 100,000 candidate
+paths, and `**` depth beyond 128 raise `R0015`. There is no escaping, brace or
+tilde expansion, case folding, normalization, sandbox, or streaming. See
+[ADR-0033](docs/decisions/ADR-0033-glob.md).
+
+Rename and byte-preserving copy are available in both engines:
+
+```vantyx
+fn main():
+    write_file("draft.txt", "final\n")
+    copy_file("draft.txt", "backup.txt")
+    rename("draft.txt", "report.txt")
+    print(read_file("report.txt"))
+    print(read_file("backup.txt"))
+    remove_file("report.txt")
+    remove_file("backup.txt")
+```
+
+`rename` moves one file or directory and delegates overwrite behavior to the
+host. `copy_file` requires a regular source file, creates or truncates the
+target, and copies bytes exactly—including NUL and invalid UTF-8—without
+preserving permissions, timestamps, or other metadata. Copies are not atomic,
+source and target must be distinct, and failures raise `R0015`. See
+[ADR-0029](docs/decisions/ADR-0029-rename-and-copy.md).
+
+Recursive directory copy creates a new tree without merging:
+
+```vantyx
+fn main():
+    make_dir_all("site/assets")
+    write_file("site/index.html", "<h1>Vantyx</h1>\n")
+    write_file("site/assets/style.css", "body {}\n")
+    copy_dir_all("site", "site-backup")
+    print(read_file("site-backup/assets/style.css"))
+    remove_dir_all("site")
+    remove_dir_all("site-backup")
+```
+
+`copy_dir_all` requires an existing source directory and a target that does not
+exist; the target's parent must already exist. It rejects a target equal to or
+inside the resolved source, never overwrites or merges, and leaves a partial
+target on failure. Regular files are copied byte for byte and directories
+recursively. Symbolic links in the source path are followed, but links and
+special files below the source root are rejected with `R0015`. Entry names are
+copied as raw bytes, so non-UTF-8 names are supported. No permissions,
+timestamps, ownership, xattrs, ACLs, hard-link identity, or sparse layout is
+preserved. Trees over 100,000 entries or directories beyond 128 levels below
+the source root raise `R0015`. See
+[ADR-0034](docs/decisions/ADR-0034-recursive-copy.md).
+
+UTF-8 text builtins work in both engines:
+
+```vantyx
+fn main():
+    let fields = split("alpha, beta, , gamma", ",")
+    for field in fields:
+        print(trim(field))
+    print(join(["x", "y", "z"], "-"))
+    print(starts_with("vantyx", "vtx"))
+    print(ends_with("vantyx", "x"))
+    print(replace("a-b-a", "a", "c"))
+```
+
+`split` preserves empty fields and treats an empty separator as a split into
+Unicode scalar values. `trim` removes exactly Unicode `White_Space`, not
+zero-width spaces. `replace` is literal, left-to-right, and non-overlapping;
+an empty pattern raises `R0016`. There is no regular-expression engine, case
+conversion, normalization, locale handling, or grapheme-cluster API. See
+[ADR-0028](docs/decisions/ADR-0028-text-builtins.md).
+
+Lexical path helpers work in both engines without touching the filesystem:
+
+```vantyx
+fn main():
+    let source = path_join("data", "report.tar.gz")
+    print(source)
+    print(path_parent(source))
+    print(path_name(source))
+    print(path_stem(source))
+    print(path_extension(source))
+    print(path_is_absolute(source))
+    print(path_join("/tmp", "run.txt"))
+```
+
+`path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, and
+`path_is_absolute` use `/` as the only separator. They do not normalize `.`,
+`..`, or repeated separators, do not access the filesystem, and are not a
+sandbox: an absolute child or a `..` component can escape the base. A final dot
+is an extension separator only when it is neither the first nor the last byte,
+so `.bashrc` has no extension. See
+[ADR-0030](docs/decisions/ADR-0030-lexical-path-builtins.md).
+
 ## Status
 
 | Area | Today |
@@ -103,8 +298,15 @@ See the [language specification](docs/language_specification.md).
 | Native boundaries | `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads, and `match` on `Any` are rejected with `E0401` |
 | Pattern matching | Variant, wildcard, integer, string, and boolean patterns; nested payload patterns with recursive exhaustiveness; top-level or-patterns with consistent bindings; integer ranges with half-open and inclusive bounds; `Bool`-checked guards |
 | Modules | `import` and `from ... import`; flat namespace, entry-directory confinement |
+| File and directory I/O | UTF-8 `read_file`/`write_file`/`append_file`/`file_exists` plus `list_dir`/`make_dir`/`remove_file`/`remove_dir`/`make_dir_all`/`remove_dir_all` in both engines; sorted listings, 64 MiB read cap, symlink-safe recursive removal, destructive-root refusal for final `.`/`..` and `/`, fatal `R0015` errors, no sandbox |
+| Metadata probes | `file_size`/`is_file`/`is_dir`/`is_symlink` in both engines; size follows symlinks and requires a regular file, predicates return `false` when metadata cannot be read, `is_symlink` uses `lstat` and sees dangling links; no metadata object or preservation |
+| Glob | `glob` in both engines; Unicode `*`/`?`/classes, whole-component `**` without symlink traversal, explicit-dot hidden rules, byte-sorted deduplicated results, `R0016` malformed patterns, `R0015` I/O and caps; no escaping, braces, case folding, or sandbox |
+| Rename/copy | `rename` and byte-preserving `copy_file` in both engines; host-defined rename overwrite, regular-file source check, no metadata preservation, non-atomic copies |
+| Recursive copy | `copy_dir_all` in both engines; new target only, self-copy rejection, raw names, inner symlink and special-file rejection, 100,000-entry / 128-depth caps, no metadata preservation or rollback |
+| Text | UTF-8 `split`/`join`/`trim`/`starts_with`/`ends_with`/`replace` in both engines; Unicode `White_Space` trimming, literal non-overlapping replacement, no regex/case/normalization |
+| Paths | Lexical POSIX-style `path_join`/`path_parent`/`path_name`/`path_stem`/`path_extension`/`path_is_absolute` in both engines; no filesystem access, normalization, or containment |
 | REPL | Persistent declarations, line editing, single-line history, top-level Tab completion, expression echo |
-| AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, incremental vector reuse, MMR diversity reranking, citations, retrieval evaluation, tools, bounded agents |
+| AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, incremental vector reuse, MMR diversity reranking, citations, retrieval evaluation, tools, bounded agents; live cloud verification on 2026-11-24 and a 21/21 re-verification at 20:59Z (local model still missing; cloud access not guaranteed) |
 | Memory | Interpreter is reference-counted; native allocations are leaked by design; no cycle collector |
 | Tooling | Fuzz smoke, benchmarks, docs; no formatter, linter, LSP, package manager, or debug info |
 | Production readiness | No stable ABI, no LTS, not recommended for production |
@@ -186,6 +388,14 @@ executes a model, and remote HTTPS requires explicit opt-in.
   `VANTYX_AI_ALLOW_NETWORK=1`.
 - API keys are read only from the configured environment variable and are never
   written to project files, metrics, or errors.
+- The cloud OpenAI-compatible path was exercised end to end against Gemini on
+  2026-11-24 (chat, streaming, validated extraction, 768-dimension embeddings,
+  RAG indexing/search, and retrieval evaluation). A retry was rejected with
+  HTTP 400 `User location is not supported`, and a later re-verification at
+  20:59Z using `MY_API_KEY` passed all 21 live checks after one transient 503,
+  so live cloud access is not guaranteed. Evidence:
+  [live verification](docs/ai/LIVE_VERIFICATION.md). No local model has been
+  run; the 401/429/timeout paths are covered by a loopback harness.
 - `--metrics` appends redacted JSONL with provider, model, latency, usage, and
   status, but no prompts, responses, or tool arguments.
 - Retrieval indexes are strict, versioned JSON with atomic owner-only
@@ -203,7 +413,7 @@ executes a model, and remote HTTPS requires explicit opt-in.
   cancellation, and server-side constrained decoding are not implemented.
 - Model downloads/removal, keyring storage, PDF/HTML/Office ingestion,
   arbitrary metadata filters, cross-source deduplication, measured reranking
-  quality, and live model evidence remain open. See
+  quality, and local-model evidence remain open. See
   [AI architecture](docs/ai/AI_ARCHITECTURE.md),
   [AI research](docs/ai/AI_RESEARCH.md), [AI security](docs/ai/AI_SECURITY.md),
   [ADR-0018](docs/decisions/ADR-0018-local-rag-index.md),
@@ -282,15 +492,17 @@ cargo test
 python3 tools/fuzz_smoke.py --binary target/debug/vantyx
 ```
 
-Current local result (2026-11-24): **457 tests passed** (297 library unit +
-13 CLI unit + 30 AI integration + 44 end-to-end + 73 differential native),
+Current local result (2026-11-24): **581 tests passed** (326 library unit +
+15 CLI unit + 32 AI integration + 90 end-to-end + 118 differential native),
 Clippy clean, debug and release builds succeed, all five examples match between
 the interpreter and native binaries, and fuzz smoke reports controlled
-diagnostics. CI run 45365926013 passed on commit `e3d8bdd` with 457 tests;
-T-047–T-053 are CI-verified, and a clean clone of the rewritten history passed
-all 457 tests. Test counts and evidence are tracked in
-[PROJECT_STATUS.md](PROJECT_STATUS.md) and [TASKS.md](TASKS.md); do not cite a
-count without checking them.
+diagnostics. The file, directory, recursive-directory, rename/copy,
+recursive-copy, text, path, metadata, and glob native tests also pass under
+`-fsanitize=address,undefined`
+with leak detection disabled because v0.1 allocations are intentionally leaked. CI status
+is tracked in [PROJECT_STATUS.md](PROJECT_STATUS.md); do not cite a test count
+or CI result without checking the recorded evidence there and in
+[TASKS.md](TASKS.md).
 
 ## Documentation
 
@@ -342,9 +554,38 @@ count without checking them.
 - Native allocations are never reclaimed in v0.1; there is no cycle collector.
 - Struct, enum, list, and map keys use linear structural search in native maps;
   scalar keys use a hash index with a fixed seed.
+- File and directory I/O is a small builtin slice: synchronous whole-file
+  reads/writes, single-level directory operations, recursive creation and
+  removal, lexical glob expansion, rename and byte-preserving regular-file copy,
+  recursive directory copy, and read-only metadata probes with fatal
+  `R0015`/`R0016` errors. There is no metadata object,
+  mode/owner/timestamp query, recursive directory size, metadata preservation,
+  streaming, recursive move, atomic copy/write, or sandbox. `list_dir` and
+  each glob directory read the whole directory into memory, glob results are
+  materialized, and recursive removal can leave a partial tree; there is no
+  confirmation, rollback, glob cancellation, or directory entry-count limit.
+  `copy_dir_all` never merges or overwrites, rejects inner symbolic links and
+  special files, copies raw entry names, leaves a partial target on failure,
+  and caps trees at 100,000 entries and 128 levels below the source root.
+  There is no recoverable `Result`-based I/O.
+- Glob patterns are lexical and deliberately smaller than shell globs: no
+  escaping, braces, extglobs, tilde or variable expansion, case-insensitive
+  matching, normalization, or `..` confinement. `**` does not descend through
+  symbolic links, hidden trees are skipped unless a component is explicit, and
+  non-UTF-8 entry names fail the expansion rather than being skipped. Caps are
+  100,000 candidate paths, `**` depth 128, and 1,024 components.
+- Path helpers are lexical and POSIX-only: no normalization, `..` confinement,
+  Windows drive/UNC handling, filesystem resolution, or `Path` type. `path_join`
+  takes two arguments and is not a sandbox.
+- Text builtins are scalar/byte based: no regular expressions, case mapping,
+  Unicode normalization, locale handling, or grapheme-cluster segmentation.
+  `split`, `join`, and `replace` can allocate proportional to their inputs and
+  outputs; there is no streaming text API or output-size cap.
 - No formatter, linter, LSP, debug information, or stable ABI.
-- The AI host has no live local/cloud model evidence, tokenizer integration,
-  tensors, SIMD, GPU, MCP, or multimodal input.
+- The AI host has no live local-model evidence; a cloud OpenAI-compatible run
+  was verified on 2026-11-24 and re-verified at 20:59Z with 21/21 checks, but
+  access is not guaranteed. There is no
+  tokenizer integration, tensor runtime, SIMD, GPU, MCP, or multimodal input.
 - There is no sandbox. Untrusted model output and untrusted tools require
   application-level controls.
 
