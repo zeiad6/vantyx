@@ -1943,8 +1943,14 @@ fn file_io_matches() {
         String::from_utf8_lossy(&native.stdout)
     );
     assert_eq!(
-        fs::read_to_string(engines.executable.parent().expect("directory").join("note.txt"))
-            .expect("read note"),
+        fs::read_to_string(
+            engines
+                .executable
+                .parent()
+                .expect("directory")
+                .join("note.txt")
+        )
+        .expect("read note"),
         "héllo 🌍"
     );
 }
@@ -1985,7 +1991,8 @@ fn file_io_size_limit_matches() {
     let source = "fn main():\n    print(read_file(\"huge.bin\"))\n";
     let directory = workspace("file-io-size-limit", source);
     let file = fs::File::create(directory.join("huge.bin")).expect("create huge file");
-    file.set_len(64 * 1024 * 1024 + 1).expect("extend huge file");
+    file.set_len(64 * 1024 * 1024 + 1)
+        .expect("extend huge file");
     drop(file);
     let Some(engines) = run_engines_in_mode(directory, "file-io-size-limit", true) else {
         return;
@@ -2476,8 +2483,7 @@ fn recursive_directory_removal_does_not_follow_symlinks() {
         assert!(!directory.join("tree").exists());
         assert!(directory.join("root-link").symlink_metadata().is_err());
         assert_eq!(
-            fs::read_to_string(directory.join("target/inner/data.txt"))
-                .expect("read target data"),
+            fs::read_to_string(directory.join("target/inner/data.txt")).expect("read target data"),
             "keep"
         );
     }
@@ -2509,7 +2515,9 @@ fn recursive_removal_refuses_destructive_roots_in_both_engines() {
             "{label}: build failed: {}",
             String::from_utf8_lossy(&engines.build.stderr)
         );
-        let native = engines.native.expect("native output after successful build");
+        let native = engines
+            .native
+            .expect("native output after successful build");
         assert_eq!(engines.interpreter.status.code(), Some(2), "{label}");
         assert_eq!(native.status.code(), Some(2), "{label}");
         for (engine, stderr) in [
@@ -2517,7 +2525,10 @@ fn recursive_removal_refuses_destructive_roots_in_both_engines() {
             ("native", &native.stderr),
         ] {
             let stderr = String::from_utf8_lossy(stderr);
-            assert!(stderr.contains("error[R0015]"), "{label}/{engine}: {stderr}");
+            assert!(
+                stderr.contains("error[R0015]"),
+                "{label}/{engine}: {stderr}"
+            );
             assert!(
                 stderr.contains("refusing to remove"),
                 "{label}/{engine}: {stderr}"
@@ -2562,7 +2573,9 @@ fn recursive_removal_allows_a_leading_dot_prefix_in_both_engines() {
         "build failed: {}",
         String::from_utf8_lossy(&engines.build.stderr)
     );
-    let native = engines.native.expect("native output after successful build");
+    let native = engines
+        .native
+        .expect("native output after successful build");
     assert_eq!(engines.interpreter.status.code(), Some(0));
     assert_eq!(native.status.code(), Some(0));
     assert_eq!(
@@ -3316,7 +3329,10 @@ fn glob_matches_interpreter_in_both_engines() {
 #[cfg(unix)]
 #[test]
 fn glob_malformed_patterns_fail_in_both_engines() {
-    for (label, pattern) in [("glob-native-unclosed", "["), ("glob-native-descending", "[z-a]")] {
+    for (label, pattern) in [
+        ("glob-native-unclosed", "["),
+        ("glob-native-descending", "[z-a]"),
+    ] {
         let source = format!("fn main():\n    print(glob(\"{pattern}\"))\n");
         let directory = workspace(label, &source);
         let Some(engines) = run_engines_in_mode(directory, label, true) else {
@@ -3461,16 +3477,16 @@ fn glob_absolute_patterns_match_in_both_engines() {
     assert_eq!(engines.interpreter.status.code(), Some(0));
     assert_eq!(native.status.code(), Some(0));
     let expected = format!("[\"{root}/tree/a.txt\"]\n").repeat(2);
-    assert_eq!(String::from_utf8_lossy(&engines.interpreter.stdout), expected);
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
     assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
 }
 
 #[test]
 fn glob_component_cap_matches_in_both_engines() {
-    let source = format!(
-        "fn main():\n    print(glob(\"{}\"))\n",
-        "a/".repeat(1025)
-    );
+    let source = format!("fn main():\n    print(glob(\"{}\"))\n", "a/".repeat(1025));
     let directory = workspace("glob-components", &source);
     let Some(engines) = run_engines_in_mode(directory, "glob-components", true) else {
         return;
@@ -3536,15 +3552,28 @@ fn recursive_copy_matches_in_both_engines() {
                     true\n\
                     [\"copy/a.txt\", \"copy/sub/b.txt\"]\n\
                     true\n";
-    assert_eq!(String::from_utf8_lossy(&engines.interpreter.stdout), expected);
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
     assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
 }
 
 #[test]
 fn recursive_copy_errors_match_in_both_engines() {
     let cases: [(&str, &str, &str, bool); 8] = [
-        ("copy-missing-source", "copy_dir_all(\"missing\", \"copy\")", "cannot copy directory", false),
-        ("copy-file-source", "copy_dir_all(\"file.txt\", \"copy\")", "not a directory", false),
+        (
+            "copy-missing-source",
+            "copy_dir_all(\"missing\", \"copy\")",
+            "cannot copy directory",
+            false,
+        ),
+        (
+            "copy-file-source",
+            "copy_dir_all(\"file.txt\", \"copy\")",
+            "not a directory",
+            false,
+        ),
         (
             "copy-existing-target",
             "copy_dir_all(\"tree\", \"existing\")",
@@ -3575,7 +3604,12 @@ fn recursive_copy_errors_match_in_both_engines() {
             "must name a new directory",
             true,
         ),
-        ("copy-empty-source", "copy_dir_all(\"\", \"copy\")", "source path is empty", false),
+        (
+            "copy-empty-source",
+            "copy_dir_all(\"\", \"copy\")",
+            "source path is empty",
+            false,
+        ),
     ];
     for (label, call, needle, needs_tree) in cases {
         let source = format!("fn main():\n    {call}\n");
@@ -3613,7 +3647,10 @@ fn recursive_copy_errors_match_in_both_engines() {
         for stderr in [&engines.interpreter.stderr, &native.stderr] {
             let stderr = String::from_utf8_lossy(stderr);
             assert!(stderr.contains("error[R0015]"), "{label}: {stderr}");
-            assert!(stderr.contains(needle), "{label}: expected {needle:?} in {stderr}");
+            assert!(
+                stderr.contains(needle),
+                "{label}: expected {needle:?} in {stderr}"
+            );
         }
     }
 }
@@ -3638,7 +3675,10 @@ fn recursive_copy_any_paths_are_rejected_with_e0401() {
         "interpreter stderr: {}",
         String::from_utf8_lossy(&engines.interpreter.stderr)
     );
-    assert_eq!(String::from_utf8_lossy(&engines.interpreter.stdout), "true\n");
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "true\n"
+    );
     assert_eq!(engines.build.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&engines.build.stderr);
     assert!(stderr.contains("error[E0401]"), "{stderr}");
@@ -3720,13 +3760,7 @@ fn recursive_copy_symlink_rules_match_in_both_engines() {
         symlink("missing", directory.join("dangling")).expect("create dangling link");
     }
 
-    fn run_case(
-        label: &str,
-        source: &str,
-        setup: fn(&Path),
-        expected_code: i32,
-        needle: &str,
-    ) {
+    fn run_case(label: &str, source: &str, setup: fn(&Path), expected_code: i32, needle: &str) {
         if !compiler_available() {
             return;
         }
@@ -3828,8 +3862,8 @@ fn recursive_copy_special_files_match_in_both_engines() {
 
     let interpreter_directory = workspace("copy-special-interpreter", source);
     fs::create_dir(interpreter_directory.join("tree")).expect("create special tree");
-    let interpreter_socket =
-        UnixListener::bind(interpreter_directory.join("tree/sock")).expect("bind interpreter socket");
+    let interpreter_socket = UnixListener::bind(interpreter_directory.join("tree/sock"))
+        .expect("bind interpreter socket");
     let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
         .arg("run")
         .arg(interpreter_directory.join("main.vtx"))

@@ -176,10 +176,7 @@ fn run_file(path: &str) -> i32 {
             0
         }
         Err(error) => {
-            eprint!(
-                "{}",
-                render_runtime_error_all(&error, &compiled.sources)
-            );
+            eprint!("{}", render_runtime_error_all(&error, &compiled.sources));
             2
         }
     }
@@ -220,10 +217,7 @@ fn build_file(path: &str, output: Option<&str>) -> i32 {
             }
             let rendered = match compiled.sources.get(error.span.file) {
                 Some(file) => diagnostic.render(&file.name, &file.source),
-                None => format!(
-                    "error[{}]: {}\n",
-                    diagnostic.code, diagnostic.message
-                ),
+                None => format!("error[{}]: {}\n", diagnostic.code, diagnostic.message),
             };
             eprint!("{rendered}");
             return 1;

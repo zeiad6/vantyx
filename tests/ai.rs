@@ -851,7 +851,10 @@ fn rag_index_search_and_eval_are_offline_and_cited() {
     );
     assert_eq!(run.status, 0, "{}", run.stderr);
     let value = vantyx::ai::parse(run.stdout.trim()).expect("index JSON");
-    assert_eq!(value.get("chunks").and_then(|value| value.as_u64()), Some(2));
+    assert_eq!(
+        value.get("chunks").and_then(|value| value.as_u64()),
+        Some(2)
+    );
     assert_eq!(
         value.get("dimensions").and_then(|value| value.as_u64()),
         Some(24)
@@ -928,12 +931,11 @@ fn rag_index_search_and_eval_are_offline_and_cited() {
         .and_then(|value| value.as_array())
         .expect("filtered hits");
     assert!(!hits.is_empty());
-    assert!(
-        hits.iter().all(|hit| hit
-            .get("source")
+    assert!(hits.iter().all(|hit| {
+        hit.get("source")
             .and_then(|value| value.as_str())
-            .is_some_and(|source| source.starts_with("sub/")))
-    );
+            .is_some_and(|source| source.starts_with("sub/"))
+    }));
 
     let fixture = temp_path("rag-eval.json");
     fs::write(
@@ -964,10 +966,7 @@ fn rag_index_search_and_eval_are_offline_and_cited() {
         value.get("recall_at_k").and_then(|value| value.as_f64()),
         Some(1.0)
     );
-    assert_eq!(
-        value.get("mrr").and_then(|value| value.as_f64()),
-        Some(1.0)
-    );
+    assert_eq!(value.get("mrr").and_then(|value| value.as_f64()), Some(1.0));
     assert_eq!(
         value.get("queries").and_then(|value| value.as_u64()),
         Some(1)
@@ -1001,15 +1000,7 @@ fn rag_diverse_search_deduplicates_and_marks_reranking() {
 
     let build = vantyx(
         &[
-            "ai",
-            "index",
-            "--root",
-            root_arg,
-            "--out",
-            index_arg,
-            "--mode",
-            "lexical",
-            "--json",
+            "ai", "index", "--root", root_arg, "--out", index_arg, "--mode", "lexical", "--json",
         ],
         None,
         &[],
@@ -1074,9 +1065,7 @@ fn rag_diverse_search_deduplicates_and_marks_reranking() {
     assert_eq!(diverse.status, 0, "{}", diverse.stderr);
     let diverse_value = vantyx::ai::parse(diverse.stdout.trim()).expect("diverse JSON");
     assert_eq!(
-        diverse_value
-            .get("rerank")
-            .and_then(|value| value.as_str()),
+        diverse_value.get("rerank").and_then(|value| value.as_str()),
         Some("mmr")
     );
     let diverse_hits = diverse_value
@@ -1121,16 +1110,8 @@ fn rag_diverse_search_deduplicates_and_marks_reranking() {
 fn rag_incremental_index_reuses_vectors_and_prunes_deleted_documents() {
     let root = temp_path("rag-incremental-corpus");
     fs::create_dir_all(&root).unwrap();
-    fs::write(
-        root.join("a.md"),
-        "# A\nRust enforces memory safety.\n",
-    )
-    .unwrap();
-    fs::write(
-        root.join("b.md"),
-        "# B\nPython is used for data science.\n",
-    )
-    .unwrap();
+    fs::write(root.join("a.md"), "# A\nRust enforces memory safety.\n").unwrap();
+    fs::write(root.join("b.md"), "# B\nPython is used for data science.\n").unwrap();
     fs::write(
         root.join("keep.md"),
         "# Keep\nWebAssembly runs in browsers.\n",
@@ -1198,7 +1179,9 @@ fn rag_incremental_index_reuses_vectors_and_prunes_deleted_documents() {
         Some(true)
     );
     assert_eq!(
-        value.get("previous_chunks").and_then(|value| value.as_u64()),
+        value
+            .get("previous_chunks")
+            .and_then(|value| value.as_u64()),
         Some(previous_chunks)
     );
     assert_eq!(
@@ -1206,7 +1189,9 @@ fn rag_incremental_index_reuses_vectors_and_prunes_deleted_documents() {
         Some(1)
     );
     assert_eq!(
-        value.get("embedded_chunks").and_then(|value| value.as_u64()),
+        value
+            .get("embedded_chunks")
+            .and_then(|value| value.as_u64()),
         Some(2)
     );
     // The edited `a.md` chunk and the deleted `b.md` chunk are both removed.
@@ -1215,7 +1200,9 @@ fn rag_incremental_index_reuses_vectors_and_prunes_deleted_documents() {
         Some(2)
     );
     assert_eq!(
-        value.get("removed_sources").and_then(|value| value.as_u64()),
+        value
+            .get("removed_sources")
+            .and_then(|value| value.as_u64()),
         Some(1)
     );
     assert_eq!(
@@ -1249,7 +1236,9 @@ fn rag_incremental_index_reuses_vectors_and_prunes_deleted_documents() {
         Some(3)
     );
     assert_eq!(
-        value.get("embedded_chunks").and_then(|value| value.as_u64()),
+        value
+            .get("embedded_chunks")
+            .and_then(|value| value.as_u64()),
         Some(0)
     );
 

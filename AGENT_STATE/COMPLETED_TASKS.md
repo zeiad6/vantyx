@@ -145,3 +145,6 @@ documentation commit `0491c63` also passed run 45489360135.
   first-success/second-failure convention, `E0319` rejections, interpreter and
   native `Try` lowering, ninth fuzzer shape, 180/180 on seeds 1, 500, and
   1000; specification §5.10; ADR-0038).
+- T-076 — Repository rustfmt baseline and CI formatting gate (2026-11-24;
+  mechanical `cargo fmt` across the tree, `cargo fmt --check --all` added to CI,
+  621-test gate and clippy/build clean; no semantic changes).

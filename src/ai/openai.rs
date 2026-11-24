@@ -201,11 +201,7 @@ struct ChatStreamState<'a> {
 }
 
 impl<'a> ChatStreamState<'a> {
-    fn new(
-        model: &str,
-        on_delta: &'a mut dyn FnMut(&str),
-        secrets: &'a [&'a str],
-    ) -> Self {
+    fn new(model: &str, on_delta: &'a mut dyn FnMut(&str), secrets: &'a [&'a str]) -> Self {
         Self {
             model: model.to_string(),
             id: None,
@@ -489,17 +485,14 @@ impl Provider for OpenAiProvider {
             .usage
             .as_ref()
             .map_or(prompt_estimate, |usage| usage.prompt_tokens);
-        let completion_tokens = state
-            .usage
-            .as_ref()
-            .map_or_else(|| estimate_tokens(&text) as u64, |usage| usage.completion_tokens);
-        let total_tokens = state
-            .usage
-            .as_ref()
-            .map_or_else(
-                || prompt_tokens.saturating_add(completion_tokens),
-                |usage| usage.total_tokens,
-            );
+        let completion_tokens = state.usage.as_ref().map_or_else(
+            || estimate_tokens(&text) as u64,
+            |usage| usage.completion_tokens,
+        );
+        let total_tokens = state.usage.as_ref().map_or_else(
+            || prompt_tokens.saturating_add(completion_tokens),
+            |usage| usage.total_tokens,
+        );
         budget.record_tokens(total_tokens)?;
         Ok(ChatResponse {
             id: state.id,
@@ -1186,10 +1179,14 @@ mod tests {
         let (provider, capture) = stream_provider(
             200,
             vec![
-                sse(r#"{"id":"chat-9","model":"test-model","choices":[{"delta":{"role":"assistant","content":"hel"},"finish_reason":null}]}"#),
+                sse(
+                    r#"{"id":"chat-9","model":"test-model","choices":[{"delta":{"role":"assistant","content":"hel"},"finish_reason":null}]}"#,
+                ),
                 sse(r#"{"choices":[{"delta":{"content":"lo"},"finish_reason":null}]}"#),
                 sse(r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#),
-                sse(r#"{"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}"#),
+                sse(
+                    r#"{"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}"#,
+                ),
                 sse("[DONE]"),
             ],
         );
@@ -1300,10 +1297,8 @@ mod tests {
 
     #[test]
     fn stream_maps_http_errors() {
-        let (provider, _) = stream_provider(
-            429,
-            vec![br#"{"error":{"message":"slow down"}}"#.to_vec()],
-        );
+        let (provider, _) =
+            stream_provider(429, vec![br#"{"error":{"message":"slow down"}}"#.to_vec()]);
         let mut budget = Budget::default();
         let request = ChatRequest::new("m", vec![Message::user("hi")]);
         let error = provider

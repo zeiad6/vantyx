@@ -17,14 +17,13 @@
 //!   because document text is frequently private.
 
 use super::bm25::{Bm25Index, tokenize};
+use super::budget::Budget;
 use super::embedding::Vector;
 use super::json::Json;
 use super::provider::{
     AI_E_CAPABILITY, AI_E_INVALID_REQUEST, AI_E_IO, AI_E_JSON, AiError, EmbeddingRequest,
-    EmbeddingUsage, MAX_EMBEDDING_DIMENSIONS, MAX_EMBEDDING_ITEM_BYTES,
-    Provider,
+    EmbeddingUsage, MAX_EMBEDDING_DIMENSIONS, MAX_EMBEDDING_ITEM_BYTES, Provider,
 };
-use super::budget::Budget;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write as _;
@@ -148,7 +147,10 @@ pub struct IngestOptions {
 impl Default for IngestOptions {
     fn default() -> Self {
         Self {
-            extensions: DEFAULT_EXTENSIONS.iter().map(|ext| ext.to_string()).collect(),
+            extensions: DEFAULT_EXTENSIONS
+                .iter()
+                .map(|ext| ext.to_string())
+                .collect(),
             max_files: MAX_FILES,
             max_file_bytes: MAX_FILE_BYTES,
             max_total_bytes: MAX_TOTAL_SOURCE_BYTES,
@@ -182,7 +184,9 @@ pub fn chunk_document(
     if source.len() > MAX_SOURCE_BYTES || source.chars().any(char::is_control) {
         return Err(AiError::new(
             AI_E_INVALID_REQUEST,
-            format!("chunk source must be at most {MAX_SOURCE_BYTES} bytes without control characters"),
+            format!(
+                "chunk source must be at most {MAX_SOURCE_BYTES} bytes without control characters"
+            ),
         ));
     }
     let lines: Vec<&str> = text.lines().collect();
@@ -207,9 +211,7 @@ pub fn chunk_document(
             let mut byte_start = 0usize;
             while byte_start < line.len() {
                 let mut byte_end = byte_start;
-                for (count, (offset, character)) in
-                    line[byte_start..].char_indices().enumerate()
-                {
+                for (count, (offset, character)) in line[byte_start..].char_indices().enumerate() {
                     if count == options.max_chars {
                         break;
                     }
@@ -291,7 +293,10 @@ fn push_lines(
     let Some(&(start_line, _)) = lines.first() else {
         return Ok(());
     };
-    let end_line = lines.last().map(|(number, _)| *number).unwrap_or(start_line);
+    let end_line = lines
+        .last()
+        .map(|(number, _)| *number)
+        .unwrap_or(start_line);
     let text = lines
         .iter()
         .map(|(_, line)| *line)
@@ -394,7 +399,10 @@ pub fn collect_documents(root: &Path, options: &IngestOptions) -> Result<Vec<Doc
     if !metadata.is_dir() {
         return Err(AiError::new(
             AI_E_INVALID_REQUEST,
-            format!("ingestion root `{}` is not a file or directory", root.display()),
+            format!(
+                "ingestion root `{}` is not a file or directory",
+                root.display()
+            ),
         ));
     }
 
@@ -411,8 +419,7 @@ pub fn collect_documents(root: &Path, options: &IngestOptions) -> Result<Vec<Doc
         let mut directories = Vec::new();
         for entry in entries {
             let path = entry.path();
-            let metadata =
-                fs::symlink_metadata(&path).map_err(|error| io_error(&path, error))?;
+            let metadata = fs::symlink_metadata(&path).map_err(|error| io_error(&path, error))?;
             let file_name = entry.file_name();
             let name = file_name.to_string_lossy();
             if name.starts_with('.') {
@@ -441,9 +448,7 @@ pub fn collect_documents(root: &Path, options: &IngestOptions) -> Result<Vec<Doc
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .replace('\\', "/");
-            if let Some(document) =
-                read_document(&path, &relative, options, &mut total_bytes)?
-            {
+            if let Some(document) = read_document(&path, &relative, options, &mut total_bytes)? {
                 documents.push(document);
             }
         }
@@ -635,9 +640,11 @@ impl IncrementalPlan {
         for vector in self.vectors {
             match vector {
                 Some(vector) => vectors.push(vector),
-                None => vectors.push(embedded.next().ok_or_else(|| {
-                    invalid("incremental plan is missing an embedded vector")
-                })?),
+                None => vectors.push(
+                    embedded
+                        .next()
+                        .ok_or_else(|| invalid("incremental plan is missing an embedded vector"))?,
+                ),
             }
         }
         RagIndex::new(
@@ -675,9 +682,7 @@ impl RagIndex {
         if !(1..=MAX_EMBEDDING_DIMENSIONS).contains(&dimensions) {
             return Err(AiError::new(
                 AI_E_INVALID_REQUEST,
-                format!(
-                    "index dimensions must be between 1 and {MAX_EMBEDDING_DIMENSIONS}"
-                ),
+                format!("index dimensions must be between 1 and {MAX_EMBEDDING_DIMENSIONS}"),
             ));
         }
         if chunks.len() != vectors.len() {
@@ -693,7 +698,10 @@ impl RagIndex {
         if chunks.len() > MAX_CHUNKS {
             return Err(AiError::new(
                 AI_E_INVALID_REQUEST,
-                format!("index has {} chunks; the limit is {MAX_CHUNKS}", chunks.len()),
+                format!(
+                    "index has {} chunks; the limit is {MAX_CHUNKS}",
+                    chunks.len()
+                ),
             ));
         }
         let mut ids = HashSet::new();
@@ -755,7 +763,10 @@ impl RagIndex {
         if chunks.len() > MAX_CHUNKS {
             return Err(AiError::new(
                 AI_E_INVALID_REQUEST,
-                format!("index has {} chunks; the limit is {MAX_CHUNKS}", chunks.len()),
+                format!(
+                    "index has {} chunks; the limit is {MAX_CHUNKS}",
+                    chunks.len()
+                ),
             ));
         }
         let mut ids = HashSet::new();
@@ -1207,9 +1218,7 @@ impl RagIndex {
                     if left_vector.norm() == 0.0 || right_vector.norm() == 0.0 {
                         0.0
                     } else {
-                        left_vector
-                            .cosine_similarity(right_vector)?
-                            .clamp(0.0, 1.0)
+                        left_vector.cosine_similarity(right_vector)?.clamp(0.0, 1.0)
                     }
                 } else {
                     jaccard_similarity(&token_sets[left], &token_sets[right])
@@ -1232,10 +1241,7 @@ impl RagIndex {
         let mut hits = Vec::with_capacity(self.chunks.len());
         for indexed in &self.chunks {
             let vector = indexed.vector.as_ref().ok_or_else(|| {
-                AiError::new(
-                    AI_E_CAPABILITY,
-                    "index contains a chunk without a vector",
-                )
+                AiError::new(AI_E_CAPABILITY, "index contains a chunk without a vector")
             })?;
             let score = query.cosine_similarity(vector)?;
             if score.is_finite() {
@@ -1277,10 +1283,7 @@ impl RagIndex {
                 Json::object([
                     ("id", Json::from(indexed.chunk.id.clone())),
                     ("source", Json::from(indexed.chunk.source.clone())),
-                    (
-                        "start_line",
-                        Json::from(indexed.chunk.start_line as u64),
-                    ),
+                    ("start_line", Json::from(indexed.chunk.start_line as u64)),
                     ("end_line", Json::from(indexed.chunk.end_line as u64)),
                     ("text", Json::from(indexed.chunk.text.clone())),
                     ("vector", vector),
@@ -1319,7 +1322,10 @@ impl RagIndex {
         if entries.len() > MAX_CHUNKS {
             return Err(AiError::new(
                 AI_E_INVALID_REQUEST,
-                format!("index has {} chunks; the limit is {MAX_CHUNKS}", entries.len()),
+                format!(
+                    "index has {} chunks; the limit is {MAX_CHUNKS}",
+                    entries.len()
+                ),
             ));
         }
         let mut chunks = Vec::with_capacity(entries.len());
@@ -1376,13 +1382,16 @@ impl RagIndex {
                     )));
                 }
             };
-            chunks.push((Chunk {
-                id,
-                source,
-                start_line,
-                end_line,
-                text,
-            }, vector));
+            chunks.push((
+                Chunk {
+                    id,
+                    source,
+                    start_line,
+                    end_line,
+                    text,
+                },
+                vector,
+            ));
         }
 
         if vector_count == 0 {
@@ -1451,7 +1460,8 @@ impl RagIndex {
                 .map_err(|error| io_error(&temporary, error))?;
             file.write_all(text.as_bytes())
                 .map_err(|error| io_error(&temporary, error))?;
-            file.sync_all().map_err(|error| io_error(&temporary, error))?;
+            file.sync_all()
+                .map_err(|error| io_error(&temporary, error))?;
             drop(file);
             fs::rename(&temporary, path).map_err(|error| io_error(path, error))?;
             Ok(())
@@ -1497,10 +1507,7 @@ fn reciprocal_rank(zero_based_rank: usize) -> f32 {
 
 /// Candidate pool for diversity reranking: at least 20, at most `MAX_TOP_K`.
 fn diversity_candidates(limit: usize) -> usize {
-    limit
-        .saturating_mul(4)
-        .clamp(20, MAX_TOP_K)
-        .max(limit)
+    limit.saturating_mul(4).clamp(20, MAX_TOP_K).max(limit)
 }
 
 /// Removes chunks whose trimmed text is identical, keeping the first one.
@@ -1577,8 +1584,7 @@ fn mmr_select(
             if used[index] {
                 continue;
             }
-            let score =
-                lambda * relevance[index] - (1.0 - lambda) * max_similarity[index];
+            let score = lambda * relevance[index] - (1.0 - lambda) * max_similarity[index];
             if choice.is_none() || score > choice_score {
                 choice = Some(index);
                 choice_score = score;
@@ -1637,9 +1643,7 @@ fn validate_chunk(chunk: &Chunk) -> Result<(), AiError> {
             format!("chunk source must be at most {MAX_SOURCE_BYTES} bytes"),
         ));
     }
-    if chunk.source.chars().any(char::is_control)
-        || chunk.id.chars().any(char::is_control)
-    {
+    if chunk.source.chars().any(char::is_control) || chunk.id.chars().any(char::is_control) {
         return Err(AiError::new(
             AI_E_INVALID_REQUEST,
             "chunk id and source must not contain control characters",
@@ -1785,9 +1789,9 @@ pub fn embed_chunks(
     let mut batch_bytes = 0usize;
 
     let mut flush = |batch: &mut Vec<&Chunk>,
-                 batch_bytes: &mut usize,
-                 vectors: &mut Vec<Vector>,
-                 usage: &mut EmbeddingUsage|
+                     batch_bytes: &mut usize,
+                     vectors: &mut Vec<Vector>,
+                     usage: &mut EmbeddingUsage|
      -> Result<(), AiError> {
         if batch.is_empty() {
             return Ok(());
@@ -1934,10 +1938,7 @@ impl EvalReport {
             ("k", Json::from(self.k as u64)),
             ("queries", Json::from(self.queries as u64)),
             ("recall_at_k", Json::from(f64::from(self.recall_at_k))),
-            (
-                "precision_at_k",
-                Json::from(f64::from(self.precision_at_k)),
-            ),
+            ("precision_at_k", Json::from(f64::from(self.precision_at_k))),
             ("mrr", Json::from(f64::from(self.mrr))),
             (
                 "per_query",
@@ -1947,10 +1948,7 @@ impl EvalReport {
                         .map(|result| {
                             Json::object([
                                 ("query", Json::from(result.query.clone())),
-                                (
-                                    "recall_at_k",
-                                    Json::from(f64::from(result.recall_at_k)),
-                                ),
+                                ("recall_at_k", Json::from(f64::from(result.recall_at_k))),
                                 (
                                     "precision_at_k",
                                     Json::from(f64::from(result.precision_at_k)),
@@ -1962,12 +1960,7 @@ impl EvalReport {
                                 (
                                     "retrieved",
                                     Json::Array(
-                                        result
-                                            .retrieved
-                                            .iter()
-                                            .cloned()
-                                            .map(Json::from)
-                                            .collect(),
+                                        result.retrieved.iter().cloned().map(Json::from).collect(),
                                     ),
                                 ),
                             ])
@@ -2156,8 +2149,14 @@ mod tests {
         let provider = HashEmbeddingProvider::new(32).unwrap();
         let mut budget = Budget::default();
         let chunks = sample_chunks();
-        let (vectors, _) =
-            embed_chunks(&provider, "hash-embedding-32", &chunks, Some(32), &mut budget).unwrap();
+        let (vectors, _) = embed_chunks(
+            &provider,
+            "hash-embedding-32",
+            &chunks,
+            Some(32),
+            &mut budget,
+        )
+        .unwrap();
         RagIndex::new("hash", "hash-embedding-32", 32, chunks, vectors).unwrap()
     }
 
@@ -2186,7 +2185,10 @@ mod tests {
         let options = ChunkOptions::new(64, 0).unwrap();
         let chunks = chunk_document("long.txt", &text, &options).unwrap();
         assert!(chunks.len() > 1);
-        assert_eq!(chunks.iter().map(|chunk| chunk.text.len()).sum::<usize>(), 300);
+        assert_eq!(
+            chunks.iter().map(|chunk| chunk.text.len()).sum::<usize>(),
+            300
+        );
         assert!(chunks.iter().all(|chunk| chunk.start_line == 1));
     }
 
@@ -2259,14 +2261,17 @@ mod tests {
         assert_eq!(unique[0].id, "a");
         assert_eq!(unique[1].id, "c");
 
-        let left: HashSet<String> = ["rust", "memory"].iter().map(|term| (*term).into()).collect();
-        let right: HashSet<String> = ["rust", "safety"].iter().map(|term| (*term).into()).collect();
+        let left: HashSet<String> = ["rust", "memory"]
+            .iter()
+            .map(|term| (*term).into())
+            .collect();
+        let right: HashSet<String> = ["rust", "safety"]
+            .iter()
+            .map(|term| (*term).into())
+            .collect();
         assert_eq!(jaccard_similarity(&left, &left), 1.0);
         assert_eq!(jaccard_similarity(&left, &right), 1.0 / 3.0);
-        assert_eq!(
-            jaccard_similarity(&left, &HashSet::new()),
-            0.0
-        );
+        assert_eq!(jaccard_similarity(&left, &HashSet::new()), 0.0);
     }
 
     #[test]
@@ -2302,7 +2307,12 @@ mod tests {
                 1,
                 "Rust memory safety depends on ownership and borrowing rules.",
             ),
-            chunk("d.md", 1, 1, "Python is popular for data science and automation."),
+            chunk(
+                "d.md",
+                1,
+                1,
+                "Python is popular for data science and automation.",
+            ),
         ];
         let index = RagIndex::lexical("lexical", "none", chunks).unwrap();
         let first = index
@@ -2333,26 +2343,12 @@ mod tests {
 
         assert!(
             index
-                .search_with_source_diverse(
-                    "memory",
-                    None,
-                    SearchMode::Lexical,
-                    2,
-                    None,
-                    1.1
-                )
+                .search_with_source_diverse("memory", None, SearchMode::Lexical, 2, None, 1.1)
                 .is_err()
         );
         assert!(
             index
-                .search_with_source_diverse(
-                    "memory",
-                    None,
-                    SearchMode::Lexical,
-                    2,
-                    None,
-                    f32::NAN
-                )
+                .search_with_source_diverse("memory", None, SearchMode::Lexical, 2, None, f32::NAN)
                 .is_err()
         );
     }
@@ -2389,7 +2385,13 @@ mod tests {
         assert_eq!(hybrid[0].source, "b.md");
 
         let none = index
-            .search_with_source("memory safety", None, SearchMode::Lexical, 10, Some("missing/"))
+            .search_with_source(
+                "memory safety",
+                None,
+                SearchMode::Lexical,
+                10,
+                Some("missing/"),
+            )
             .unwrap();
         assert!(none.is_empty());
         assert!(
@@ -2409,8 +2411,14 @@ mod tests {
         let index = vector_index();
         let provider = HashEmbeddingProvider::new(32).unwrap();
         let mut budget = Budget::default();
-        let query = embed_query(&provider, "hash-embedding-32", "memory safety", Some(32), &mut budget)
-            .unwrap();
+        let query = embed_query(
+            &provider,
+            "hash-embedding-32",
+            "memory safety",
+            Some(32),
+            &mut budget,
+        )
+        .unwrap();
         let semantic = index
             .search("memory safety", Some(&query), SearchMode::Semantic, 3)
             .unwrap();
@@ -2491,13 +2499,9 @@ mod tests {
                 relevant: vec!["c.md".into()],
             },
         ];
-        let report = evaluate(
-            &index,
-            &queries,
-            SearchMode::Lexical,
-            3,
-            &mut |_| unreachable!("lexical evaluation must not embed"),
-        )
+        let report = evaluate(&index, &queries, SearchMode::Lexical, 3, &mut |_| {
+            unreachable!("lexical evaluation must not embed")
+        })
         .unwrap();
         assert_eq!(report.queries, 2);
         assert_eq!(report.recall_at_k, 1.0);
@@ -2510,10 +2514,8 @@ mod tests {
     fn eval_fixture_parser_rejects_empty_queries() {
         let value = crate::ai::json::parse(r#"{"queries":[]}"#).unwrap();
         assert!(parse_eval_queries(&value).is_err());
-        let value = crate::ai::json::parse(
-            r#"{"queries":[{"query":"x","relevant":["a.md"]}]}"#,
-        )
-        .unwrap();
+        let value =
+            crate::ai::json::parse(r#"{"queries":[{"query":"x","relevant":["a.md"]}]}"#).unwrap();
         assert_eq!(parse_eval_queries(&value).unwrap().len(), 1);
     }
 
@@ -2533,7 +2535,11 @@ mod tests {
         let index = vector_index();
         assert!(index.search("", None, SearchMode::Lexical, 1).is_err());
         assert!(index.search("x", None, SearchMode::Lexical, 0).is_err());
-        assert!(index.search("x", None, SearchMode::Lexical, MAX_TOP_K + 1).is_err());
+        assert!(
+            index
+                .search("x", None, SearchMode::Lexical, MAX_TOP_K + 1)
+                .is_err()
+        );
         assert!(index.search("x", None, SearchMode::Hybrid, 1).is_err());
     }
 
@@ -2649,10 +2655,12 @@ mod tests {
         let index = plan.finish(Vec::new()).unwrap();
         assert_eq!(index.len(), 0);
         assert_eq!(index.dimensions(), 32);
-        assert!(index
-            .search("anything", None, SearchMode::Semantic, 1)
-            .unwrap()
-            .is_empty());
+        assert!(
+            index
+                .search("anything", None, SearchMode::Semantic, 1)
+                .unwrap()
+                .is_empty()
+        );
         let restored = RagIndex::from_json(&index.to_json()).unwrap();
         assert_eq!(restored.len(), 0);
         assert_eq!(restored.dimensions(), 32);

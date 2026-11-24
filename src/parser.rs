@@ -128,7 +128,8 @@ impl<'a> Parser<'a> {
                 kind.describe(),
                 self.peek().kind.describe()
             );
-            self.diagnostics.push(Diagnostic::error("E0102", message, span));
+            self.diagnostics
+                .push(Diagnostic::error("E0102", message, span));
             Err(())
         }
     }
@@ -143,7 +144,8 @@ impl<'a> Parser<'a> {
                 "expected an identifier for {context}, found {}",
                 self.peek().kind.describe()
             );
-            self.diagnostics.push(Diagnostic::error("E0102", message, span));
+            self.diagnostics
+                .push(Diagnostic::error("E0102", message, span));
             Err(())
         }
     }
@@ -235,9 +237,7 @@ impl<'a> Parser<'a> {
             Ok(())
         } else if self.check(&TokenKind::Dedent) || self.check(&TokenKind::Eof) {
             Ok(())
-        } else if self.pos > 0
-            && matches!(self.tokens[self.pos - 1].kind, TokenKind::Dedent)
-        {
+        } else if self.pos > 0 && matches!(self.tokens[self.pos - 1].kind, TokenKind::Dedent) {
             // A block-shaped expression such as `match` consumed the newline
             // and dedent that closed its arms; the statement is already
             // terminated at that boundary.
@@ -384,11 +384,8 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                let span = param_start.merge(
-                    ty.as_ref()
-                        .map(|t| t.span)
-                        .unwrap_or(param_name_span),
-                );
+                let span =
+                    param_start.merge(ty.as_ref().map(|t| t.span).unwrap_or(param_name_span));
                 params.push(Param {
                     name: param_name,
                     name_span: param_name_span,
@@ -584,7 +581,10 @@ impl<'a> Parser<'a> {
                 let span = self.peek().span;
                 self.error(
                     "E0101",
-                    format!("expected a statement, found {}", self.peek().kind.describe()),
+                    format!(
+                        "expected a statement, found {}",
+                        self.peek().kind.describe()
+                    ),
                     span,
                 );
                 Err(())
@@ -938,9 +938,7 @@ impl<'a> Parser<'a> {
                             self.advance();
                             fields.push(PatternArg::Wildcard { span: field_start });
                         }
-                        TokenKind::Ident(_)
-                            if matches!(self.peek_kind_n(1), TokenKind::LParen) =>
-                        {
+                        TokenKind::Ident(_) if matches!(self.peek_kind_n(1), TokenKind::LParen) => {
                             let pattern = self.parse_pattern_atom()?;
                             fields.push(PatternArg::Nested {
                                 span: pattern.span(),
@@ -972,7 +970,8 @@ impl<'a> Parser<'a> {
                                 "expected a binding, `_`, or a nested pattern, found {}",
                                 self.peek().kind.describe()
                             );
-                            self.diagnostics.push(Diagnostic::error("E0101", message, span));
+                            self.diagnostics
+                                .push(Diagnostic::error("E0101", message, span));
                             return Err(());
                         }
                     }
@@ -1100,12 +1099,8 @@ impl<'a> Parser<'a> {
                 ExprKind::Var(_) | ExprKind::Field { .. } | ExprKind::Index { .. }
             ) {
                 self.diagnostics.push(
-                    Diagnostic::error(
-                        "E0103",
-                        "invalid assignment target",
-                        target.span,
-                    )
-                    .with_help("assign to a variable, field, or index"),
+                    Diagnostic::error("E0103", "invalid assignment target", target.span)
+                        .with_help("assign to a variable, field, or index"),
                 );
                 return Err(());
             }
@@ -1243,11 +1238,7 @@ impl<'a> Parser<'a> {
         if self.depth > MAX_EXPR_DEPTH {
             self.depth -= 1;
             let span = self.peek().span;
-            self.error(
-                "E0107",
-                "expression nesting is too deep",
-                span,
-            );
+            self.error("E0107", "expression nesting is too deep", span);
             return Err(());
         }
         let result = self.parse_expr_inner(min_bp);
@@ -1318,11 +1309,9 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let span = token.span;
-                let message = format!(
-                    "expected an expression, found {}",
-                    token.kind.describe()
-                );
-                self.diagnostics.push(Diagnostic::error("E0101", message, span));
+                let message = format!("expected an expression, found {}", token.kind.describe());
+                self.diagnostics
+                    .push(Diagnostic::error("E0101", message, span));
                 return Err(());
             }
         };
@@ -1469,10 +1458,7 @@ impl<'a> Parser<'a> {
             }
         }
         let close = self.expect(TokenKind::RBracket, " to close the list")?;
-        Ok(self.new_expr(
-            ExprKind::List(elements),
-            open.span.merge(close.span),
-        ))
+        Ok(self.new_expr(ExprKind::List(elements), open.span.merge(close.span)))
     }
 
     fn parse_map_literal(&mut self) -> Result<Expr, ()> {
@@ -1494,10 +1480,7 @@ impl<'a> Parser<'a> {
             }
         }
         let close = self.expect(TokenKind::RBrace, " to close the map")?;
-        Ok(self.new_expr(
-            ExprKind::Map(entries),
-            open.span.merge(close.span),
-        ))
+        Ok(self.new_expr(ExprKind::Map(entries), open.span.merge(close.span)))
     }
 
     fn parse_type(&mut self) -> Result<TypeExpr, ()> {
@@ -1702,20 +1685,13 @@ impl<'a> Parser<'a> {
         Ok(self.new_expr(ExprKind::Str(parts), span))
     }
 
-    fn parse_embedded_expr(
-        &mut self,
-        source: &str,
-        base: usize,
-        file: u32,
-    ) -> Result<Expr, ()> {
+    fn parse_embedded_expr(&mut self, source: &str, base: usize, file: u32) -> Result<Expr, ()> {
         self.interp_depth += 1;
         if self.interp_depth > MAX_INTERP_DEPTH {
             self.interp_depth -= 1;
             self.error(
                 "E0111",
-                format!(
-                    "string interpolation nesting is too deep (maximum is {MAX_INTERP_DEPTH})"
-                ),
+                format!("string interpolation nesting is too deep (maximum is {MAX_INTERP_DEPTH})"),
                 Span::point_in_file(file, base),
             );
             return Err(());
@@ -1746,9 +1722,7 @@ impl<'a> Parser<'a> {
             depth_reported: self.depth_reported,
         };
         let result = sub.parse_expr();
-        if result.is_ok()
-            && !matches!(sub.peek().kind, TokenKind::Eof | TokenKind::Newline)
-        {
+        if result.is_ok() && !matches!(sub.peek().kind, TokenKind::Eof | TokenKind::Newline) {
             let span = sub.peek().span;
             let message = format!(
                 "unexpected {} in string interpolation",
@@ -1769,10 +1743,7 @@ impl<'a> Parser<'a> {
 fn expr_depth(kind: &ExprKind) -> usize {
     let max_child = |depths: &mut dyn Iterator<Item = usize>| depths.max().unwrap_or(0);
     match kind {
-        ExprKind::Int(_)
-        | ExprKind::Float(_)
-        | ExprKind::Bool(_)
-        | ExprKind::Var(_) => 1,
+        ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Bool(_) | ExprKind::Var(_) => 1,
         ExprKind::Str(parts) => {
             1 + max_child(&mut parts.iter().filter_map(|part| match part {
                 StrPart::Text(_) => None,
@@ -1781,7 +1752,11 @@ fn expr_depth(kind: &ExprKind) -> usize {
         }
         ExprKind::List(elements) => 1 + max_child(&mut elements.iter().map(|e| e.depth)),
         ExprKind::Map(entries) => {
-            1 + max_child(&mut entries.iter().flat_map(|(key, value)| [key.depth, value.depth]))
+            1 + max_child(
+                &mut entries
+                    .iter()
+                    .flat_map(|(key, value)| [key.depth, value.depth]),
+            )
         }
         ExprKind::Unary { expr, .. } => 1 + expr.depth,
         ExprKind::Try { expr } => 1 + expr.depth,
@@ -1794,12 +1769,14 @@ fn expr_depth(kind: &ExprKind) -> usize {
         ExprKind::Index { base, index } => 1 + base.depth.max(index.depth),
         ExprKind::Field { base, .. } => 1 + base.depth,
         ExprKind::Match { scrutinee, arms } => {
-            1 + max_child(&mut std::iter::once(scrutinee.depth).chain(arms.iter().map(|arm| {
-                match &arm.body {
-                    MatchArmBody::Expr(expr) => expr.depth,
-                    MatchArmBody::Block(_) => 1,
-                }
-            })))
+            1 + max_child(
+                &mut std::iter::once(scrutinee.depth).chain(arms.iter().map(
+                    |arm| match &arm.body {
+                        MatchArmBody::Expr(expr) => expr.depth,
+                        MatchArmBody::Block(_) => 1,
+                    },
+                )),
+            )
         }
     }
 }
@@ -1870,9 +1847,8 @@ mod tests {
 
     #[test]
     fn parses_if_elif_else() {
-        let program = parse_ok(
-            "if x > 0:\n    print(1)\nelif x < 0:\n    print(2)\nelse:\n    print(3)\n",
-        );
+        let program =
+            parse_ok("if x > 0:\n    print(1)\nelif x < 0:\n    print(2)\nelse:\n    print(3)\n");
         let Item::Stmt(stmt) = &program.items[0] else {
             panic!()
         };
@@ -1915,9 +1891,8 @@ mod tests {
 
     #[test]
     fn parses_struct_and_constructor() {
-        let program = parse_ok(
-            "struct Point:\n    x: Int\n    y: Int\n\nlet p = Point(x=1, y=2)\n",
-        );
+        let program =
+            parse_ok("struct Point:\n    x: Int\n    y: Int\n\nlet p = Point(x=1, y=2)\n");
         assert_eq!(program.items.len(), 2);
         let Item::Struct(decl) = &program.items[0] else {
             panic!()
@@ -2120,10 +2095,11 @@ mod tests {
             panic!("expected function");
         };
         let StmtKind::Let {
-            init: Expr {
-                kind: ExprKind::Match { arms, .. },
-                ..
-            },
+            init:
+                Expr {
+                    kind: ExprKind::Match { arms, .. },
+                    ..
+                },
             ..
         } = &label.body.stmts[0].kind
         else {
@@ -2144,10 +2120,11 @@ mod tests {
             }
         ));
         let StmtKind::Let {
-            init: Expr {
-                kind: ExprKind::Match { arms, .. },
-                ..
-            },
+            init:
+                Expr {
+                    kind: ExprKind::Match { arms, .. },
+                    ..
+                },
             ..
         } = &label.body.stmts[1].kind
         else {
@@ -2356,11 +2333,7 @@ mod tests {
         else {
             panic!("expected match expression");
         };
-        let Pattern::Or {
-            alternatives,
-            span,
-        } = &arms[0].pattern
-        else {
+        let Pattern::Or { alternatives, span } = &arms[0].pattern else {
             panic!("expected or-pattern, got {:?}", arms[0].pattern);
         };
         assert_eq!(alternatives.len(), 3);

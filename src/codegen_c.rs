@@ -849,7 +849,10 @@ impl<'a> Emitter<'a> {
                 ))
             }
             IrPattern::Variant {
-                variant, tag, fields, ..
+                variant,
+                tag,
+                fields,
+                ..
             } => {
                 let mut conditions = vec![format!("{base}->tag == {tag}")];
                 for field in fields {
@@ -968,10 +971,7 @@ impl<'a> Emitter<'a> {
                         let _ = write!(text, "if ({condition}) {{ {assignments} }} ");
                         first_branch = false;
                     } else {
-                        let _ = write!(
-                            text,
-                            "else if ({condition}) {{ {assignments} }} "
-                        );
+                        let _ = write!(text, "else if ({condition}) {{ {assignments} }} ");
                     }
                 }
                 None => {
@@ -1954,14 +1954,8 @@ impl<'a> Emitter<'a> {
             "file_exists" => {
                 format!("vantyx_file_exists({})", self.expr(&args[0]))
             }
-            "list_dir" => format!(
-                "vantyx_list_dir({}, {line}, {column})",
-                self.expr(&args[0])
-            ),
-            "glob" => format!(
-                "vantyx_glob({}, {line}, {column})",
-                self.expr(&args[0])
-            ),
+            "list_dir" => format!("vantyx_list_dir({}, {line}, {column})", self.expr(&args[0])),
+            "glob" => format!("vantyx_glob({}, {line}, {column})", self.expr(&args[0])),
             "make_dir" | "remove_file" | "remove_dir" | "make_dir_all" | "remove_dir_all" => {
                 let function = match name {
                     "make_dir" => "vantyx_make_dir",

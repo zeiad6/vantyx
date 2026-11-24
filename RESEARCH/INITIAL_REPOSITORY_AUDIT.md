@@ -28,14 +28,14 @@ second `research/` tree with duplicate content.
 | Toolchain | `rustc 1.100.0`, `cargo 1.100.0`, `clang 21.1.8` |
 | Dependencies | Zero third-party Rust dependencies; native builds invoke the system C compiler and link libc/libm |
 | Source size | About 25,755 lines in top-level `src/*.rs` and about 37,313 lines including `src/ai/*.rs` |
-| Tests | **613 passed**: 348 library unit, 15 CLI unit, 32 AI integration, 96 end-to-end, 122 differential native |
+| Tests | **621 passed**: 348 library unit, 15 CLI unit, 32 AI integration, 101 end-to-end, 125 native (after T-075) |
 | Builds | `cargo build` and `cargo build --release` succeed |
 | Lints | `cargo clippy --all-targets -- -D warnings` clean |
 | Formatting | **`cargo fmt --check` fails** with 224 diff locations (pre-existing; see gap G-01) |
-| Differential fuzzer | `tools/differential_fuzz.py --iterations 160 --seed 1` — 160/160 agree; also 160/160 on seeds 500 and 1000 with eight program shapes |
+| Differential fuzzer | `tools/differential_fuzz.py --iterations 180 --seed 1` — 180/180 agree; also 180/180 on seeds 500 and 1000 with nine program shapes (T-075 added result propagation) |
 | Fuzz smoke | 9 depth/limit cases and 400 random/mutated inputs with controlled diagnostics |
 | Examples | All five `examples/*.vtx` match interpreter and native output |
-| CI | Run 45496041422 green on `5e1092f` with 613 tests; run 45493833079 green on `a4fe86b` with 584 tests |
+| CI | Run 45499019615 green on `53a8b82` with the expanded fuzzer; run 45496041422 green on `5e1092f` with 613 tests; run 45493833079 green on `a4fe86b` with 584 tests |
 | Unsafe Rust | No `unsafe` blocks found in `src/` or `tests/` (only comments and a test name) |
 | Available optional tools | `rustfmt`, `clang` sanitizers, `gh`, `python3 3.14.10`; no `cargo-nextest`, `cargo-fuzz`, `cargo-audit`, `cargo-deny`, Miri, Valgrind, or `perf` |
 
@@ -59,8 +59,8 @@ second `research/` tree with duplicate content.
 | `src/ai/` | about 11,500 | JSON, providers, schema, extraction, tools, agents, BM25/vector retrieval, RAG, HTTP |
 | `src/ai_cli.rs` | 2,086 | `vantyx ai` command surface |
 | `src/main.rs` | 527 | CLI dispatch, build driver, REPL entry |
-| `tests/e2e.rs` | 96 tests | Language-level binary tests |
-| `tests/native.rs` | 122 tests | Differential interpreter/native tests |
+| `tests/e2e.rs` | 101 tests | Language-level binary tests |
+| `tests/native.rs` | 125 tests | Differential interpreter/native tests |
 | `tests/ai.rs` | 32 tests | Offline AI CLI and loopback HTTP tests |
 
 ## Confirmed defects fixed in this session
@@ -76,6 +76,9 @@ second `research/` tree with duplicate content.
   statements and stops at the first terminator.
 - The first two defects were found by the new deterministic differential fuzzer
   (T-072), which is now part of CI.
+- **T-075 (P1, implemented):** statement-position result-enum propagation with
+  postfix `?` in the interpreter and native backend, with `E0319` checker
+  rejections and a ninth fuzzer shape.
 
 No known P0 defect remains open at this audit. The items below are confirmed
 limitations and risks, not claims of correctness.

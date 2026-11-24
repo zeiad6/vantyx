@@ -252,8 +252,7 @@ impl HttpResponse {
     }
 }
 
-pub type StartCallback<'a> =
-    dyn FnMut(u16, &[(String, String)]) -> Result<(), AiError> + 'a;
+pub type StartCallback<'a> = dyn FnMut(u16, &[(String, String)]) -> Result<(), AiError> + 'a;
 pub type ChunkCallback<'a> = dyn FnMut(&[u8]) -> Result<(), AiError> + 'a;
 
 pub struct StreamHandlers<'a> {
@@ -376,9 +375,7 @@ impl HttpTransport {
             UrlScheme::Http => {
                 self.stream_loopback(&parsed, method, headers, body, timeout, handlers)
             }
-            UrlScheme::Https => {
-                self.stream_curl(&parsed, method, headers, body, timeout, handlers)
-            }
+            UrlScheme::Https => self.stream_curl(&parsed, method, headers, body, timeout, handlers),
         }
     }
 
@@ -904,12 +901,12 @@ fn write_loopback_request(
     if let Some(body) = body {
         request.push_str(body);
     }
-    stream.write_all(request.as_bytes()).map_err(|error| {
-        AiError::new(AI_E_CONNECT, format!("failed to send request: {error}"))
-    })?;
-    stream.flush().map_err(|error| {
-        AiError::new(AI_E_CONNECT, format!("failed to flush request: {error}"))
-    })
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|error| AiError::new(AI_E_CONNECT, format!("failed to send request: {error}")))?;
+    stream
+        .flush()
+        .map_err(|error| AiError::new(AI_E_CONNECT, format!("failed to flush request: {error}")))
 }
 
 fn emit_body(
@@ -1077,24 +1074,18 @@ enum StreamState {
 }
 
 impl StreamBody {
-    fn from_headers(
-        headers: &[(String, String)],
-        limit: usize,
-    ) -> Result<Self, AiError> {
+    fn from_headers(headers: &[(String, String)], limit: usize) -> Result<Self, AiError> {
         let chunked = headers.iter().any(|(name, value)| {
             name.eq_ignore_ascii_case("transfer-encoding")
                 && value.to_ascii_lowercase().contains("chunked")
         });
         let content_length = headers
             .iter()
-            .find_map(|(name, value)| {
-                name.eq_ignore_ascii_case("content-length")
-                    .then_some(value)
-            })
+            .find_map(|(name, value)| name.eq_ignore_ascii_case("content-length").then_some(value))
             .map(|value| {
-                value.parse::<usize>().map_err(|_| {
-                    AiError::new(AI_E_PROVIDER, "invalid Content-Length in response")
-                })
+                value
+                    .parse::<usize>()
+                    .map_err(|_| AiError::new(AI_E_PROVIDER, "invalid Content-Length in response"))
             })
             .transpose()?;
         let state = if chunked {
@@ -1103,9 +1094,7 @@ impl StreamBody {
             if length > limit {
                 return Err(AiError::new(
                     AI_E_RESPONSE_TOO_LARGE,
-                    format!(
-                        "response of {length} bytes exceeds the {limit} byte limit"
-                    ),
+                    format!("response of {length} bytes exceeds the {limit} byte limit"),
                 ));
             }
             if length == 0 {
@@ -1157,12 +1146,7 @@ impl StreamBody {
                 }
                 StreamState::Length(mut remaining) => {
                     let take = remaining.min(bytes.len());
-                    emit_body(
-                        &bytes[..take],
-                        &mut self.received,
-                        self.limit,
-                        on_chunk,
-                    )?;
+                    emit_body(&bytes[..take], &mut self.received, self.limit, on_chunk)?;
                     remaining -= take;
                     bytes = &bytes[take..];
                     state = if remaining == 0 {
@@ -1175,10 +1159,7 @@ impl StreamBody {
                     let Some(newline) = bytes.iter().position(|byte| *byte == b'\n') else {
                         line.extend_from_slice(bytes);
                         if line.len() > 1024 {
-                            return Err(AiError::new(
-                                AI_E_PROVIDER,
-                                "chunk-size line is too long",
-                            ));
+                            return Err(AiError::new(AI_E_PROVIDER, "chunk-size line is too long"));
                         }
                         return Ok(StreamState::ChunkSize(line));
                     };
@@ -1200,12 +1181,7 @@ impl StreamBody {
                 }
                 StreamState::ChunkData(mut remaining) => {
                     let take = remaining.min(bytes.len());
-                    emit_body(
-                        &bytes[..take],
-                        &mut self.received,
-                        self.limit,
-                        on_chunk,
-                    )?;
+                    emit_body(&bytes[..take], &mut self.received, self.limit, on_chunk)?;
                     remaining -= take;
                     bytes = &bytes[take..];
                     state = if remaining == 0 {
@@ -1217,10 +1193,7 @@ impl StreamBody {
                 StreamState::ChunkCrlf(expect) => {
                     let expected = if expect == 0 { b'\r' } else { b'\n' };
                     if bytes[0] != expected {
-                        return Err(AiError::new(
-                            AI_E_PROVIDER,
-                            "malformed chunk terminator",
-                        ));
+                        return Err(AiError::new(AI_E_PROVIDER, "malformed chunk terminator"));
                     }
                     bytes = &bytes[1..];
                     state = if expect == 0 {
@@ -1646,10 +1619,8 @@ mod tests {
     fn streams_chunked_responses_across_reads() {
         let response = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
         let split = response.len() / 2;
-        let (url, handle) = serve_parts(vec![
-            response[..split].to_vec(),
-            response[split..].to_vec(),
-        ]);
+        let (url, handle) =
+            serve_parts(vec![response[..split].to_vec(), response[split..].to_vec()]);
         let transport = HttpTransport::new(NetworkPolicy::local_only());
         let (status, received) = collect_stream(&transport, &url, &[], None).unwrap();
         assert_eq!(status, 200);

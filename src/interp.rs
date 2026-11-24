@@ -557,12 +557,10 @@ impl<'a> Interpreter<'a> {
                     None => None,
                 };
                 let value = match &init.kind {
-                    ExprKind::Try { expr: operand } => {
-                        match self.eval_try(operand, init.span)? {
-                            TryOutcome::Value(value) => value,
-                            TryOutcome::Propagate(value) => return Ok(Flow::Return(value)),
-                        }
-                    }
+                    ExprKind::Try { expr: operand } => match self.eval_try(operand, init.span)? {
+                        TryOutcome::Value(value) => value,
+                        TryOutcome::Propagate(value) => return Ok(Flow::Return(value)),
+                    },
                     _ => self.eval_expr(init)?,
                 };
                 let binding_ty = match &declared {
@@ -1992,12 +1990,7 @@ impl<'a> Interpreter<'a> {
                 let items = match &args[0] {
                     Value::List(items) => items.borrow(),
                     other => {
-                        return Err(self.type_error(
-                            " in `join`",
-                            "`List[Str]`",
-                            other,
-                            span,
-                        ));
+                        return Err(self.type_error(" in `join`", "`List[Str]`", other, span));
                     }
                 };
                 let separator = match &args[1] {
@@ -2081,11 +2074,7 @@ impl<'a> Interpreter<'a> {
                     }
                 }
                 if values[1].is_empty() {
-                    return Err(self.rt(
-                        "R0016",
-                        "`replace` requires a non-empty pattern",
-                        span,
-                    ));
+                    return Err(self.rt("R0016", "`replace` requires a non-empty pattern", span));
                 }
                 Ok(Value::str(values[0].replace(&*values[1], &values[2])))
             }
@@ -2115,8 +2104,7 @@ impl<'a> Interpreter<'a> {
                 };
                 Ok(Value::str(path_join(base, child)))
             }
-            "path_parent" | "path_name" | "path_stem" | "path_extension"
-            | "path_is_absolute" => {
+            "path_parent" | "path_name" | "path_stem" | "path_extension" | "path_is_absolute" => {
                 self.arity(name, &args, 1, 1, span)?;
                 let path = match &args[0] {
                     Value::Str(path) => path,
@@ -2325,11 +2313,7 @@ impl<'a> Interpreter<'a> {
                     return Err(self.rt("R0015", "file path contains a NUL byte", span));
                 }
                 let file = std::fs::File::open(&**path).map_err(|error| {
-                    self.rt(
-                        "R0015",
-                        format!("cannot read file `{path}`: {error}"),
-                        span,
-                    )
+                    self.rt("R0015", format!("cannot read file `{path}`: {error}"), span)
                 })?;
                 if let Ok(metadata) = file.metadata()
                     && metadata.len() > MAX_FILE_BYTES
@@ -2344,11 +2328,7 @@ impl<'a> Interpreter<'a> {
                 file.take(MAX_FILE_BYTES + 1)
                     .read_to_end(&mut bytes)
                     .map_err(|error| {
-                        self.rt(
-                            "R0015",
-                            format!("cannot read file `{path}`: {error}"),
-                            span,
-                        )
+                        self.rt("R0015", format!("cannot read file `{path}`: {error}"), span)
                     })?;
                 if bytes.len() as u64 > MAX_FILE_BYTES {
                     return Err(self.rt(
@@ -2401,11 +2381,7 @@ impl<'a> Interpreter<'a> {
                     return Err(self.rt("R0015", "file path contains a NUL byte", span));
                 }
                 if text.contains('\0') {
-                    return Err(self.rt(
-                        "R0015",
-                        "file contents contain a NUL byte",
-                        span,
-                    ));
+                    return Err(self.rt("R0015", "file contents contain a NUL byte", span));
                 }
                 let mut file = if name == "append_file" {
                     std::fs::OpenOptions::new()
@@ -2457,11 +2433,7 @@ impl<'a> Interpreter<'a> {
                     )
                 })?;
                 if !metadata.is_file() {
-                    return Err(self.rt(
-                        "R0015",
-                        format!("`{path}` is not a regular file"),
-                        span,
-                    ));
+                    return Err(self.rt("R0015", format!("`{path}` is not a regular file"), span));
                 }
                 let size = i64::try_from(metadata.len()).map_err(|_| {
                     self.rt(
@@ -2612,10 +2584,7 @@ impl<'a> Interpreter<'a> {
                         if let Some(refusal) = crate::fs_safety::refused_removal_root(path) {
                             return Err(self.rt(
                                 "R0015",
-                                format!(
-                                    "cannot remove directory `{path}`: {}",
-                                    refusal.message()
-                                ),
+                                format!("cannot remove directory `{path}`: {}", refusal.message()),
                                 span,
                             ));
                         }
@@ -2631,11 +2600,7 @@ impl<'a> Interpreter<'a> {
                         "remove_file" => "remove file",
                         _ => "remove directory",
                     };
-                    self.rt(
-                        "R0015",
-                        format!("cannot {action} `{path}`: {error}"),
-                        span,
-                    )
+                    self.rt("R0015", format!("cannot {action} `{path}`: {error}"), span)
                 })?;
                 Ok(Value::Unit)
             }

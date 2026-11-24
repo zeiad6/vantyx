@@ -41,7 +41,7 @@ because a document says so; the table cites code or an observed command.
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | **613 passed**: 348 library unit, 15 CLI unit, 32 AI integration, 96 e2e, 122 native (2026-11-24, after T-074); earlier 584-, 581-, 573-, 571-, 550-, 526-, 517-, 516-, 507-, 501-, 491-, 485-, 478-, 469-, 463-, 457-, 437-, 430-, 429-, 422-, 413-, 383-, 358-, 357-, and 340-test runs also passed |
+| `cargo test` | **621 passed**: 348 library unit, 15 CLI unit, 32 AI integration, 101 e2e, 125 native (2026-11-24, after T-075); earlier 613-, 584-, 581-, 573-, 571-, 550-, 526-, 517-, 516-, 507-, 501-, 491-, 485-, 478-, 469-, 463-, 457-, 437-, 430-, 429-, 422-, 413-, 383-, 358-, 357-, and 340-test runs also passed |
 | Map benchmark | `map_ops` native 3.597 ms, interpreter 121.728 ms, C 2.884 ms, Rust 4.495 ms (2026-11-24; `benchmarks/results/2026-11-24.*`) |
 | `cargo build` / `--release` | both succeeded after the AI foundation and rename |
 | `cargo clippy --all-targets -- -D warnings` | clean, zero warnings |
@@ -53,6 +53,7 @@ because a document says so; the table cites code or an observed command.
 | RAG (T-046, T-054, T-057) | bounded ingestion, stable cited chunks, strict versioned JSON index, BM25/cosine/hybrid RRF search, source-prefix filtering, recall/precision/MRR evaluation, incremental vector reuse with deletion pruning, and deterministic MMR diversity reranking with duplicate suppression; 21 unit + 4 CLI tests and manual 3-document runs |
 | File, directory, metadata, and path builtins (T-058–T-064) | `read_file`, `write_file`, `append_file`, `file_exists`, `file_size`, `is_file`, `is_dir`, `is_symlink`, `list_dir`, `make_dir`, `remove_file`, `remove_dir`, `make_dir_all`, `remove_dir_all`, `rename`, `copy_file`, `path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, and `path_is_absolute` in both engines; 64 MiB UTF-8 read cap, NUL rejection, sorted listings, fatal `R0015`, recursive creation/removal with symlink-safe unlinking, trailing-separator trimming, and destructive-root refusal (ADR-0035), byte-preserving copies, read-only follow-symlink metadata probes with `lstat` symlink detection, lexical POSIX-style no-I/O paths, left-to-right evaluation, and `E0401` for dynamically typed arguments |
 | Or-patterns (T-047/T-050) | top-level `|` alternatives, shared binding-set checking (`E0317`), exhaustiveness integration, ordered interpreter matching, and native short-circuit lowering with conditional binding initialization; parser/checker/e2e/native tests; ADR-0021 |
+| Result propagation (T-075) | postfix `?` unwraps the first variant's single payload of a nominal two-variant enum or returns the second variant unchanged; only whole `let` initializers, plain assignment values, and expression statements; explicit matching return type required; `E0319` for invalid placement/shape/return type; five e2e tests, three differential native tests, and a ninth fuzzer shape; specification §5.10, ADR-0038 |
 | Nested patterns (T-048/T-049) | recursive payload patterns, multi-level bindings, matrix exhaustiveness, guard exclusion, and native short-circuit lowering with path-based bindings; parser/checker/e2e/native tests; ADR-0019/ADR-0020 |
 | AI live evidence | Cloud path verified on 2026-11-24 against Gemini (discovery, chat, streaming, extraction, 768-dimension embeddings, semantic RAG/search, retrieval evaluation) and re-verified at 20:59Z with 21/21 checks using `MY_API_KEY`; an earlier retry was geo-blocked and one re-run hit a transient 503, so access is not guaranteed; no local server or model is installed |
 | Language-level AI | still blocked on async (T-017); the modules prerequisite (T-013) is complete |
@@ -62,15 +63,15 @@ because a document says so; the table cites code or an observed command.
 
 | Status | Core tasks | Directive requirements |
 | --- | ---: | ---: |
-| COMPLETE (including documented subsets) | 43 | 16 |
+| COMPLETE (including documented subsets) | 53 | 16 |
 | IN_PROGRESS | 0 | 0 |
 | READY | 0 | 0 |
-| MISSING | 10 | 10 |
+| MISSING | 8 | 10 |
 | BLOCKED | 0 | 3 |
-| PARTIAL | 0 | 16 |
+| PARTIAL | 2 | 16 |
 | BROKEN | 0 | 0 |
 | SUPERSEDED | 0 | 0 |
-| **Total tracked** | **53** | **45** |
+| **Total tracked** | **63** | **45** |
 
 Counts are derived from the rows below, not from prior reports. Core rows use
 the `TASKS.md` vocabulary; directive rows use
@@ -78,8 +79,11 @@ the `TASKS.md` vocabulary; directive rows use
 `COMPLETE (offline/loopback)` are counted as complete because the documented
 subset has tests and evidence; the missing scope is listed in the same row. The
 directive matrix includes 45 rows covering the AI extension plus the recovered
-cross-cutting requirements. Core rows T-036–T-043 are tracked in `TASKS.md` and
-the AI matrix rather than duplicated here; T-044–T-064 are included above.
+cross-cutting requirements. Core rows T-036–T-043, T-067–T-068, T-073, and
+T-075 are tracked in `TASKS.md` and the AI matrix rather than duplicated here;
+T-044–T-066 and T-069–T-074 are included above. T-016 moved from `MISSING` to
+`PARTIAL` when T-075 shipped statement-position `?`; a built-in generic
+`Result`, error conversion, and expression-position propagation remain open.
 
 ## Core task matrix (T-001 … T-064)
 
@@ -100,7 +104,7 @@ the AI matrix rather than duplicated here; T-044–T-064 are included above.
 | T-013 | Modules and imports | `src/module.rs`, import AST/parser, `E0501`–`E0512`, 12 unit tests, e2e and native tests, manual interpreter/native smoke | COMPLETE (subset) | Namespaces, aliases, re-exports, package-relative lookup, incremental builds | P1 | Keep |
 | T-014 | Enums and matching | AST/checker/interp/IR/codegen; 12 e2e + native tests | COMPLETE (subset) | Range/float patterns, generic enums | P1 | Extend |
 | T-015 | Closures and iterators | None | MISSING | Syntax, capture semantics, native lowering | P2 | Defer |
-| T-016 | `Result` / `?` | None | MISSING | Types, propagation, native lowering | P2 | Defer |
+| T-016 | `Result` / `?` | Statement-position postfix `?` for nominal two-variant enums; checker `E0319`, interpreter `Flow::Return`, native `IrStmtKind::Try`; five e2e and three differential native tests; ADR-0038 (T-075) | PARTIAL | Built-in generic `Result[T, E]`, error conversion, `try` block, and expression-position propagation | P2 | Extend |
 | T-017 | Async and concurrency | None | MISSING | Design, runtime, cancellation, tests | P3 | Defer |
 | T-018 | Traits and generics | None | MISSING | Type-system design and implementation | P3 | Defer |
 | T-019 | Formatter and linter | `vantyx lint` with `L0001`–`L0003`, 19 unit tests, four e2e tests, `docs/linting.md`, ADR-0037 (T-073) | PARTIAL | Comment-preserving formatter; lint suppression/configuration and broader reachability | P2 | Formatter next |
@@ -552,7 +556,7 @@ top-level or-patterns are implemented in the interpreter and native backend;
 and file/directory I/O, recursive directory creation/removal, rename/copy,
 lexical paths, and basic UTF-8 text builtins work in both engines with
 differential tests. The
-following previously requested items remain open: generics, traits, closures, iterators, `Result`/`?`, async, concurrency,
+following previously requested items remain open: generics, traits, closures, iterators, built-in generic `Result`/error conversion and expression-position `?` (statement-position propagation shipped in T-075), async, concurrency,
 FFI, formatter, package manager, standard library, native reclamation,
 cycle handling, structural-key map hashing, REPL multi-line history, REPL field
 completion, enum benchmarks, cross-platform CI, debug info, compiler

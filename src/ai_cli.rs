@@ -737,9 +737,7 @@ fn rag_index(args: &[String]) -> i32 {
         }
     };
     let chunk_options = match ai::ChunkOptions::new(
-        options
-            .chunk_chars
-            .unwrap_or(ai::rag::DEFAULT_CHUNK_CHARS),
+        options.chunk_chars.unwrap_or(ai::rag::DEFAULT_CHUNK_CHARS),
         options
             .overlap_chars
             .unwrap_or(ai::rag::DEFAULT_OVERLAP_CHARS),
@@ -793,7 +791,9 @@ fn rag_index(args: &[String]) -> i32 {
         if let Err(error) = index.save(out) {
             return report_error(&error);
         }
-        let bytes = std::fs::metadata(out).map(|metadata| metadata.len()).unwrap_or(0);
+        let bytes = std::fs::metadata(out)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
         if options.json {
             println!(
                 "{}",
@@ -896,15 +896,11 @@ fn rag_index(args: &[String]) -> i32 {
             }
         } else {
             let pending = plan.pending_chunks_owned();
-            let provider = match build_embedding_provider(
-                &config,
-                &provider_name,
-                &model,
-                dimensions,
-            ) {
-                Ok(provider) => provider,
-                Err(error) => return report_error(&error),
-            };
+            let provider =
+                match build_embedding_provider(&config, &provider_name, &model, dimensions) {
+                    Ok(provider) => provider,
+                    Err(error) => return report_error(&error),
+                };
             let mut budget = Budget::default();
             let (vectors, usage) = match ai::embed_chunks(
                 provider.as_ref(),
@@ -924,7 +920,9 @@ fn rag_index(args: &[String]) -> i32 {
         if let Err(error) = index.save(out) {
             return report_error(&error);
         }
-        let bytes = std::fs::metadata(out).map(|metadata| metadata.len()).unwrap_or(0);
+        let bytes = std::fs::metadata(out)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
         let prompt_tokens = usage.as_ref().map_or(0, |usage| usage.prompt_tokens);
         let total_tokens = usage.as_ref().map_or(0, |usage| usage.total_tokens);
         if options.json {
@@ -1016,40 +1014,37 @@ fn rag_index(args: &[String]) -> i32 {
     }
 
     if chunks.is_empty() {
-        eprintln!("error: no indexable documents were found under `{}`", root.display());
-        eprintln!("help: check --ext and the file contents, or use --mode lexical for an empty index");
+        eprintln!(
+            "error: no indexable documents were found under `{}`",
+            root.display()
+        );
+        eprintln!(
+            "help: check --ext and the file contents, or use --mode lexical for an empty index"
+        );
         return 64;
     }
-    let provider = match build_embedding_provider(&config, &provider_name, &model, hash_dimensions) {
+    let provider = match build_embedding_provider(&config, &provider_name, &model, hash_dimensions)
+    {
         Ok(provider) => provider,
         Err(error) => return report_error(&error),
     };
     let mut budget = Budget::default();
-    let (vectors, usage) = match ai::embed_chunks(
-        provider.as_ref(),
-        &model,
-        &chunks,
-        dimensions,
-        &mut budget,
-    ) {
-        Ok(result) => result,
-        Err(error) => return report_error(&error),
-    };
+    let (vectors, usage) =
+        match ai::embed_chunks(provider.as_ref(), &model, &chunks, dimensions, &mut budget) {
+            Ok(result) => result,
+            Err(error) => return report_error(&error),
+        };
     let actual_dimensions = vectors.first().map_or(hash_dimensions, ai::Vector::len);
-    let index = match ai::RagIndex::new(
-        provider.id(),
-        &model,
-        actual_dimensions,
-        chunks,
-        vectors,
-    ) {
+    let index = match ai::RagIndex::new(provider.id(), &model, actual_dimensions, chunks, vectors) {
         Ok(index) => index,
         Err(error) => return report_error(&error),
     };
     if let Err(error) = index.save(out) {
         return report_error(&error);
     }
-    let bytes = std::fs::metadata(out).map(|metadata| metadata.len()).unwrap_or(0);
+    let bytes = std::fs::metadata(out)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
     if options.json {
         println!(
             "{}",
@@ -1079,10 +1074,7 @@ fn rag_index(args: &[String]) -> i32 {
                 (
                     "usage",
                     ai::Json::object([
-                        (
-                            "prompt_tokens",
-                            ai::Json::from(usage.prompt_tokens),
-                        ),
+                        ("prompt_tokens", ai::Json::from(usage.prompt_tokens),),
                         ("total_tokens", ai::Json::from(usage.total_tokens)),
                     ]),
                 ),
@@ -1180,7 +1172,13 @@ fn rag_search(args: &[String]) -> i32 {
             );
         }
         let mut budget = Budget::default();
-        match ai::embed_query(provider.as_ref(), &model, &query, options.dimensions, &mut budget) {
+        match ai::embed_query(
+            provider.as_ref(),
+            &model,
+            &query,
+            options.dimensions,
+            &mut budget,
+        ) {
             Ok(vector) => Some(vector),
             Err(error) => return report_error(&error),
         }
@@ -1410,7 +1408,13 @@ fn rag_eval(args: &[String]) -> i32 {
                 "lexical evaluation must not embed queries",
             ));
         };
-        ai::embed_query(provider.as_ref(), &model, query, options.dimensions, &mut budget)
+        ai::embed_query(
+            provider.as_ref(),
+            &model,
+            query,
+            options.dimensions,
+            &mut budget,
+        )
     };
     let report = match ai::evaluate(&index, &queries, mode, k, &mut encoder) {
         Ok(report) => report,
@@ -1438,13 +1442,11 @@ fn rag_eval(args: &[String]) -> i32 {
     0
 }
 
-fn search_mode(
-    requested: Option<&str>,
-    index: &ai::RagIndex,
-) -> Result<ai::SearchMode, String> {
+fn search_mode(requested: Option<&str>, index: &ai::RagIndex) -> Result<ai::SearchMode, String> {
     let mode = match requested {
-        Some(name) => ai::SearchMode::parse(name)
-            .map_err(|error| format!("unknown search mode: {error}"))?,
+        Some(name) => {
+            ai::SearchMode::parse(name).map_err(|error| format!("unknown search mode: {error}"))?
+        }
         None if index.has_vectors() => ai::SearchMode::Hybrid,
         None => ai::SearchMode::Lexical,
     };
@@ -1476,9 +1478,7 @@ fn build_embedding_provider(
         "openai" => Ok(Box::new(build_openai(config, model)?)),
         other => Err(ai::AiError::new(
             ai::provider::AI_E_CONFIG,
-            format!(
-                "unknown embedding provider `{other}`; expected mock, hash, or openai"
-            ),
+            format!("unknown embedding provider `{other}`; expected mock, hash, or openai"),
         )),
     }
 }
@@ -1808,8 +1808,12 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             "--response" => options
                 .responses
                 .push(take_value(flag, inline, args, &mut index)?),
-            "--root" => options.root = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?)),
-            "--out" => options.out = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?)),
+            "--root" => {
+                options.root = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?))
+            }
+            "--out" => {
+                options.out = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?))
+            }
             "--index" => {
                 options.index = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?));
             }
@@ -1847,13 +1851,13 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
                         .parse::<usize>()
                         .ok()
                         .filter(|value| {
-                            (ai::rag::MIN_CHUNK_CHARS..=ai::rag::MAX_CHUNK_CHARS)
-                                .contains(value)
+                            (ai::rag::MIN_CHUNK_CHARS..=ai::rag::MAX_CHUNK_CHARS).contains(value)
                         })
                         .ok_or_else(|| {
                             format!(
                                 "--chunk-chars requires an integer from {} to {}",
-                                ai::rag::MIN_CHUNK_CHARS, ai::rag::MAX_CHUNK_CHARS
+                                ai::rag::MIN_CHUNK_CHARS,
+                                ai::rag::MAX_CHUNK_CHARS
                             )
                         })?,
                 );
@@ -1875,8 +1879,12 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             }
             "--ext" => {
                 for extension in take_value(flag, inline, args, &mut index)?.split(',') {
-                    let extension = extension.trim().trim_start_matches('.').to_ascii_lowercase();
-                    if extension.is_empty() || !extension.chars().all(|c| c.is_ascii_alphanumeric()) {
+                    let extension = extension
+                        .trim()
+                        .trim_start_matches('.')
+                        .to_ascii_lowercase();
+                    if extension.is_empty() || !extension.chars().all(|c| c.is_ascii_alphanumeric())
+                    {
                         return Err(format!(
                             "--ext requires an alphanumeric extension, got `{extension}`"
                         ));

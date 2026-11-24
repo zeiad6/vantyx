@@ -4,15 +4,16 @@
 - Updated: 2026-11-24
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `53a8b82` (expanded differential fuzzer); T-075 is pending
-  commit in the working tree
-- Remote: `origin/main` at `53a8b82`
+- Last commit: `66b4efc` (T-075 result-enum propagation); T-076 formatting
+  baseline is pending commit in the working tree
+- Remote: `origin/main` at `66b4efc`
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
 
-T-075 — Result-enum propagation with postfix `?`. Status: VERIFIED locally;
-commit, push, and CI pending. Postfix `?` unwraps the first variant's single
+T-076 — Repository rustfmt baseline and CI formatting gate. Status: VERIFIED
+locally; commit, push, and CI pending. T-075 is committed and CI-green (run
+45503321172). Postfix `?` unwraps the first variant's single
 payload of a nominal two-variant enum or returns the second variant unchanged
 from the enclosing function. It is accepted only as a whole `let` initializer,
 a plain assignment value, or an expression statement. The enclosing function

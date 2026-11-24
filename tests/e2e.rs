@@ -857,15 +857,17 @@ fn modules_run_and_check_end_to_end() {
         .expect("write broken entry");
     let failed = vantyx(&["check", broken.to_str().expect("utf-8 path")], None);
     assert_eq!(failed.code, 1);
-    assert!(failed.stderr.contains("lib/broken.vtx"), "{}", failed.stderr);
+    assert!(
+        failed.stderr.contains("lib/broken.vtx"),
+        "{}",
+        failed.stderr
+    );
     assert!(failed.stderr.contains("error[E0301]"), "{}", failed.stderr);
 }
 
 fn io_workspace(label: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
-        "vantyx-e2e-io-{}-{label}",
-        std::process::id()
-    ));
+    let directory =
+        std::env::temp_dir().join(format!("vantyx-e2e-io-{}-{label}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir_all(&directory).expect("create io workspace");
     directory
@@ -907,11 +909,13 @@ fn file_io_rejects_invalid_utf8_and_nul_contents() {
     fs::write(directory.join("bad-utf8.bin"), [0xff, 0xfe]).expect("write invalid utf8");
     fs::write(directory.join("nul.bin"), b"a\0b").expect("write nul");
     let invalid = directory.join("invalid.vtx");
-    fs::write(&invalid, "fn main():\n    print(read_file(\"bad-utf8.bin\"))\n")
-        .expect("write invalid source");
+    fs::write(
+        &invalid,
+        "fn main():\n    print(read_file(\"bad-utf8.bin\"))\n",
+    )
+    .expect("write invalid source");
     let nul = directory.join("nul.vtx");
-    fs::write(&nul, "fn main():\n    print(read_file(\"nul.bin\"))\n")
-        .expect("write nul source");
+    fs::write(&nul, "fn main():\n    print(read_file(\"nul.bin\"))\n").expect("write nul source");
 
     let invalid_run = vantyx_in_dir(
         &directory,
@@ -931,15 +935,19 @@ fn file_io_rejects_invalid_utf8_and_nul_contents() {
         invalid_run.stderr
     );
 
-    let nul_run = vantyx_in_dir(&directory, &["run", nul.to_str().expect("utf-8 path")], None);
+    let nul_run = vantyx_in_dir(
+        &directory,
+        &["run", nul.to_str().expect("utf-8 path")],
+        None,
+    );
     assert_eq!(nul_run.code, 2, "stderr: {}", nul_run.stderr);
     assert!(nul_run.stdout.is_empty());
-    assert!(nul_run.stderr.contains("error[R0015]"), "{}", nul_run.stderr);
     assert!(
-        nul_run.stderr.contains("NUL byte"),
+        nul_run.stderr.contains("error[R0015]"),
         "{}",
         nul_run.stderr
     );
+    assert!(nul_run.stderr.contains("NUL byte"), "{}", nul_run.stderr);
 }
 
 #[test]
@@ -1004,10 +1012,7 @@ fn directory_builtins_round_trip() {
         None,
     );
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
-    assert_eq!(
-        run.stdout,
-        "[\"a\", \"b\"]\n[\"note.txt\"]\ntrue\nfalse\n"
-    );
+    assert_eq!(run.stdout, "[\"a\", \"b\"]\n[\"note.txt\"]\ntrue\nfalse\n");
     assert!(!directory.join("work").exists());
 }
 
@@ -1197,9 +1202,7 @@ fn recursive_directory_dynamic_arguments_fail_at_runtime() {
         ("make-dir-all-dynamic", "make_dir_all"),
         ("remove-dir-all-dynamic", "remove_dir_all"),
     ] {
-        let source = format!(
-            "fn run(path: Any):\n    {builtin}(path)\n\nfn main():\n    run(1)\n"
-        );
+        let source = format!("fn run(path: Any):\n    {builtin}(path)\n\nfn main():\n    run(1)\n");
         let run = run_file(label, &source);
         assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
         assert!(
@@ -1208,8 +1211,7 @@ fn recursive_directory_dynamic_arguments_fail_at_runtime() {
             run.stderr
         );
         assert!(
-            run.stderr
-                .contains(&format!("as the path for `{builtin}`")),
+            run.stderr.contains(&format!("as the path for `{builtin}`")),
             "{label}: {}",
             run.stderr
         );
@@ -1330,10 +1332,7 @@ fn recursive_directory_removal_does_not_follow_symlinks() {
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
     assert_eq!(run.stdout, "false\ntrue\nfalse\ntrue\n");
     assert!(!directory.join("tree").exists());
-    assert!(directory
-        .join("root-link")
-        .symlink_metadata()
-        .is_err());
+    assert!(directory.join("root-link").symlink_metadata().is_err());
     assert_eq!(
         fs::read_to_string(target.join("inner/data.txt")).expect("read target data"),
         "keep"
@@ -1444,9 +1443,8 @@ fn file_metadata_dynamic_arguments_fail_at_runtime() {
         ("is-dir-dynamic", "is_dir"),
         ("is-symlink-dynamic", "is_symlink"),
     ] {
-        let source = format!(
-            "fn run(path: Any):\n    print({builtin}(path))\n\nfn main():\n    run(1)\n"
-        );
+        let source =
+            format!("fn run(path: Any):\n    print({builtin}(path))\n\nfn main():\n    run(1)\n");
         let run = run_file(label, &source);
         assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
         assert!(
@@ -1773,11 +1771,7 @@ fn text_replace_rejects_empty_pattern() {
     );
     assert_eq!(run.code, 2, "stderr: {}", run.stderr);
     assert!(run.stderr.contains("error[R0016]"), "{}", run.stderr);
-    assert!(
-        run.stderr.contains("non-empty pattern"),
-        "{}",
-        run.stderr
-    );
+    assert!(run.stderr.contains("non-empty pattern"), "{}", run.stderr);
 }
 
 #[test]
@@ -2073,10 +2067,7 @@ fn glob_absolute_and_repeated_separators_are_lexical() {
 
 #[test]
 fn glob_component_cap_is_r0016() {
-    let source = format!(
-        "fn main():\n    print(glob(\"{}\"))\n",
-        "a/".repeat(1025)
-    );
+    let source = format!("fn main():\n    print(glob(\"{}\"))\n", "a/".repeat(1025));
     let run = run_file("glob-components", &source);
     assert_eq!(run.code, 2, "stderr: {}", run.stderr);
     assert!(run.stderr.contains("error[R0016]"), "{}", run.stderr);
@@ -2185,7 +2176,11 @@ fn recursive_copy_errors_are_fatal_r0015() {
     fs::create_dir(directory.join("existing")).expect("create copy target");
 
     let cases = [
-        ("copy-missing-source", "copy_dir_all(\"missing\", \"copy-missing\")", "cannot copy directory"),
+        (
+            "copy-missing-source",
+            "copy_dir_all(\"missing\", \"copy-missing\")",
+            "cannot copy directory",
+        ),
         (
             "copy-file-source",
             "copy_dir_all(\"file.txt\", \"copy-file\")",
@@ -2231,7 +2226,11 @@ fn recursive_copy_errors_are_fatal_r0015() {
             None,
         );
         assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
-        assert!(run.stderr.contains("error[R0015]"), "{label}: {}", run.stderr);
+        assert!(
+            run.stderr.contains("error[R0015]"),
+            "{label}: {}",
+            run.stderr
+        );
         assert!(
             run.stderr.contains(needle),
             "{label}: expected {needle:?} in {}",
@@ -2249,8 +2248,11 @@ fn recursive_copy_depth_limit_is_fatal_r0015() {
     }
     fs::create_dir_all(&deep).expect("create deep copy tree");
     let source = directory.join("main.vtx");
-    fs::write(&source, "fn main():\n    copy_dir_all(\"deep\", \"copy\")\n")
-        .expect("write copy depth source");
+    fs::write(
+        &source,
+        "fn main():\n    copy_dir_all(\"deep\", \"copy\")\n",
+    )
+    .expect("write copy depth source");
     let run = vantyx_in_dir(
         &directory,
         &["run", source.to_str().expect("utf-8 path")],
@@ -2272,8 +2274,7 @@ fn recursive_copy_symlink_rules() {
     fs::write(real.join("sub/data.txt"), "data").expect("write copy link data");
     symlink(&real, directory.join("root-link")).expect("create copy root link");
     fs::create_dir(directory.join("inner-tree")).expect("create inner copy tree");
-    symlink(real.join("sub"), directory.join("inner-tree/link"))
-        .expect("create copy inner link");
+    symlink(real.join("sub"), directory.join("inner-tree/link")).expect("create copy inner link");
     symlink("missing", directory.join("dangling")).expect("create copy dangling link");
 
     let source = directory.join("root.vtx");
@@ -2469,12 +2470,14 @@ fn try_requires_matching_annotated_return_type() {
     );
     assert_eq!(run.code, 1);
     assert!(
-        run.stderr.contains("`?` propagates `Outcome`, but `wrong` returns `Int`"),
+        run.stderr
+            .contains("`?` propagates `Outcome`, but `wrong` returns `Int`"),
         "{}",
         run.stderr
     );
     assert!(
-        run.stderr.contains("requires an explicit return type on `unannotated`"),
+        run.stderr
+            .contains("requires an explicit return type on `unannotated`"),
         "{}",
         run.stderr
     );

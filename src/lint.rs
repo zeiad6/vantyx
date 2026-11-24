@@ -12,8 +12,8 @@
 //!   block.
 
 use crate::ast::{
-    Block, Expr, ExprKind, FnDecl, Item, MatchArm, MatchArmBody, Pattern, PatternArg, Program, Stmt,
-    StmtKind, StrPart,
+    Block, Expr, ExprKind, FnDecl, Item, MatchArm, MatchArmBody, Pattern, PatternArg, Program,
+    Stmt, StmtKind, StrPart,
 };
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::span::Span;
@@ -23,16 +23,13 @@ use std::collections::HashMap;
 pub fn lint(program: &Program) -> Diagnostics {
     let mut linter = Linter::new();
     linter.run(program);
-    linter
-        .diagnostics
-        .items
-        .sort_by_key(|diagnostic| {
-            (
-                diagnostic.span.file,
-                diagnostic.span.start,
-                diagnostic.span.end,
-            )
-        });
+    linter.diagnostics.items.sort_by_key(|diagnostic| {
+        (
+            diagnostic.span.file,
+            diagnostic.span.start,
+            diagnostic.span.end,
+        )
+    });
     linter.diagnostics
 }
 
@@ -423,9 +420,7 @@ mod tests {
     #[test]
     fn unused_local_is_reported() {
         assert_eq!(
-            lint_codes(
-                "fn main():\n    let unused = 1\n    print(\"ok\")\n"
-            ),
+            lint_codes("fn main():\n    let unused = 1\n    print(\"ok\")\n"),
             vec!["L0001"]
         );
     }
@@ -438,27 +433,23 @@ mod tests {
     #[test]
     fn plain_assignment_is_a_write_not_a_read() {
         assert_eq!(
-            lint_codes(
-                "fn main():\n    var value = 0\n    value = 1\n    print(\"done\")\n"
-            ),
+            lint_codes("fn main():\n    var value = 0\n    value = 1\n    print(\"done\")\n"),
             vec!["L0001"]
         );
     }
 
     #[test]
     fn compound_assignment_reads_and_writes() {
-        assert!(lint_codes(
-            "fn main():\n    var count = 0\n    count += 1\n    print(count)\n"
-        )
-        .is_empty());
+        assert!(
+            lint_codes("fn main():\n    var count = 0\n    count += 1\n    print(count)\n")
+                .is_empty()
+        );
     }
 
     #[test]
     fn var_never_reassigned_is_reported() {
         assert_eq!(
-            lint_codes(
-                "fn main():\n    var label = \"x\"\n    print(label)\n"
-            ),
+            lint_codes("fn main():\n    var label = \"x\"\n    print(label)\n"),
             vec!["L0002"]
         );
     }
@@ -561,7 +552,9 @@ mod tests {
 
     #[test]
     fn loop_variables_are_not_reported() {
-        assert!(lint_codes("fn main():\n    for i in range(3):\n        print(\"x\")\n").is_empty());
+        assert!(
+            lint_codes("fn main():\n    for i in range(3):\n        print(\"x\")\n").is_empty()
+        );
     }
 
     #[test]

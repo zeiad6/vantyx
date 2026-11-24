@@ -30,7 +30,10 @@ jobs:
         run: |
           rustc --version
           cargo --version
-          rustup component add clippy
+          rustup component add clippy rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check --all
 
       - name: Build
         run: cargo build --locked

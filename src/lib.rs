@@ -115,10 +115,7 @@ pub fn render_runtime_error(
 }
 
 /// Renders a runtime error using the source file recorded in each span.
-pub fn render_runtime_error_all(
-    error: &interp::RuntimeError,
-    sources: &SourceRegistry,
-) -> String {
+pub fn render_runtime_error_all(error: &interp::RuntimeError, sources: &SourceRegistry) -> String {
     let mut diagnostic = Diagnostic::error(error.code.clone(), error.message.clone(), error.span);
     if let Some(frame) = error.stack.last() {
         diagnostic = diagnostic.with_note(format!("in function `{}`", frame.function));

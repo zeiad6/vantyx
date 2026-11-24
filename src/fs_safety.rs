@@ -125,11 +125,15 @@ mod tests {
 
     #[test]
     fn messages_are_stable() {
-        assert!(RemovalRefusal::DotOrDotDot
-            .message()
-            .contains("`.` or `..`"));
-        assert!(RemovalRefusal::FilesystemRoot
-            .message()
-            .contains("filesystem root"));
+        assert!(
+            RemovalRefusal::DotOrDotDot
+                .message()
+                .contains("`.` or `..`")
+        );
+        assert!(
+            RemovalRefusal::FilesystemRoot
+                .message()
+                .contains("filesystem root")
+        );
     }
 }

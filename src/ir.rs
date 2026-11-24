@@ -1179,7 +1179,7 @@ impl<'a> Builder<'a> {
                             ),
                             target.span,
                             "string index assignment is not supported; build a new string instead",
-                        ))
+                        ));
                     }
                 }
             }
@@ -1188,7 +1188,7 @@ impl<'a> Builder<'a> {
                     "invalid assignment target",
                     target.span,
                     "the native backend assigns to variables, struct fields, and list elements",
-                ))
+                ));
             }
         };
         Ok(vec![try_stmt, assignment])
@@ -2582,10 +2582,7 @@ impl<'a> Builder<'a> {
                     IrType::List(inner) if **inner == IrType::Str => {}
                     other => {
                         return Err(IrError::unsupported(
-                            format!(
-                                "native `join` requires List[Str], found `{}`",
-                                other.name()
-                            ),
+                            format!("native `join` requires List[Str], found `{}`", other.name()),
                             span,
                             "annotate the list as List[Str] or run with `vantyx run`",
                         ));
@@ -2609,7 +2606,10 @@ impl<'a> Builder<'a> {
                 }
                 if lowered[0].ty != IrType::Str {
                     return Err(IrError::unsupported(
-                        format!("native `trim` requires a Str, found `{}`", lowered[0].ty.name()),
+                        format!(
+                            "native `trim` requires a Str, found `{}`",
+                            lowered[0].ty.name()
+                        ),
                         span,
                         "annotate the text as Str or run with `vantyx run`",
                     ));
@@ -2640,10 +2640,7 @@ impl<'a> Builder<'a> {
                 if lowered.len() != 3 {
                     return Err(IrError::internal("`replace` arity was not validated", span));
                 }
-                if lowered
-                    .iter()
-                    .any(|argument| argument.ty != IrType::Str)
-                {
+                if lowered.iter().any(|argument| argument.ty != IrType::Str) {
                     return Err(IrError::unsupported(
                         format!(
                             "native `replace` requires three Strs, found `{}`, `{}`, and `{}`",
@@ -2882,10 +2879,7 @@ impl<'a> Builder<'a> {
             }
             "glob" => {
                 if lowered.len() != 1 {
-                    return Err(IrError::internal(
-                        "`glob` arity was not validated",
-                        span,
-                    ));
+                    return Err(IrError::internal("`glob` arity was not validated", span));
                 }
                 if lowered[0].ty != IrType::Str {
                     return Err(IrError::unsupported(

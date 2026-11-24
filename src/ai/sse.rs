@@ -307,7 +307,12 @@ mod tests {
     #[test]
     fn finish_rejects_a_dangling_utf8_prefix() {
         let mut parser = SseParser::default();
-        assert!(parser.push_bytes(&"data: é".as_bytes()[..7]).unwrap().is_empty());
+        assert!(
+            parser
+                .push_bytes(&"data: é".as_bytes()[..7])
+                .unwrap()
+                .is_empty()
+        );
         assert!(parser.finish().is_err());
     }
 }

@@ -315,12 +315,7 @@ fn format_float(value: f64) -> String {
 
 // ---- equality ----
 
-fn values_equal(
-    a: &Value,
-    b: &Value,
-    depth: usize,
-    seen: &mut HashSet<(usize, usize)>,
-) -> bool {
+fn values_equal(a: &Value, b: &Value, depth: usize, seen: &mut HashSet<(usize, usize)>) -> bool {
     if depth > MAX_VALUE_DEPTH {
         return false;
     }
@@ -341,8 +336,7 @@ fn values_equal(
             let x = x.borrow();
             let y = y.borrow();
             let equal = x.len() == y.len()
-                && x
-                    .iter()
+                && x.iter()
                     .zip(y.iter())
                     .all(|(a, b)| values_equal(a, b, depth + 1, seen));
             drop(x);
@@ -405,12 +399,7 @@ fn values_equal(
 
 // ---- conformance ----
 
-fn value_conforms(
-    value: &Value,
-    ty: &Type,
-    depth: usize,
-    seen: &mut HashSet<usize>,
-) -> bool {
+fn value_conforms(value: &Value, ty: &Type, depth: usize, seen: &mut HashSet<usize>) -> bool {
     if matches!(ty, Type::Any) {
         return true;
     }

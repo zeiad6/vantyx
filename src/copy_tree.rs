@@ -29,19 +29,15 @@ pub fn copy_dir_all(from: &str, to: &str) -> Result<(), String> {
     )
 }
 
-pub(crate) fn copy_dir_all_with_limits(
-    from: &str,
-    to: &str,
-    limits: Limits,
-) -> Result<(), String> {
+pub(crate) fn copy_dir_all_with_limits(from: &str, to: &str, limits: Limits) -> Result<(), String> {
     if from.is_empty() {
         return Err("source path is empty".to_string());
     }
     let source = Path::new(from);
     let target = Path::new(to);
 
-    let metadata = fs::metadata(source)
-        .map_err(|error| format!("cannot copy directory `{from}`: {error}"))?;
+    let metadata =
+        fs::metadata(source).map_err(|error| format!("cannot copy directory `{from}`: {error}"))?;
     if !metadata.is_dir() {
         return Err(format!("cannot copy directory `{from}`: not a directory"));
     }
@@ -94,9 +90,8 @@ pub(crate) fn copy_dir_all_with_limits(
     fs::create_dir(target)
         .map_err(|error| format!("cannot create target directory `{to}`: {error}"))?;
     let mut entries = 0_u64;
-    copy_directory(source, target, 1, &mut entries, limits).map_err(|error| {
-        format!("cannot copy directory `{from}` to `{to}`: {error}")
-    })
+    copy_directory(source, target, 1, &mut entries, limits)
+        .map_err(|error| format!("cannot copy directory `{from}` to `{to}`: {error}"))
 }
 
 fn copy_directory(
@@ -106,13 +101,11 @@ fn copy_directory(
     entries: &mut u64,
     limits: Limits,
 ) -> Result<(), String> {
-    let reader = fs::read_dir(source).map_err(|error| {
-        format!("cannot read directory `{}`: {error}", source.display())
-    })?;
+    let reader = fs::read_dir(source)
+        .map_err(|error| format!("cannot read directory `{}`: {error}", source.display()))?;
     for entry in reader {
-        let entry = entry.map_err(|error| {
-            format!("cannot read directory `{}`: {error}", source.display())
-        })?;
+        let entry = entry
+            .map_err(|error| format!("cannot read directory `{}`: {error}", source.display()))?;
         *entries += 1;
         if *entries > limits.max_entries {
             return Err(format!(
@@ -122,9 +115,9 @@ fn copy_directory(
         }
         let child_source = entry.path();
         let child_target = target.join(entry.file_name());
-        let file_type = entry.file_type().map_err(|error| {
-            format!("cannot inspect `{}`: {error}", child_source.display())
-        })?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("cannot inspect `{}`: {error}", child_source.display()))?;
         if file_type.is_symlink() {
             return Err(format!(
                 "symbolic link `{}` is not supported",
@@ -219,7 +212,10 @@ mod tests {
         .expect("copy tree");
 
         assert_eq!(text(&target.join("a.txt")), "alpha");
-        assert_eq!(fs::read(target.join("sub/b.bin")).expect("read binary"), [0, 255, 1]);
+        assert_eq!(
+            fs::read(target.join("sub/b.bin")).expect("read binary"),
+            [0, 255, 1]
+        );
         assert_eq!(text(&target.join(".hidden/dot")), "dot");
         assert!(target.join("sub/empty").is_dir());
         assert_eq!(text(&source.join("a.txt")), "alpha");
@@ -237,8 +233,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&file, fs::Permissions::from_mode(0o700))
-                .expect("set permissions");
+            fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).expect("set permissions");
         }
         let target = directory.join("copy");
         copy_dir_all(
@@ -250,7 +245,10 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let source_mode = fs::metadata(&file).expect("source metadata").permissions().mode();
+            let source_mode = fs::metadata(&file)
+                .expect("source metadata")
+                .permissions()
+                .mode();
             let target_mode = fs::metadata(target.join("script.sh"))
                 .expect("target metadata")
                 .permissions()
@@ -271,12 +269,15 @@ mod tests {
         let directory_text = directory.to_str().expect("utf-8 workspace");
 
         let missing = format!("{directory_text}/missing");
-        let error = copy_dir_all(&missing, &format!("{directory_text}/copy"))
-            .expect_err("missing source");
+        let error =
+            copy_dir_all(&missing, &format!("{directory_text}/copy")).expect_err("missing source");
         assert!(error.contains("cannot copy directory"), "{error}");
 
-        let error = copy_dir_all(&format!("{directory_text}/file"), &format!("{directory_text}/copy"))
-            .expect_err("file source");
+        let error = copy_dir_all(
+            &format!("{directory_text}/file"),
+            &format!("{directory_text}/copy"),
+        )
+        .expect_err("file source");
         assert!(error.contains("not a directory"), "{error}");
 
         fs::create_dir(directory.join("existing")).expect("create target");
@@ -334,8 +335,11 @@ mod tests {
         let directory_text = directory.to_str().expect("utf-8 workspace");
 
         let target = directory.join("copy");
-        copy_dir_all(&format!("{directory_text}/root-link"), target.to_str().expect("utf-8 target"))
-            .expect("copy linked root");
+        copy_dir_all(
+            &format!("{directory_text}/root-link"),
+            target.to_str().expect("utf-8 target"),
+        )
+        .expect("copy linked root");
         assert_eq!(text(&target.join("sub/data.txt")), "data");
 
         let linked = directory.join("linked");
@@ -350,7 +354,10 @@ mod tests {
 
         let error = copy_dir_all(
             directory.join("dangling").to_str().expect("utf-8 dangling"),
-            directory.join("copy-dangling").to_str().expect("utf-8 target"),
+            directory
+                .join("copy-dangling")
+                .to_str()
+                .expect("utf-8 target"),
         )
         .expect_err("dangling root");
         assert!(error.contains("cannot copy directory"), "{error}");

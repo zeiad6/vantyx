@@ -71,10 +71,7 @@ pub fn load_file(path: &Path) -> Result<LoadResult, LoadError> {
 }
 
 /// Loads `path` and resolves its imports.
-pub fn load_file_with_options(
-    path: &Path,
-    require_entry: bool,
-) -> Result<LoadResult, LoadError> {
+pub fn load_file_with_options(path: &Path, require_entry: bool) -> Result<LoadResult, LoadError> {
     let entry = fs::canonicalize(path).map_err(|error| LoadError {
         path: path.to_path_buf(),
         message: error.to_string(),
@@ -245,8 +242,11 @@ impl Loader {
 
         // A selective import asks for names this file does not declare.
         if let Some(names) = selection {
-            let declared: HashSet<&str> =
-                unit.declarations.iter().map(|(name, _)| name.as_str()).collect();
+            let declared: HashSet<&str> = unit
+                .declarations
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect();
             for name in names {
                 if !declared.contains(name.name.as_str()) {
                     let span = name.span;
@@ -420,7 +420,11 @@ impl Loader {
             );
             return None;
         }
-        if Path::new(&import.path).extension().and_then(|ext| ext.to_str()) != Some("vtx") {
+        if Path::new(&import.path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            != Some("vtx")
+        {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E0501",
@@ -594,8 +598,16 @@ mod tests {
     #[test]
     fn cycle_reports_e0303_with_chain() {
         let directory = temp_dir("cycle");
-        write(&directory, "a.vtx", "import \"b.vtx\"\n\nfn a():\n    return\n");
-        write(&directory, "b.vtx", "import \"a.vtx\"\n\nfn b():\n    return\n");
+        write(
+            &directory,
+            "a.vtx",
+            "import \"b.vtx\"\n\nfn a():\n    return\n",
+        );
+        write(
+            &directory,
+            "b.vtx",
+            "import \"a.vtx\"\n\nfn b():\n    return\n",
+        );
         write(
             &directory,
             "main.vtx",
@@ -610,14 +622,14 @@ mod tests {
     fn path_outside_root_reports_e0302() {
         let directory = temp_dir("outside");
         let outside = temp_dir("outside-target");
-        write(&outside, "secret.vtx", "fn secret() -> Int:\n    return 1\n");
+        write(
+            &outside,
+            "secret.vtx",
+            "fn secret() -> Int:\n    return 1\n",
+        );
         let relative = format!(
             "../{}/secret.vtx",
-            outside
-                .0
-                .file_name()
-                .expect("temp name")
-                .to_string_lossy()
+            outside.0.file_name().expect("temp name").to_string_lossy()
         );
         write(
             &directory,
@@ -631,7 +643,11 @@ mod tests {
     #[test]
     fn unknown_imported_name_reports_e0304() {
         let directory = temp_dir("unknown");
-        write(&directory, "lib.vtx", "fn present() -> Int:\n    return 1\n");
+        write(
+            &directory,
+            "lib.vtx",
+            "fn present() -> Int:\n    return 1\n",
+        );
         write(
             &directory,
             "main.vtx",
@@ -692,7 +708,11 @@ mod tests {
     #[test]
     fn imported_diagnostics_name_the_imported_file() {
         let directory = temp_dir("span");
-        write(&directory, "lib.vtx", "fn broken() -> Int:\n    return \"no\"\n");
+        write(
+            &directory,
+            "lib.vtx",
+            "fn broken() -> Int:\n    return \"no\"\n",
+        );
         write(
             &directory,
             "main.vtx",

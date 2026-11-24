@@ -51,16 +51,16 @@ pub use json::{Json, JsonNumber, parse};
 pub use metrics::{MetricEvent, MetricsSink};
 pub use mock::{EchoProvider, MockProvider};
 pub use openai::OpenAiProvider;
-pub use rag::{
-    Chunk, ChunkOptions, DEFAULT_MMR_LAMBDA, Document, EvalQuery, EvalReport, IncrementalPlan,
-    IngestOptions, RagIndex, RetrievalHit, ReuseStats, SearchMode, chunk_document,
-    collect_documents, embed_chunks, embed_query, evaluate, parse_eval_queries,
-};
 pub use provider::{
     AiError, ChatRequest, ChatResponse, ContentPart, EmbeddingRequest, EmbeddingResponse,
     EmbeddingUsage, FinishReason, MAX_EMBEDDING_DIMENSIONS, MAX_EMBEDDING_INPUTS,
     MAX_EMBEDDING_ITEM_BYTES, MAX_EMBEDDING_REQUEST_BYTES, Message, Provider, ProviderCapabilities,
     ResponseFormat, Role, ToolCall, ToolSpec, Usage,
+};
+pub use rag::{
+    Chunk, ChunkOptions, DEFAULT_MMR_LAMBDA, Document, EvalQuery, EvalReport, IncrementalPlan,
+    IngestOptions, RagIndex, RetrievalHit, ReuseStats, SearchMode, chunk_document,
+    collect_documents, embed_chunks, embed_query, evaluate, parse_eval_queries,
 };
 pub use schema::{SchemaError, validate as validate_schema};
 pub use sse::{SseEvent, SseParser};

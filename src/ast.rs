@@ -283,17 +283,9 @@ impl Pattern {
 
 #[derive(Debug, Clone)]
 pub enum PatternArg {
-    Bind {
-        name: String,
-        name_span: Span,
-    },
-    Wildcard {
-        span: Span,
-    },
-    Nested {
-        pattern: Box<Pattern>,
-        span: Span,
-    },
+    Bind { name: String, name_span: Span },
+    Wildcard { span: Span },
+    Nested { pattern: Box<Pattern>, span: Span },
 }
 
 impl PatternArg {
@@ -367,12 +359,7 @@ impl BinOp {
     pub fn is_comparison(self) -> bool {
         matches!(
             self,
-            BinOp::Eq
-                | BinOp::NotEq
-                | BinOp::Lt
-                | BinOp::LtEq
-                | BinOp::Gt
-                | BinOp::GtEq
+            BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq
         )
     }
 

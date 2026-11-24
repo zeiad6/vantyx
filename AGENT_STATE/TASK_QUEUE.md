@@ -4,10 +4,9 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-075 — Commit and push result-enum propagation with postfix `?` (five e2e
-  tests, three differential native tests, a ninth fuzzer shape, 180/180 on
-  seeds 1, 500, and 1000, 621-test gate, ADR-0038); watch CI and record the
-  run ID.
+- T-076 — Commit and push the rustfmt baseline and CI formatting gate; watch
+  CI and record the run ID. T-075 is committed in `66b4efc` with CI run
+  45503321172 green.
 
 ## Ready
 

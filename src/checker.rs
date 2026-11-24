@@ -3,9 +3,7 @@
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::span::Span;
-use crate::types::{
-    EnumInfo, FieldInfo, StructInfo, Type, VariantInfo, resolve_type_expr,
-};
+use crate::types::{EnumInfo, FieldInfo, StructInfo, Type, VariantInfo, resolve_type_expr};
 use std::collections::{HashMap, HashSet};
 
 fn literal_key(value: &LiteralPattern) -> String {
@@ -17,13 +15,56 @@ fn literal_key(value: &LiteralPattern) -> String {
 }
 
 pub const BUILTINS: &[&str] = &[
-    "print", "len", "range", "push", "pop", "contains", "keys", "values", "str", "int",
-    "float", "bool", "type", "abs", "min", "max", "sqrt", "floor", "ceil", "assert",
-    "read_file", "write_file", "append_file", "file_exists", "list_dir", "make_dir", "remove_file",
-    "remove_dir", "make_dir_all", "remove_dir_all", "rename", "copy_file", "copy_dir_all", "split", "join", "trim",
-    "starts_with", "ends_with",
-    "replace", "path_join", "path_parent", "path_name", "path_stem", "path_extension",
-    "path_is_absolute", "file_size", "is_file", "is_dir", "is_symlink", "glob",
+    "print",
+    "len",
+    "range",
+    "push",
+    "pop",
+    "contains",
+    "keys",
+    "values",
+    "str",
+    "int",
+    "float",
+    "bool",
+    "type",
+    "abs",
+    "min",
+    "max",
+    "sqrt",
+    "floor",
+    "ceil",
+    "assert",
+    "read_file",
+    "write_file",
+    "append_file",
+    "file_exists",
+    "list_dir",
+    "make_dir",
+    "remove_file",
+    "remove_dir",
+    "make_dir_all",
+    "remove_dir_all",
+    "rename",
+    "copy_file",
+    "copy_dir_all",
+    "split",
+    "join",
+    "trim",
+    "starts_with",
+    "ends_with",
+    "replace",
+    "path_join",
+    "path_parent",
+    "path_name",
+    "path_stem",
+    "path_extension",
+    "path_is_absolute",
+    "file_size",
+    "is_file",
+    "is_dir",
+    "is_symlink",
+    "glob",
 ];
 
 pub fn is_builtin(name: &str) -> bool {
@@ -275,13 +316,11 @@ impl<'a> Checker<'a> {
         for item in &program.items {
             let Item::Struct(decl) = item else { continue };
             if is_builtin_type(&decl.name) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E0202",
-                        format!("cannot redefine built-in type `{}`", decl.name),
-                        decl.name_span,
-                    ),
-                );
+                self.diagnostics.push(Diagnostic::error(
+                    "E0202",
+                    format!("cannot redefine built-in type `{}`", decl.name),
+                    decl.name_span,
+                ));
                 continue;
             }
             if self.structs.contains_key(&decl.name) {
@@ -414,10 +453,9 @@ impl<'a> Checker<'a> {
                         .with_help("variant constructor names must be unique"),
                     );
                 }
-                if let Some(previous) = variant_names.insert(
-                    variant.name.clone(),
-                    decl.name.clone(),
-                ) {
+                if let Some(previous) =
+                    variant_names.insert(variant.name.clone(), decl.name.clone())
+                {
                     self.diagnostics.push(
                         Diagnostic::error(
                             "E0202",
@@ -485,7 +523,10 @@ impl<'a> Checker<'a> {
             if is_builtin_type(&decl.name) {
                 self.diagnostics.push(Diagnostic::error(
                     "E0202",
-                    format!("cannot use built-in type name `{}` as a function", decl.name),
+                    format!(
+                        "cannot use built-in type name `{}` as a function",
+                        decl.name
+                    ),
                     decl.name_span,
                 ));
                 continue;
@@ -610,12 +651,7 @@ impl<'a> Checker<'a> {
         });
         self.scopes.push(HashMap::new());
         for (param, param_sig) in decl.params.iter().zip(sig.params.iter()) {
-            self.declare(
-                &param.name,
-                param_sig.ty.clone(),
-                false,
-                param.name_span,
-            );
+            self.declare(&param.name, param_sig.ty.clone(), false, param.name_span);
         }
         self.check_stmts(&decl.body.stmts);
         self.scopes.pop();
@@ -624,10 +660,7 @@ impl<'a> Checker<'a> {
             return;
         };
 
-        let returns_value = ctx
-            .returns
-            .iter()
-            .any(|(ty, _)| !matches!(ty, Type::Unit));
+        let returns_value = ctx.returns.iter().any(|(ty, _)| !matches!(ty, Type::Unit));
         let returns_unit = ctx.returns.iter().any(|(ty, _)| matches!(ty, Type::Unit));
 
         if ctx.ret_annotated {
@@ -689,12 +722,8 @@ impl<'a> Checker<'a> {
         } else if let Some(main) = main {
             if !main.params.is_empty() {
                 self.diagnostics.push(
-                    Diagnostic::error(
-                        "E0308",
-                        "`main` must not take parameters",
-                        main.span,
-                    )
-                    .with_help("move configuration into top-level code or a separate function"),
+                    Diagnostic::error("E0308", "`main` must not take parameters", main.span)
+                        .with_help("move configuration into top-level code or a separate function"),
                 );
                 Entry::None
             } else {
@@ -1095,12 +1124,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn check_pattern(
-        &mut self,
-        pattern: &Pattern,
-        coverage: &mut MatchCoverage<'_>,
-        counts: bool,
-    ) {
+    fn check_pattern(&mut self, pattern: &Pattern, coverage: &mut MatchCoverage<'_>, counts: bool) {
         let scrutinee = coverage.scrutinee;
         let enum_info = coverage.enum_info;
         let strict = coverage.strict;
@@ -1264,9 +1288,7 @@ impl<'a> Checker<'a> {
 
                 let variant = match enum_info {
                     Some(info) => info.variant(name).cloned(),
-                    None => self
-                        .find_variant(name)
-                        .map(|(_, variant)| variant.clone()),
+                    None => self.find_variant(name).map(|(_, variant)| variant.clone()),
                 };
 
                 if variant.is_none() && strict {
@@ -1304,9 +1326,7 @@ impl<'a> Checker<'a> {
                                 format!("unknown variant `{name}`"),
                                 *name_span,
                             )
-                            .with_help(
-                                "declare the variant in an `enum` before matching on it",
-                            ),
+                            .with_help("declare the variant in an `enum` before matching on it"),
                         );
                     }
                 }
@@ -1402,11 +1422,7 @@ impl<'a> Checker<'a> {
             actual.sort_by_key(|(_, _, span)| (span.start, span.end));
             match &expected {
                 Some(expected) => {
-                    self.check_or_binding_compatibility(
-                        expected,
-                        &actual,
-                        alternative.span(),
-                    );
+                    self.check_or_binding_compatibility(expected, &actual, alternative.span());
                 }
                 None => expected = Some(actual),
             }
@@ -1430,16 +1446,9 @@ impl<'a> Checker<'a> {
     ) {
         let expected_names: HashSet<&str> =
             expected.iter().map(|(name, _, _)| name.as_str()).collect();
-        let actual_names: HashSet<&str> =
-            actual.iter().map(|(name, _, _)| name.as_str()).collect();
-        let missing: Vec<&str> = expected_names
-            .difference(&actual_names)
-            .copied()
-            .collect();
-        let extra: Vec<&str> = actual_names
-            .difference(&expected_names)
-            .copied()
-            .collect();
+        let actual_names: HashSet<&str> = actual.iter().map(|(name, _, _)| name.as_str()).collect();
+        let missing: Vec<&str> = expected_names.difference(&actual_names).copied().collect();
+        let extra: Vec<&str> = actual_names.difference(&expected_names).copied().collect();
         let mut missing = missing;
         let mut extra = extra;
         missing.sort_unstable();
@@ -1545,10 +1554,9 @@ impl<'a> Checker<'a> {
         // An all-wildcard row covers every remaining tuple. This is also the
         // termination condition for recursive enum types: without it, a
         // wildcard payload would expand forever.
-        if rows
-            .iter()
-            .any(|row| row.len() == types.len() && row.iter().all(|p| matches!(p, CoverPattern::Wild)))
-        {
+        if rows.iter().any(|row| {
+            row.len() == types.len() && row.iter().all(|p| matches!(p, CoverPattern::Wild))
+        }) {
             return true;
         }
         let ty = &types[0];
@@ -1847,9 +1855,7 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Map(entries) => {
                 let (expected_key, expected_value) = match expected {
-                    Some(Type::Map(key, value)) => {
-                        (Some((**key).clone()), Some((**value).clone()))
-                    }
+                    Some(Type::Map(key, value)) => (Some((**key).clone()), Some((**value).clone())),
                     _ => (None, None),
                 };
                 let mut key_ty: Option<Type> = None;
@@ -1925,9 +1931,19 @@ impl<'a> Checker<'a> {
             ExprKind::Binary { op, lhs, rhs } => match op {
                 BinOp::And | BinOp::Or => {
                     let lt = self.check_expr(lhs, Some(&Type::Bool));
-                    self.expect(&lt, &Type::Bool, lhs.span, &format!(" before `{}`", op.symbol()));
+                    self.expect(
+                        &lt,
+                        &Type::Bool,
+                        lhs.span,
+                        &format!(" before `{}`", op.symbol()),
+                    );
                     let rt = self.check_expr(rhs, Some(&Type::Bool));
-                    self.expect(&rt, &Type::Bool, rhs.span, &format!(" after `{}`", op.symbol()));
+                    self.expect(
+                        &rt,
+                        &Type::Bool,
+                        rhs.span,
+                        &format!(" after `{}`", op.symbol()),
+                    );
                     Type::Bool
                 }
                 BinOp::Eq | BinOp::NotEq => {
@@ -1962,10 +1978,7 @@ impl<'a> Checker<'a> {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E0306",
-                                format!(
-                                    "cannot order `{lt}` and `{rt}` with `{}`",
-                                    op.symbol()
-                                ),
+                                format!("cannot order `{lt}` and `{rt}` with `{}`", op.symbol()),
                                 expr.span,
                             )
                             .with_help("ordering is defined for Int, Float, and Str"),
@@ -2158,9 +2171,7 @@ impl<'a> Checker<'a> {
                         format!("`?` requires a two-variant enum, found `{operand}`"),
                         span,
                     )
-                    .with_help(
-                        "declare a result enum such as `enum Outcome: Ok(Int), Err(Str)`",
-                    ),
+                    .with_help("declare a result enum such as `enum Outcome: Ok(Int), Err(Str)`"),
                 );
             }
             return Type::Any;
@@ -2197,11 +2208,13 @@ impl<'a> Checker<'a> {
             );
             return Type::Any;
         }
-        let Some((function, returns, annotated)) = self
-            .current_fn
-            .as_ref()
-            .map(|context| (context.name.clone(), context.ret.clone(), context.ret_annotated))
-        else {
+        let Some((function, returns, annotated)) = self.current_fn.as_ref().map(|context| {
+            (
+                context.name.clone(),
+                context.ret.clone(),
+                context.ret_annotated,
+            )
+        }) else {
             self.diagnostics.push(
                 Diagnostic::error("E0319", "`?` is only valid inside a function", span)
                     .with_help("top-level code has nowhere to propagate the failure value"),
@@ -2223,9 +2236,7 @@ impl<'a> Checker<'a> {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E0319",
-                    format!(
-                        "`?` propagates `{name}`, but `{function}` returns `{returns}`"
-                    ),
+                    format!("`?` propagates `{name}`, but `{function}` returns `{returns}`"),
                     span,
                 )
                 .with_help("the enclosing function must return the same enum type"),
@@ -2261,12 +2272,8 @@ impl<'a> Checker<'a> {
                 (Any, _) | (_, Any) => Any,
                 (Int, Float) | (Float, Int) => {
                     self.diagnostics.push(
-                        Diagnostic::error(
-                            "E0306",
-                            "cannot add `Int` and `Float`",
-                            span,
-                        )
-                        .with_help("convert explicitly with `float(...)` or `int(...)`"),
+                        Diagnostic::error("E0306", "cannot add `Int` and `Float`", span)
+                            .with_help("convert explicitly with `float(...)` or `int(...)`"),
                     );
                     Type::Any
                 }
@@ -2279,12 +2286,8 @@ impl<'a> Checker<'a> {
                     (Any, _) | (_, Any) => Any,
                     (Float, Float) => {
                         self.diagnostics.push(
-                            Diagnostic::error(
-                                "E0306",
-                                "`//` is defined for Int operands",
-                                span,
-                            )
-                            .with_help("use `floor(a / b)` for floats"),
+                            Diagnostic::error("E0306", "`//` is defined for Int operands", span)
+                                .with_help("use `floor(a / b)` for floats"),
                         );
                         Type::Any
                     }
@@ -2292,10 +2295,7 @@ impl<'a> Checker<'a> {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E0306",
-                                format!(
-                                    "operator `{}` cannot mix `Int` and `Float`",
-                                    op.symbol()
-                                ),
+                                format!("operator `{}` cannot mix `Int` and `Float`", op.symbol()),
                                 span,
                             )
                             .with_help("convert explicitly with `float(...)` or `int(...)`"),
@@ -2310,12 +2310,8 @@ impl<'a> Checker<'a> {
                 (Any, _) | (_, Any) => Float,
                 (Int, Float) | (Float, Int) => {
                     self.diagnostics.push(
-                        Diagnostic::error(
-                            "E0306",
-                            "division cannot mix `Int` and `Float`",
-                            span,
-                        )
-                        .with_help("convert explicitly with `float(...)` or `int(...)`"),
+                        Diagnostic::error("E0306", "division cannot mix `Int` and `Float`", span)
+                            .with_help("convert explicitly with `float(...)` or `int(...)`"),
                     );
                     Type::Any
                 }
@@ -2333,12 +2329,8 @@ impl<'a> Checker<'a> {
         let all_named = args.iter().all(|arg| arg.name.is_some());
         if any_named && !all_named {
             self.diagnostics.push(
-                Diagnostic::error(
-                    "E0313",
-                    "cannot mix named and positional arguments",
-                    span,
-                )
-                .with_help("use all named or all positional arguments"),
+                Diagnostic::error("E0313", "cannot mix named and positional arguments", span)
+                    .with_help("use all named or all positional arguments"),
             );
         }
 
@@ -2530,10 +2522,7 @@ impl<'a> Checker<'a> {
                     return Type::Int;
                 }
                 let ty = arg_ty(self, 0, None);
-                if !matches!(
-                    ty,
-                    Type::Str | Type::List(_) | Type::Map(_, _) | Type::Any
-                ) {
+                if !matches!(ty, Type::Str | Type::List(_) | Type::Map(_, _) | Type::Any) {
                     self.diagnostics.push(
                         Diagnostic::error(
                             "E0301",
@@ -2615,12 +2604,7 @@ impl<'a> Checker<'a> {
                     }
                     Type::Map(key, _) => {
                         let needle_ty = arg_ty(self, 1, Some(key));
-                        self.expect(
-                            &needle_ty,
-                            key,
-                            args[1].span,
-                            " as the key for `contains`",
-                        );
+                        self.expect(&needle_ty, key, args[1].span, " as the key for `contains`");
                     }
                     Type::Str => {
                         let needle_ty = arg_ty(self, 1, Some(&Type::Str));
@@ -2637,9 +2621,7 @@ impl<'a> Checker<'a> {
                     other => {
                         self.diagnostics.push(Diagnostic::error(
                             "E0301",
-                            format!(
-                                "`contains` expects List, Str, or Map, found `{other}`"
-                            ),
+                            format!("`contains` expects List, Str, or Map, found `{other}`"),
                             args[0].span,
                         ));
                         arg_ty(self, 1, None);
@@ -2652,7 +2634,12 @@ impl<'a> Checker<'a> {
                     return Type::List(Box::new(Type::Str));
                 }
                 let text_ty = arg_ty(self, 0, Some(&Type::Str));
-                self.expect(&text_ty, &Type::Str, args[0].span, " as the text for `split`");
+                self.expect(
+                    &text_ty,
+                    &Type::Str,
+                    args[0].span,
+                    " as the text for `split`",
+                );
                 let separator_ty = arg_ty(self, 1, Some(&Type::Str));
                 self.expect(
                     &separator_ty,
@@ -2702,7 +2689,12 @@ impl<'a> Checker<'a> {
                     return Type::Str;
                 }
                 let text_ty = arg_ty(self, 0, Some(&Type::Str));
-                self.expect(&text_ty, &Type::Str, args[0].span, " as the text for `trim`");
+                self.expect(
+                    &text_ty,
+                    &Type::Str,
+                    args[0].span,
+                    " as the text for `trim`",
+                );
                 Type::Str
             }
             "starts_with" | "ends_with" => {
@@ -2791,9 +2783,7 @@ impl<'a> Checker<'a> {
                 }
                 let map_ty = arg_ty(self, 0, None);
                 match map_ty {
-                    Type::Map(key, value) => {
-                        Type::List(if name == "keys" { key } else { value })
-                    }
+                    Type::Map(key, value) => Type::List(if name == "keys" { key } else { value }),
                     Type::Any => Type::List(Box::new(Type::Any)),
                     other => {
                         self.diagnostics.push(Diagnostic::error(
@@ -2952,12 +2942,7 @@ impl<'a> Checker<'a> {
                     return Type::List(Box::new(Type::Str));
                 }
                 let ty = arg_ty(self, 0, Some(&Type::Str));
-                self.expect(
-                    &ty,
-                    &Type::Str,
-                    args[0].span,
-                    " as the pattern for `glob`",
-                );
+                self.expect(&ty, &Type::Str, args[0].span, " as the pattern for `glob`");
                 Type::List(Box::new(Type::Str))
             }
             "make_dir" | "remove_file" | "remove_dir" | "make_dir_all" | "remove_dir_all" => {
@@ -3084,14 +3069,7 @@ impl<'a> Checker<'a> {
             return;
         }
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(
-                name.to_string(),
-                Binding {
-                    ty,
-                    mutable,
-                    span,
-                },
-            );
+            scope.insert(name.to_string(), Binding { ty, mutable, span });
         }
     }
 
@@ -3119,8 +3097,8 @@ impl<'a> Checker<'a> {
             span,
         );
         if actual.is_numeric() && expected.is_numeric() {
-            diagnostic = diagnostic
-                .with_help("use `float(...)` or `int(...)` to convert explicitly");
+            diagnostic =
+                diagnostic.with_help("use `float(...)` or `int(...)` to convert explicitly");
         }
         self.diagnostics.push(diagnostic);
     }
@@ -3183,11 +3161,7 @@ mod tests {
         let lexed = lex(source);
         assert!(!lexed.diagnostics.has_errors(), "{:?}", lexed.diagnostics);
         let (program, parse_diagnostics) = parser::parse(source, lexed.tokens);
-        assert!(
-            !parse_diagnostics.has_errors(),
-            "{:?}",
-            parse_diagnostics
-        );
+        assert!(!parse_diagnostics.has_errors(), "{:?}", parse_diagnostics);
         check(&program)
     }
 
@@ -3243,17 +3217,13 @@ mod tests {
 
     #[test]
     fn rejects_wrong_argument_type() {
-        let diagnostics = check_errors(
-            "fn takes(a: Int) -> Int:\n    return a\n\ntakes(\"no\")\n",
-        );
+        let diagnostics = check_errors("fn takes(a: Int) -> Int:\n    return a\n\ntakes(\"no\")\n");
         assert!(diagnostics.items.iter().any(|d| d.code == "E0301"));
     }
 
     #[test]
     fn rejects_wrong_arity() {
-        let diagnostics = check_errors(
-            "fn takes(a: Int) -> Int:\n    return a\n\ntakes()\n",
-        );
+        let diagnostics = check_errors("fn takes(a: Int) -> Int:\n    return a\n\ntakes()\n");
         assert!(diagnostics.items.iter().any(|d| d.code == "E0302"));
     }
 
@@ -3305,17 +3275,15 @@ mod tests {
 
     #[test]
     fn rejects_missing_struct_field() {
-        let diagnostics = check_errors(
-            "struct Point:\n    x: Int\n    y: Int\n\nlet p = Point(x=1)\n",
-        );
+        let diagnostics =
+            check_errors("struct Point:\n    x: Int\n    y: Int\n\nlet p = Point(x=1)\n");
         assert!(diagnostics.items.iter().any(|d| d.code == "E0305"));
     }
 
     #[test]
     fn rejects_unknown_struct_field() {
-        let diagnostics = check_errors(
-            "struct Point:\n    x: Int\n\nlet p = Point(x=1)\nprint(p.z)\n",
-        );
+        let diagnostics =
+            check_errors("struct Point:\n    x: Int\n\nlet p = Point(x=1)\nprint(p.z)\n");
         assert!(diagnostics.items.iter().any(|d| d.code == "E0304"));
     }
 
@@ -3333,8 +3301,7 @@ mod tests {
 
     #[test]
     fn warns_when_main_is_shadowed_by_top_level_code() {
-        let (_model, diagnostics) =
-            check_source("fn main():\n    print(1)\n\nprint(2)\n");
+        let (_model, diagnostics) = check_source("fn main():\n    print(1)\n\nprint(2)\n");
         assert!(diagnostics.items.iter().any(|d| d.code == "W0001"));
     }
 
