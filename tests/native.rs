@@ -39,11 +39,15 @@ fn workspace(name: &str, source: &str) -> PathBuf {
 }
 
 fn run_engines(name: &str, source: &str) -> Option<Engines> {
+    let directory = workspace(name, source);
+    run_engines_in(directory, name)
+}
+
+fn run_engines_in(directory: PathBuf, name: &str) -> Option<Engines> {
     if !compiler_available() {
         eprintln!("skipping native test `{name}`: no C compiler available");
         return None;
     }
-    let directory = workspace(name, source);
     let source_path = directory.join("main.vtx");
     let executable = directory.join("program");
 
@@ -1556,4 +1560,200 @@ fn dynamic_enum_match_is_rejected_with_e0401() {
     let stderr = String::from_utf8_lossy(&engines.build.stderr);
     assert!(stderr.contains("error[E0401]"), "{stderr}");
     assert!(stderr.contains("parameter has type Any"), "{stderr}");
+}
+
+#[test]
+fn or_patterns_match_alternatives_and_bind_payloads() {
+    assert_same(
+        "enum-or-pattern",
+        "enum Shape:\n    Circle(radius: Int, tag: Str)\n    Square(side: Int, tag: Str)\n    Point\n\n\
+         fn value(shape: Shape) -> Int:\n    return match shape:\n\
+         \x20       Circle(size, _) | Square(size, _): size\n\
+         \x20       Point(): 0\n\n\
+         fn classify(shape: Shape) -> Str:\n    match shape:\n\
+         \x20       Circle(size, tag) | Square(size, tag) if size > 5:\n            return tag\n\
+         \x20       Circle(size, tag) | Square(size, tag):\n            return \"small \" + tag\n\
+         \x20       Point():\n            return \"point\"\n\n\
+         fn label(n: Int) -> Str:\n    return match n:\n\
+         \x20       1 | 2: \"small\"\n\
+         \x20       3 | 4 if n > 0: \"medium\"\n\
+         \x20       _: \"other\"\n\n\
+         fn flag(value: Bool) -> Str:\n    return match value:\n\
+         \x20       true | false: \"covered\"\n\n\
+         fn main():\n\
+         \x20   print(value(Circle(7, \"circle\")))\n\
+         \x20   print(value(Square(9, \"square\")))\n\
+         \x20   print(value(Point()))\n\
+         \x20   print(classify(Circle(6, \"big circle\")))\n\
+         \x20   print(classify(Square(2, \"square\")))\n\
+         \x20   print(classify(Point()))\n\
+         \x20   print(label(2))\n\
+         \x20   print(label(4))\n\
+         \x20   print(label(8))\n\
+         \x20   print(flag(false))\n",
+    );
+}
+
+#[test]
+fn or_patterns_bind_nested_payloads() {
+    assert_same(
+        "enum-or-nested-pattern",
+        "enum Tree:\n    Leaf(value: Int)\n    Node(left: Tree, right: Tree)\n\n\
+         fn tree_value(tree: Tree) -> Int:\n    return match tree:\n\
+         \x20       Leaf(value) | Node(Leaf(value), _) | Node(_, Leaf(value)): value\n\
+         \x20       Node(_, _): -1\n\n\
+         fn main():\n\
+         \x20   print(tree_value(Leaf(4)))\n\
+         \x20   print(tree_value(Node(Leaf(5), Leaf(6))))\n\
+         \x20   print(tree_value(Node(Leaf(7), Leaf(8))))\n\
+         \x20   print(tree_value(Node(Node(Leaf(9), Leaf(9)), Node(Leaf(9), Leaf(9)))))\n",
+    );
+}
+
+#[test]
+fn range_patterns_match_half_open_and_inclusive_bounds() {
+    assert_same(
+        "enum-range-pattern",
+        "fn classify(n: Int) -> Str:\n    return match n:\n\
+         \x20       0..=9: \"digit\"\n\
+         \x20       10..100: \"small\"\n\
+         \x20       -10..0: \"negative\"\n\
+         \x20       100..=100: \"hundred\"\n\
+         \x20       _: \"other\"\n\n\
+         enum Code:\n    Small(n: Int)\n    Big(n: Int)\n\n\
+         fn label(code: Code) -> Str:\n    return match code:\n\
+         \x20       Small(0..=9): \"small-digit\"\n\
+         \x20       Small(n) if n < 0: \"small-negative\"\n\
+         \x20       Small(_): \"small\"\n\
+         \x20       Big(n) if n >= 1000: \"big\"\n\
+         \x20       Big(_): \"medium\"\n\n\
+         fn bucket(n: Int) -> Str:\n    return match n:\n\
+         \x20       1..=3 | 5..=7: \"low\"\n\
+         \x20       8..=9: \"high\"\n\
+         \x20       _: \"other\"\n\n\
+         fn main():\n\
+         \x20   print(classify(0))\n\
+         \x20   print(classify(9))\n\
+         \x20   print(classify(10))\n\
+         \x20   print(classify(99))\n\
+         \x20   print(classify(-10))\n\
+         \x20   print(classify(-1))\n\
+         \x20   print(classify(100))\n\
+         \x20   print(classify(101))\n\
+         \x20   print(label(Small(5)))\n\
+         \x20   print(label(Small(-3)))\n\
+         \x20   print(label(Small(50)))\n\
+         \x20   print(label(Big(1000)))\n\
+         \x20   print(label(Big(4)))\n\
+         \x20   print(bucket(2))\n\
+         \x20   print(bucket(6))\n\
+         \x20   print(bucket(8))\n\
+         \x20   print(bucket(4))\n",
+    );
+}
+
+#[test]
+fn nested_patterns_match() {
+    assert_same(
+        "enum-nested-pattern",
+        "enum Tree:\n    Leaf(value: Int)\n    Node(left: Tree, right: Tree)\n\n\
+         fn sum(tree: Tree) -> Int:\n    match tree:\n\
+         \x20       Leaf(value):\n            return value\n\
+         \x20       Node(Leaf(left), Leaf(right)):\n            return left + right\n\
+         \x20       Node(Leaf(left), _):\n            return left\n\
+         \x20       Node(_, Leaf(right)):\n            return right\n\
+         \x20       Node(_, _):\n            return 0\n\n\
+         fn right_sum(tree: Tree) -> Int:\n    return match tree:\n\
+         \x20       Leaf(value): value\n\
+         \x20       Node(Leaf(value), right): value + right_sum(right)\n\
+         \x20       Node(_, _): 0\n\n\
+         fn classify(tree: Tree) -> Str:\n    return match tree:\n\
+         \x20       Leaf(1): \"one\"\n\
+         \x20       Leaf(value) if value > 5: \"big leaf\"\n\
+         \x20       Leaf(_): \"leaf\"\n\
+         \x20       Node(Leaf(value), _) if value > 3: \"left big\"\n\
+         \x20       Node(_, _): \"node\"\n\n\
+         enum Maybe:\n    Nothing\n    Just(value: Maybe)\n    Number(value: Int)\n\n\
+         fn describe(value: Maybe) -> Str:\n    return match value:\n\
+         \x20       Just(Nothing()): \"just nothing\"\n\
+         \x20       Just(Just(_)): \"double\"\n\
+         \x20       Just(Number(number)) if number > 0: \"positive\"\n\
+         \x20       Just(Number(_)): \"number\"\n\
+         \x20       Nothing(): \"nothing\"\n\
+         \x20       Number(_): \"raw\"\n\n\
+         fn main():\n\
+         \x20   print(sum(Leaf(7)))\n\
+         \x20   print(sum(Node(Leaf(2), Leaf(3))))\n\
+         \x20   print(sum(Node(Leaf(4), Node(Leaf(9), Leaf(9)))))\n\
+         \x20   print(sum(Node(Node(Leaf(9), Leaf(9)), Leaf(5))))\n\
+         \x20   print(sum(Node(Node(Leaf(9), Leaf(9)), Node(Leaf(9), Leaf(9)))))\n\
+         \x20   print(right_sum(Node(Leaf(1), Node(Leaf(2), Leaf(3)))))\n\
+         \x20   print(right_sum(Node(Node(Leaf(9), Leaf(9)), Leaf(4))))\n\
+         \x20   print(classify(Leaf(1)))\n\
+         \x20   print(classify(Leaf(9)))\n\
+         \x20   print(classify(Leaf(2)))\n\
+         \x20   print(classify(Node(Leaf(4), Leaf(1))))\n\
+         \x20   print(classify(Node(Leaf(1), Leaf(1))))\n\
+         \x20   print(describe(Nothing()))\n\
+         \x20   print(describe(Just(Nothing())))\n\
+         \x20   print(describe(Just(Just(Nothing()))))\n\
+         \x20   print(describe(Just(Number(7))))\n\
+         \x20   print(describe(Just(Number(-1))))\n\
+         \x20   print(describe(Number(3)))\n",
+    );
+}
+
+#[test]
+fn imported_functions_structs_and_enums_match() {
+    let directory = workspace(
+        "modules",
+        "from \"lib/math.vtx\" import Point, double, sum\n\
+         import \"lib/kind.vtx\"\n\n\
+         fn main():\n\
+         \x20   let p = Point(3, 4)\n\
+         \x20   print(double(sum(p)))\n\
+         \x20   print(describe(Number(7)))\n",
+    );
+    fs::create_dir_all(directory.join("lib")).expect("create module dir");
+    fs::write(
+        directory.join("lib/math.vtx"),
+        "struct Point:\n\
+         \x20   x: Int\n\
+         \x20   y: Int\n\n\
+         fn sum(p: Point) -> Int:\n\
+         \x20   return p.x + p.y\n\n\
+         fn double(x: Int) -> Int:\n\
+         \x20   return x * 2\n",
+    )
+    .expect("write math module");
+    fs::write(
+        directory.join("lib/kind.vtx"),
+        "import \"math.vtx\"\n\n\
+         enum Kind:\n\
+         \x20   Number(value: Int)\n\
+         \x20   Empty\n\n\
+         fn describe(kind: Kind) -> Str:\n\
+         \x20   match kind:\n\
+         \x20       Number(value):\n\
+         \x20           return \"number {value}\"\n\
+         \x20       Empty:\n\
+         \x20           return \"empty\"\n",
+    )
+    .expect("write kind module");
+
+    let Some(engines) = run_engines_in(directory, "modules") else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), native.status.code());
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), "14\nnumber 7\n");
 }

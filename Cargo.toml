@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2024"
 description = "Vantyx: a safe, gradual-typing language that starts like a script and scales to native code"
 license = "MIT"
+authors = ["Zeidex (https://github.com/zeiad6)"]
+repository = "https://github.com/zeiad6/vantyx"
+homepage = "https://zeidexlink.zeidexsoft.com/zeidex"
+readme = "README.md"
+keywords = ["programming-language", "compiler", "interpreter", "gradual-typing", "ai"]
+categories = ["compilers", "development-tools"]
 
 [lib]
 name = "vantyx"

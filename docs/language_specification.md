@@ -36,9 +36,9 @@ if ready: print("go")
 String escapes: `\n`, `\t`, `\r`, `\\`, `\"`, `\{`, `\}`. `{{` and `}}` produce literal braces. `{expression}` interpolates a value using its display form. Interpolation expressions may not contain an unescaped `}`.
 
 ### 1.5 Keywords
-`fn let var if elif else while for in return break continue struct enum match true false and or not`
+`fn let var if elif else while for in return break continue struct enum match import from true false and or not`
 
-Reserved for future use: `trait impl import from as async await nil pub mut`.
+Reserved for future use: `trait impl as async await nil pub mut`.
 
 ### 1.6 Operators and punctuation
 `+ - * / // % ** = == != < <= > >= += -= *= /= //= %= ( ) [ ] { } , : . ->`
@@ -211,11 +211,45 @@ match shape:
         print("rect {width}x{height}")
 ```
 
+Top-level or-patterns match any alternative and expose one shared binding set:
+
+```vantyx
+match shape:
+    Circle(size) | Square(size) if size > 5:
+        print("large shape with size {size}")
+    Circle(size) | Square(size):
+        print("small shape with size {size}")
+```
+
 - The scrutinee must have an enum, `Int`, `Str`, `Bool`, or `Any` type.
 - Arms are indented blocks. Patterns are `_`, an integer/boolean/string
-  literal, `Variant`, or `Variant(binding, ...)`; `_` may ignore a payload
-  position.
+  literal, an integer range, `Variant`, `Variant(pattern, ...)`, or a top-level
+  alternation of those forms separated by `|`; `_` may ignore a payload
+  position. A payload position may recursively contain a literal, range, or
+  variant pattern, such as `Node(Leaf(value), _)`. A bare payload identifier is
+  a binding; write `Empty()` to match a zero-payload nested variant. See
+  [ADR-0019](decisions/ADR-0019-nested-patterns.md).
+- Integer range patterns use `low..high` (half-open: `low <= x < high`) or
+  `low..=high` (inclusive: `low <= x <= high`). Both bounds are integer
+  literals and may be negative. A range requires an `Int` or `Any` scrutinee
+  (`E0301`); an empty range is `E0318`. Ranges are refutable and never make an
+  `Int` match exhaustive, so an `Int` match still needs `_`. Overlapping ranges
+  are allowed and are tested in source order; only exact duplicate literals
+  produce `W0003`. See [ADR-0022](decisions/ADR-0022-range-patterns.md).
 - Payload bindings are immutable in the arm scope.
+- Every alternative of an or-pattern must bind the same names with the same
+  types (`E0317`). An arm receives that single binding set regardless of which
+  alternative matched. For example, `Circle(size) | Square(size)` is valid;
+  `Circle(radius) | Square(side)` is rejected because the names differ.
+- An unguarded or-pattern contributes coverage for every alternative, so
+  `Circle(size) | Square(size)` covers both variants. A guarded or-pattern
+  contributes no coverage, exactly like any other guarded arm.
+- Native builds lower top-level or-patterns with a shared binding layout:
+  alternatives are tested in source order, bindings are initialized from the
+  matched alternative, and guards evaluate once. See
+  [ADR-0021](decisions/ADR-0021-native-or-patterns.md).
+- `|` is a pattern separator only. It is not a bitwise or boolean operator; use
+  `or` for boolean expressions.
 - A pattern may be followed by `if <expr>`. The guard must have type `Bool`
   (`E0301`); a dynamically typed non-`Bool` guard raises `R0005` at runtime.
   The guard is evaluated only after the pattern matches, with the pattern's
@@ -226,10 +260,15 @@ match shape:
 - A guarded arm never counts as coverage for exhaustiveness. Any variant,
   literal, or wildcard case that is covered only by guarded arms remains
   uncovered (`E0316`); add an unguarded arm. `_ if cond` is not a fallback.
-- A match on a closed enum must cover every variant or end with `_`.
-  A non-exhaustive match is `E0316`.
+- A match on a closed enum must cover every variant and every nested payload
+  shape, or end with `_`. Exhaustiveness is checked recursively over the
+  pattern matrix: `Leaf(value)` plus `Node(Leaf(left), _)` plus `Node(_, _)`
+  can be exhaustive, while `Node(Leaf(value), _)` alone is not. A
+  non-exhaustive match is `E0316`.
 - A `Bool` match must cover both `true` and `false` or end with `_` (`E0316`).
-  An `Int` or `Str` match is open-ended and must end with `_` (`E0316`).
+  An `Int` or `Str` match is open-ended and must end with `_` (`E0316`), even
+  when range patterns cover large intervals. A nested `Int`/`Str` payload
+  likewise requires a binding or `_` for full coverage.
 - Literal patterns must have the same type as the scrutinee (`E0301`).
   A literal pattern on an enum is `E0315`; a variant pattern on a scalar is
   `E0315`.
@@ -237,11 +276,15 @@ match shape:
   emits `W0004`. If no arm matches at runtime, the interpreter raises `R0014`.
 - A variant pattern must belong to the matched enum (`E0315`); unknown
   variants and non-enum scrutinees are errors (`E0315`, `E0314`).
-- Nested patterns are not supported yet (`E0112`); or-patterns are not
-  implemented.
+- Nested payload patterns may be up to 64 levels deep (`E0112` beyond that).
+  Or-patterns are supported only at the top level of an arm; alternatives may
+  contain nested payload patterns, but an or-pattern cannot itself appear
+  inside a payload position.
 - Unreachable arms (after an unguarded `_`, a duplicate unguarded variant, or
-  a duplicate unguarded literal) produce `W0003`. Repeated guarded arms do not
-  warn because their guards may still select them.
+  a duplicate unguarded literal) produce `W0003`. A variant arm is only
+  considered complete when every payload position is irrefutable; duplicate
+  partial nested patterns are not reported. Repeated guarded arms do not warn
+  because their guards may still select them.
 - A match statement whose arms all return satisfies the function's return-path
   check.
 
@@ -307,6 +350,13 @@ let label = match shape:
 - Exhaustiveness, guard, and pattern rules are the same as for match
   statements. A guard follows the pattern before the colon:
   `Circle(radius) if radius > 0: "positive"`.
+- Or-patterns also work in match expressions, including with a shared guard:
+
+```vantyx
+return match shape:
+    Circle(size) | Square(size) if size > 5: "large"
+    Circle(size) | Square(size): "small"
+```
 - Literal patterns dispatch on `Int`, `Str`, and `Bool` values:
 
 ```vantyx
@@ -319,7 +369,9 @@ fn classify(code: Int) -> Str:
 
 - The expression must be the final element of its statement or arm; a match
   expression closes at its dedent.
-- Nested match expressions are allowed, but nested patterns are not.
+- Nested match expressions and nested payload patterns are allowed. A
+  top-level or-pattern may combine whole alternatives that themselves contain
+  nested payload patterns.
 - Because arms require indentation, a match expression cannot appear inside
   parentheses, brackets, or a one-line suite; newlines are suppressed there.
   Bind the result to a variable first. This case reports `E0101` with an
@@ -359,13 +411,65 @@ Built-ins are statically known names and cannot be shadowed in v0.1.
 - If both top-level statements and `main` exist, top-level statements run and `main` is not called automatically (a warning is emitted).
 - Top-level `return`/`break`/`continue` are errors.
 
-## 8. Runtime errors
+## 8. Modules and imports
+
+Vantyx v0.1 has file-based modules. An import is a declaration, so imports
+appear at the top level of a file:
+
+```vantyx
+import "lib/math.vtx"
+from "lib/math.vtx" import Point, add
+```
+
+- Import paths are plain string literals ending in `.vtx`. Interpolation,
+  escapes, backslashes, empty paths, and absolute paths are rejected.
+- A relative path is resolved from the directory of the importing file, then
+  canonicalized. The target must remain under the entry file's directory;
+  `..` traversal that escapes that root is rejected.
+- `import "path"` makes every declaration in the target file visible.
+  `from "path" import name, ...` makes only the listed declarations visible.
+  Each name may appear once. There are no aliases, namespaces, re-exports, or
+  module initializers; imported declarations share the program's global scope,
+  and duplicate names are ordinary checker errors reported at the imported
+  declaration.
+- Every module is parsed once even if it is imported by several files.
+  Dependencies of a selective import are always loaded, because selected
+  declarations may call them.
+- A non-entry module may contain only imports and top-level `fn`, `struct`,
+  and `enum` declarations. Executable top-level statements are `E0505`.
+  Defining `main` in a non-entry module is `E0506`; `main` belongs to the entry
+  file.
+- The entry file may contain executable top-level statements. Imported
+  declarations are placed before the entry file's own items, preserving each
+  file's source order.
+- The interpreter and the native backend consume the same flattened program.
+  `vantyx run -` and the REPL reject imports with `E0510`.
+
+Resource limits per module graph: 256 files, import depth 64, 1 MiB per module,
+and 8 MiB of total module source. The entry file counts toward these limits.
+
+| Code | Meaning |
+| --- | --- |
+| `E0501` | Cannot read or resolve an imported file, wrong extension, or not a regular file |
+| `E0502` | Absolute path or a path outside the entry file's directory |
+| `E0503` | Import cycle, with the chain in a note |
+| `E0504` | `from ... import name` where the module does not declare `name` |
+| `E0505` | Executable statement in a non-entry module |
+| `E0506` | `main` defined in a non-entry module |
+| `E0507` | Module graph exceeds 256 files |
+| `E0508` | Import depth exceeds 64 |
+| `E0509` | Module or total module source exceeds the byte limits |
+| `E0510` | Import used through stdin or the REPL |
+| `E0511` | Duplicate name in one selective import |
+| `E0512` | Empty, interpolated, escaped, or otherwise non-literal import path |
+
+## 9. Runtime errors
 
 Runtime errors print `error[Rxxxx]`, a source span, a message, and a call stack, then exit with status 2. Compile errors exit with status 1. Usage errors exit with status 64.
 
 Dynamic match failures use `R0014` ("no match arm matched"). `R0005` remains the general dynamic type-boundary error, and `R0010` reports internal or unsupported runtime forms.
 
-## 9. Safety guarantees (v0.1)
+## 10. Safety guarantees (v0.1)
 
 Interpreter guarantees:
 - no use-after-free, double-free, dangling references, or data races in Vantyx code (single-threaded runtime; Rust ownership backs all values);
@@ -393,21 +497,21 @@ Known limitations:
 - resource exhaustion is bounded by explicit limits where implemented (range length, nesting depth, call depth) and otherwise by available memory;
 - no sandboxing; do not run untrusted code without OS-level isolation.
 
-## 10. Native compilation (v0.1 subset)
+## 11. Native compilation (v0.1 subset)
 
 `vantyx build file.vtx [-o output]` lowers the checked program to a typed IR and emits GNU C11, then invokes `clang` (override with `VANTYX_CC`) and links with libc/libm.
 
-Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals; `return`/`break`/`continue`; `print`, `len(Str/List/Map)`, `push`, `pop`, `contains(List/Str/Map)`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`.
+Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals and integer ranges; `return`/`break`/`continue`; `print`, `len(Str/List/Map)`, `push`, `pop`, `contains(List/Str/Map)`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`. Match guards, nested payload patterns, integer range patterns, and top-level or-patterns are supported.
 
-Enum layout: each enum is a heap-allocated tagged struct with a union of per-variant payload structs; variant declaration order defines the tag. Construction, payload binding, wildcard arms, display, equality, and `type` match the interpreter. Enum values are never freed in v0.1, like native strings, structs, lists, and maps. See ADR-0012.
+Enum layout: each enum is a heap-allocated tagged struct with a union of per-variant payload structs; variant declaration order defines the tag. Construction, payload binding, wildcard arms, nested payload patterns, top-level or-patterns, display, equality, and `type` match the interpreter. Nested patterns lower to short-circuit tag and literal tests; every binding is declared from its recorded payload path, and a guard sees all nested bindings. Or-patterns test alternatives in order and initialize the shared binding set from the matched alternative. Integer ranges lower to checked `>=`/`<` or `<=` comparisons. Enum values are never freed in v0.1, like native strings, structs, lists, and maps. See ADR-0012, ADR-0020, ADR-0021, and ADR-0022.
 
 Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported `for` iterables, and unannotated value-returning functions. String index assignment is rejected with `E0306`. Unsupported programs must be run with `vantyx run`.
 
-## 11. Explicitly not implemented yet
+## 12. Explicitly not implemented yet
 
-Modules/imports, nested/or-patterns, generic enums, explicit discriminants, traits, generics, closures, iterators, `Result`/`?`, async/concurrency, FFI, native map hash indexing, package manager, formatter, LSP. See `TASKS.md`.
+Generic enums, explicit discriminants, traits, generics, closures, iterators, `Result`/`?`, async/concurrency, FFI, package manager, formatter, LSP. Nested payload patterns (T-048/T-049), top-level or-patterns (T-047/T-050), and integer range patterns (T-051) are implemented in the interpreter and native backend. See `TASKS.md`.
 
-## 12. Interactive REPL (tooling)
+## 13. Interactive REPL (tooling)
 
 The REPL is a tooling surface, not a separate language mode. It compiles and executes the same language with the interpreter; declarations persist across entries.
 

@@ -7,7 +7,7 @@
 
 use super::provider::{
     AI_E_CONFIG, AI_E_CONNECT, AI_E_IO, AI_E_NETWORK_DISABLED, AI_E_PROVIDER,
-    AI_E_RESPONSE_TOO_LARGE, AI_E_TIMEOUT, AiError,
+    AI_E_RESPONSE_TOO_LARGE, AI_E_TIMEOUT, AI_E_UNSUPPORTED, AiError,
 };
 use super::redact;
 use std::fs::{self, File, OpenOptions};
@@ -252,6 +252,15 @@ impl HttpResponse {
     }
 }
 
+pub type StartCallback<'a> =
+    dyn FnMut(u16, &[(String, String)]) -> Result<(), AiError> + 'a;
+pub type ChunkCallback<'a> = dyn FnMut(&[u8]) -> Result<(), AiError> + 'a;
+
+pub struct StreamHandlers<'a> {
+    pub on_start: &'a mut StartCallback<'a>,
+    pub on_chunk: &'a mut ChunkCallback<'a>,
+}
+
 pub trait Transport {
     fn execute(
         &self,
@@ -273,6 +282,25 @@ pub trait Transport {
     ) -> Result<HttpResponse, AiError> {
         let _ = timeout;
         self.execute(method, url, headers, body)
+    }
+
+    /// Executes a request and delivers the response incrementally. `on_start`
+    /// is called once with the status and headers before any body bytes.
+    /// Transports that cannot stream return `AI_E_UNSUPPORTED`.
+    fn stream(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(String, String)],
+        body: Option<&str>,
+        timeout: Option<Duration>,
+        handlers: &mut StreamHandlers<'_>,
+    ) -> Result<(), AiError> {
+        let _ = (method, url, headers, body, timeout, handlers);
+        Err(AiError::new(
+            AI_E_UNSUPPORTED,
+            "this transport does not support streaming responses",
+        ))
     }
 }
 
@@ -323,6 +351,45 @@ impl HttpTransport {
         body: Option<&str>,
         requested_timeout: Option<Duration>,
     ) -> Result<HttpResponse, AiError> {
+        let (parsed, timeout) =
+            self.prepare_request(method, url, headers, body, requested_timeout)?;
+        match parsed.scheme {
+            UrlScheme::Http => self.send_loopback(&parsed, method, headers, body, timeout),
+            UrlScheme::Https => self.send_curl(&parsed, url, method, headers, body, timeout),
+        }
+    }
+
+    /// Streams a response, calling `on_start` once before the first body byte
+    /// and `on_chunk` for each decoded body fragment.
+    pub fn stream_request(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(String, String)],
+        body: Option<&str>,
+        requested_timeout: Option<Duration>,
+        handlers: &mut StreamHandlers<'_>,
+    ) -> Result<(), AiError> {
+        let (parsed, timeout) =
+            self.prepare_request(method, url, headers, body, requested_timeout)?;
+        match parsed.scheme {
+            UrlScheme::Http => {
+                self.stream_loopback(&parsed, method, headers, body, timeout, handlers)
+            }
+            UrlScheme::Https => {
+                self.stream_curl(&parsed, method, headers, body, timeout, handlers)
+            }
+        }
+    }
+
+    fn prepare_request(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(String, String)],
+        body: Option<&str>,
+        requested_timeout: Option<Duration>,
+    ) -> Result<(ParsedUrl, Duration), AiError> {
         if !matches!(method, "GET" | "POST") {
             return Err(AiError::new(
                 AI_E_CONFIG,
@@ -352,10 +419,7 @@ impl HttpTransport {
         let timeout = requested_timeout
             .map(|timeout| timeout.clamp(Duration::from_millis(1), Duration::from_secs(3600)))
             .unwrap_or(self.timeout);
-        match parsed.scheme {
-            UrlScheme::Http => self.send_loopback(&parsed, method, headers, body, timeout),
-            UrlScheme::Https => self.send_curl(&parsed, url, method, headers, body, timeout),
-        }
+        Ok((parsed, timeout))
     }
 
     fn send_loopback(
@@ -367,6 +431,49 @@ impl HttpTransport {
         timeout: Duration,
     ) -> Result<HttpResponse, AiError> {
         let deadline = Instant::now() + timeout;
+        let mut stream = self.connect_loopback(parsed, deadline)?;
+        let _ = stream.set_write_timeout(Some(timeout));
+        write_loopback_request(&mut stream, parsed, method, headers, body)?;
+        read_response(&mut stream, deadline, self.max_response_bytes)
+    }
+
+    fn stream_loopback(
+        &self,
+        parsed: &ParsedUrl,
+        method: &str,
+        headers: &[(String, String)],
+        body: Option<&str>,
+        timeout: Duration,
+        handlers: &mut StreamHandlers<'_>,
+    ) -> Result<(), AiError> {
+        let deadline = Instant::now() + timeout;
+        let mut stream = self.connect_loopback(parsed, deadline)?;
+        let _ = stream.set_write_timeout(Some(timeout));
+        write_loopback_request(&mut stream, parsed, method, headers, body)?;
+        let (rest, status, response_headers) = read_headers(&mut stream, deadline)?;
+        (handlers.on_start)(status, &response_headers)?;
+        let mut response_body =
+            StreamBody::from_headers(&response_headers, self.max_response_bytes)?;
+        if !rest.is_empty() {
+            response_body.push(&rest, handlers.on_chunk)?;
+        }
+        while !response_body.is_done() {
+            let mut buffer = [0_u8; 8192];
+            let count = read_some(&mut stream, &mut buffer, deadline)?;
+            if count == 0 {
+                response_body.end_of_stream()?;
+                break;
+            }
+            response_body.push(&buffer[..count], handlers.on_chunk)?;
+        }
+        response_body.finish()
+    }
+
+    fn connect_loopback(
+        &self,
+        parsed: &ParsedUrl,
+        deadline: Instant,
+    ) -> Result<TcpStream, AiError> {
         let addresses = (parsed.host.as_str(), parsed.port)
             .to_socket_addrs()
             .map_err(|error| {
@@ -397,7 +504,7 @@ impl HttpTransport {
                 Err(error) => last_error = Some(error),
             }
         }
-        let mut stream = stream.ok_or_else(|| {
+        stream.ok_or_else(|| {
             let detail = last_error
                 .map(|error| error.to_string())
                 .unwrap_or_else(|| "connection deadline exceeded".to_string());
@@ -405,41 +512,7 @@ impl HttpTransport {
                 AI_E_CONNECT,
                 format!("cannot connect to {}: {detail}", parsed.host_header()),
             )
-        })?;
-        let _ = stream.set_write_timeout(Some(timeout));
-
-        let mut request = format!(
-            "{method} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nUser-Agent: vantyx-ai/0.1\r\nAccept: application/json\r\n",
-            parsed.path,
-            parsed.host_header()
-        );
-        let mut has_content_type = false;
-        for (name, value) in headers {
-            if name.eq_ignore_ascii_case("content-type") {
-                has_content_type = true;
-            }
-            request.push_str(name);
-            request.push_str(": ");
-            request.push_str(value);
-            request.push_str("\r\n");
-        }
-        if let Some(body) = body {
-            if !has_content_type {
-                request.push_str("Content-Type: application/json\r\n");
-            }
-            request.push_str(&format!("Content-Length: {}\r\n", body.len()));
-        }
-        request.push_str("\r\n");
-        if let Some(body) = body {
-            request.push_str(body);
-        }
-        stream.write_all(request.as_bytes()).map_err(|error| {
-            AiError::new(AI_E_CONNECT, format!("failed to send request: {error}"))
-        })?;
-        stream.flush().map_err(|error| {
-            AiError::new(AI_E_CONNECT, format!("failed to flush request: {error}"))
-        })?;
-        read_response(&mut stream, deadline, self.max_response_bytes)
+        })
     }
 
     fn send_curl(
@@ -469,11 +542,14 @@ impl HttpTransport {
             .arg("--connect-timeout")
             .arg(&connect_seconds)
             .arg("--request")
-            .arg(method)
-            .arg("--header")
-            .arg("Accept: application/json")
-            .arg("--write-out")
-            .arg("\n%{http_code}");
+            .arg(method);
+        if !headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("accept"))
+        {
+            command.arg("--header").arg("Accept: application/json");
+        }
+        command.arg("--write-out").arg("\n%{http_code}");
         for (name, value) in headers {
             command.arg("--header").arg(format!("{name}: {value}"));
         }
@@ -572,6 +648,163 @@ impl HttpTransport {
             body: body.to_string(),
         })
     }
+
+    fn stream_curl(
+        &self,
+        parsed: &ParsedUrl,
+        method: &str,
+        headers: &[(String, String)],
+        body: Option<&str>,
+        timeout: Duration,
+        handlers: &mut StreamHandlers<'_>,
+    ) -> Result<(), AiError> {
+        let url = format!("https://{}{}", parsed.host_header(), parsed.path);
+        let (stderr_path, stderr_file) = unique_temp_file()?;
+        let seconds = timeout.as_secs().clamp(1, 3600).to_string();
+        let connect_seconds = timeout.as_secs().clamp(1, 10).to_string();
+        let mut command = Command::new("curl");
+        command
+            .arg("--silent")
+            .arg("--show-error")
+            .arg("--no-buffer")
+            .arg("--include")
+            .arg("--proto")
+            .arg("=https")
+            .arg("--proto-redir")
+            .arg("=https")
+            .arg("--max-redirs")
+            .arg("0")
+            .arg("--max-time")
+            .arg(&seconds)
+            .arg("--connect-timeout")
+            .arg(&connect_seconds)
+            .arg("--request")
+            .arg(method)
+            .arg("--header")
+            .arg("Expect:");
+        if !headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("accept"))
+        {
+            command.arg("--header").arg("Accept: application/json");
+        }
+        for (name, value) in headers {
+            command.arg("--header").arg(format!("{name}: {value}"));
+        }
+        if body.is_some() {
+            command.arg("--data-binary").arg("@-");
+        }
+        command
+            .arg(url)
+            .stdin(if body.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::from(stderr_file));
+
+        let mut child = command.spawn().map_err(|error| {
+            let _ = fs::remove_file(&stderr_path);
+            if error.kind() == std::io::ErrorKind::NotFound {
+                AiError::new(
+                    AI_E_CONNECT,
+                    "HTTPS requires the system `curl` binary; install curl or use a loopback HTTP endpoint",
+                )
+            } else {
+                AiError::new(AI_E_CONNECT, format!("cannot start curl: {error}"))
+            }
+        })?;
+        if let Some(body) = body {
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| AiError::new(AI_E_CONNECT, "cannot open curl stdin"))?;
+            stdin.write_all(body.as_bytes()).map_err(|error| {
+                AiError::new(AI_E_CONNECT, format!("cannot write request body: {error}"))
+            })?;
+        }
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| AiError::new(AI_E_CONNECT, "cannot read curl stdout"))?;
+        let stream_result = (|| {
+            let mut header_bytes = Vec::new();
+            let mut started = false;
+            let mut received = 0_usize;
+            loop {
+                let mut buffer = [0_u8; 8192];
+                let count = stdout.read(&mut buffer).map_err(|error| {
+                    AiError::new(AI_E_CONNECT, format!("failed to read curl output: {error}"))
+                })?;
+                if count == 0 {
+                    break;
+                }
+                if !started {
+                    header_bytes.extend_from_slice(&buffer[..count]);
+                    if header_bytes.len() > MAX_HEADER_BYTES + 4 {
+                        return Err(AiError::new(
+                            AI_E_RESPONSE_TOO_LARGE,
+                            format!("response headers exceed the {MAX_HEADER_BYTES} byte limit"),
+                        ));
+                    }
+                    if let Some((rest, status, response_headers)) =
+                        parse_response_head(&header_bytes)?
+                    {
+                        if (100..200).contains(&status) {
+                            header_bytes = rest;
+                            continue;
+                        }
+                        (handlers.on_start)(status, &response_headers)?;
+                        started = true;
+                        emit_body(
+                            &rest,
+                            &mut received,
+                            self.max_response_bytes,
+                            handlers.on_chunk,
+                        )?;
+                        header_bytes.clear();
+                    }
+                } else {
+                    emit_body(
+                        &buffer[..count],
+                        &mut received,
+                        self.max_response_bytes,
+                        handlers.on_chunk,
+                    )?;
+                }
+            }
+            if !started {
+                return Err(AiError::new(
+                    AI_E_PROVIDER,
+                    "curl response did not include HTTP headers",
+                ));
+            }
+            Ok(())
+        })();
+        if let Err(error) = stream_result {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = fs::remove_file(&stderr_path);
+            return Err(error);
+        }
+        let status = child.wait().map_err(|error| {
+            AiError::new(AI_E_CONNECT, format!("cannot wait for curl: {error}"))
+        })?;
+        let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+        let _ = fs::remove_file(&stderr_path);
+        if !status.success() {
+            return Err(AiError::new(
+                AI_E_CONNECT,
+                format!(
+                    "curl failed for {}: {}",
+                    parsed.host_header(),
+                    redact::sanitize(&stderr, &[], 512)
+                ),
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Transport for HttpTransport {
@@ -594,6 +827,18 @@ impl Transport for HttpTransport {
         timeout: Option<Duration>,
     ) -> Result<HttpResponse, AiError> {
         self.request_with_timeout(method, url, headers, body, timeout)
+    }
+
+    fn stream(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(String, String)],
+        body: Option<&str>,
+        timeout: Option<Duration>,
+        handlers: &mut StreamHandlers<'_>,
+    ) -> Result<(), AiError> {
+        self.stream_request(method, url, headers, body, timeout, handlers)
     }
 }
 
@@ -621,6 +866,71 @@ fn validate_header(name: &str, value: &str) -> Result<(), AiError> {
         ));
     }
     Ok(())
+}
+
+fn write_loopback_request(
+    stream: &mut TcpStream,
+    parsed: &ParsedUrl,
+    method: &str,
+    headers: &[(String, String)],
+    body: Option<&str>,
+) -> Result<(), AiError> {
+    let has_accept = headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("accept"));
+    let mut request = format!(
+        "{method} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nUser-Agent: vantyx-ai/0.1\r\n",
+        parsed.path,
+        parsed.host_header()
+    );
+    if !has_accept {
+        request.push_str("Accept: application/json\r\n");
+    }
+    let mut has_content_type = false;
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case("content-type") {
+            has_content_type = true;
+        }
+        request.push_str(name);
+        request.push_str(": ");
+        request.push_str(value);
+        request.push_str("\r\n");
+    }
+    if let Some(body) = body {
+        if !has_content_type {
+            request.push_str("Content-Type: application/json\r\n");
+        }
+        request.push_str(&format!("Content-Length: {}\r\n", body.len()));
+    }
+    request.push_str("\r\n");
+    if let Some(body) = body {
+        request.push_str(body);
+    }
+    stream.write_all(request.as_bytes()).map_err(|error| {
+        AiError::new(AI_E_CONNECT, format!("failed to send request: {error}"))
+    })?;
+    stream.flush().map_err(|error| {
+        AiError::new(AI_E_CONNECT, format!("failed to flush request: {error}"))
+    })
+}
+
+fn emit_body(
+    bytes: &[u8],
+    received: &mut usize,
+    limit: usize,
+    on_chunk: &mut dyn FnMut(&[u8]) -> Result<(), AiError>,
+) -> Result<(), AiError> {
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    if received.saturating_add(bytes.len()) > limit {
+        return Err(AiError::new(
+            AI_E_RESPONSE_TOO_LARGE,
+            format!("response exceeds the {limit} byte limit"),
+        ));
+    }
+    *received += bytes.len();
+    on_chunk(bytes)
 }
 
 fn read_response(
@@ -689,40 +999,50 @@ fn read_response(
 
 type ResponseHead = (Vec<u8>, u16, Vec<(String, String)>);
 
+fn parse_response_head(data: &[u8]) -> Result<Option<ResponseHead>, AiError> {
+    let Some(position) = data.windows(4).position(|window| window == b"\r\n\r\n") else {
+        return Ok(None);
+    };
+    let header_text = std::str::from_utf8(&data[..position])
+        .map_err(|_| AiError::new(AI_E_PROVIDER, "HTTP response headers are not valid UTF-8"))?;
+    let mut lines = header_text.split("\r\n");
+    let status_line = lines
+        .next()
+        .ok_or_else(|| AiError::new(AI_E_PROVIDER, "HTTP response is missing a status line"))?;
+    let mut parts = status_line.split_whitespace();
+    let version = parts.next().unwrap_or_default();
+    if !version.starts_with("HTTP/") {
+        return Err(AiError::new(
+            AI_E_PROVIDER,
+            "invalid HTTP response status line",
+        ));
+    }
+    let status = parts
+        .next()
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or_else(|| AiError::new(AI_E_PROVIDER, "invalid HTTP status code"))?;
+    let mut headers = Vec::new();
+    for line in lines {
+        if line.is_empty() {
+            continue;
+        }
+        let (name, value) = line
+            .split_once(':')
+            .ok_or_else(|| AiError::new(AI_E_PROVIDER, "malformed HTTP response header"))?;
+        headers.push((name.trim().to_string(), value.trim().to_string()));
+    }
+    Ok(Some((data[position + 4..].to_vec(), status, headers)))
+}
+
 fn read_headers(stream: &mut TcpStream, deadline: Instant) -> Result<ResponseHead, AiError> {
     let mut data = Vec::new();
     loop {
-        if let Some(position) = data.windows(4).position(|window| window == b"\r\n\r\n") {
-            let header_text = std::str::from_utf8(&data[..position]).map_err(|_| {
-                AiError::new(AI_E_PROVIDER, "HTTP response headers are not valid UTF-8")
-            })?;
-            let mut lines = header_text.split("\r\n");
-            let status_line = lines.next().ok_or_else(|| {
-                AiError::new(AI_E_PROVIDER, "HTTP response is missing a status line")
-            })?;
-            let mut parts = status_line.split_whitespace();
-            let version = parts.next().unwrap_or_default();
-            if !version.starts_with("HTTP/") {
-                return Err(AiError::new(
-                    AI_E_PROVIDER,
-                    "invalid HTTP response status line",
-                ));
+        if let Some(head) = parse_response_head(&data)? {
+            if (100..200).contains(&head.1) {
+                data = head.0;
+                continue;
             }
-            let status = parts
-                .next()
-                .and_then(|code| code.parse::<u16>().ok())
-                .ok_or_else(|| AiError::new(AI_E_PROVIDER, "invalid HTTP status code"))?;
-            let mut headers = Vec::new();
-            for line in lines {
-                if line.is_empty() {
-                    continue;
-                }
-                let (name, value) = line
-                    .split_once(':')
-                    .ok_or_else(|| AiError::new(AI_E_PROVIDER, "malformed HTTP response header"))?;
-                headers.push((name.trim().to_string(), value.trim().to_string()));
-            }
-            return Ok((data[position + 4..].to_vec(), status, headers));
+            return Ok(head);
         }
         if data.len() > MAX_HEADER_BYTES {
             return Err(AiError::new(
@@ -739,6 +1059,227 @@ fn read_headers(stream: &mut TcpStream, deadline: Instant) -> Result<ResponseHea
             ));
         }
         data.extend_from_slice(&buffer[..count]);
+    }
+}
+
+struct StreamBody {
+    state: StreamState,
+    received: usize,
+    limit: usize,
+}
+
+enum StreamState {
+    Length(usize),
+    Close,
+    ChunkSize(Vec<u8>),
+    ChunkData(usize),
+    ChunkCrlf(usize),
+    ChunkTrailer(Vec<u8>),
+    Done,
+}
+
+impl StreamBody {
+    fn from_headers(
+        headers: &[(String, String)],
+        limit: usize,
+    ) -> Result<Self, AiError> {
+        let chunked = headers.iter().any(|(name, value)| {
+            name.eq_ignore_ascii_case("transfer-encoding")
+                && value.to_ascii_lowercase().contains("chunked")
+        });
+        let content_length = headers
+            .iter()
+            .find_map(|(name, value)| {
+                name.eq_ignore_ascii_case("content-length")
+                    .then_some(value)
+            })
+            .map(|value| {
+                value.parse::<usize>().map_err(|_| {
+                    AiError::new(AI_E_PROVIDER, "invalid Content-Length in response")
+                })
+            })
+            .transpose()?;
+        let state = if chunked {
+            StreamState::ChunkSize(Vec::new())
+        } else if let Some(length) = content_length {
+            if length > limit {
+                return Err(AiError::new(
+                    AI_E_RESPONSE_TOO_LARGE,
+                    format!(
+                        "response of {length} bytes exceeds the {limit} byte limit"
+                    ),
+                ));
+            }
+            if length == 0 {
+                StreamState::Done
+            } else {
+                StreamState::Length(length)
+            }
+        } else {
+            StreamState::Close
+        };
+        Ok(Self {
+            state,
+            received: 0,
+            limit,
+        })
+    }
+
+    fn is_done(&self) -> bool {
+        matches!(self.state, StreamState::Done)
+    }
+
+    fn push(
+        &mut self,
+        bytes: &[u8],
+        on_chunk: &mut dyn FnMut(&[u8]) -> Result<(), AiError>,
+    ) -> Result<(), AiError> {
+        let state = std::mem::replace(&mut self.state, StreamState::Done);
+        match self.push_state(state, bytes, on_chunk) {
+            Ok(state) => {
+                self.state = state;
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn push_state(
+        &mut self,
+        mut state: StreamState,
+        mut bytes: &[u8],
+        on_chunk: &mut dyn FnMut(&[u8]) -> Result<(), AiError>,
+    ) -> Result<StreamState, AiError> {
+        while !bytes.is_empty() {
+            match state {
+                StreamState::Done => break,
+                StreamState::Close => {
+                    emit_body(bytes, &mut self.received, self.limit, on_chunk)?;
+                    bytes = &[];
+                }
+                StreamState::Length(mut remaining) => {
+                    let take = remaining.min(bytes.len());
+                    emit_body(
+                        &bytes[..take],
+                        &mut self.received,
+                        self.limit,
+                        on_chunk,
+                    )?;
+                    remaining -= take;
+                    bytes = &bytes[take..];
+                    state = if remaining == 0 {
+                        StreamState::Done
+                    } else {
+                        StreamState::Length(remaining)
+                    };
+                }
+                StreamState::ChunkSize(mut line) => {
+                    let Some(newline) = bytes.iter().position(|byte| *byte == b'\n') else {
+                        line.extend_from_slice(bytes);
+                        if line.len() > 1024 {
+                            return Err(AiError::new(
+                                AI_E_PROVIDER,
+                                "chunk-size line is too long",
+                            ));
+                        }
+                        return Ok(StreamState::ChunkSize(line));
+                    };
+                    line.extend_from_slice(&bytes[..newline]);
+                    if line.last() == Some(&b'\r') {
+                        line.pop();
+                    }
+                    let size_text = std::str::from_utf8(&line)
+                        .map_err(|_| AiError::new(AI_E_PROVIDER, "malformed chunk size"))?;
+                    let size_text = size_text.split(';').next().unwrap_or_default().trim();
+                    let size = usize::from_str_radix(size_text, 16)
+                        .map_err(|_| AiError::new(AI_E_PROVIDER, "malformed chunk size"))?;
+                    bytes = &bytes[newline + 1..];
+                    state = if size == 0 {
+                        StreamState::ChunkTrailer(Vec::new())
+                    } else {
+                        StreamState::ChunkData(size)
+                    };
+                }
+                StreamState::ChunkData(mut remaining) => {
+                    let take = remaining.min(bytes.len());
+                    emit_body(
+                        &bytes[..take],
+                        &mut self.received,
+                        self.limit,
+                        on_chunk,
+                    )?;
+                    remaining -= take;
+                    bytes = &bytes[take..];
+                    state = if remaining == 0 {
+                        StreamState::ChunkCrlf(0)
+                    } else {
+                        StreamState::ChunkData(remaining)
+                    };
+                }
+                StreamState::ChunkCrlf(expect) => {
+                    let expected = if expect == 0 { b'\r' } else { b'\n' };
+                    if bytes[0] != expected {
+                        return Err(AiError::new(
+                            AI_E_PROVIDER,
+                            "malformed chunk terminator",
+                        ));
+                    }
+                    bytes = &bytes[1..];
+                    state = if expect == 0 {
+                        StreamState::ChunkCrlf(1)
+                    } else {
+                        StreamState::ChunkSize(Vec::new())
+                    };
+                }
+                StreamState::ChunkTrailer(mut line) => {
+                    let Some(newline) = bytes.iter().position(|byte| *byte == b'\n') else {
+                        line.extend_from_slice(bytes);
+                        if line.len() > 1024 {
+                            return Err(AiError::new(
+                                AI_E_PROVIDER,
+                                "chunk trailer line is too long",
+                            ));
+                        }
+                        return Ok(StreamState::ChunkTrailer(line));
+                    };
+                    line.extend_from_slice(&bytes[..newline]);
+                    if line.last() == Some(&b'\r') {
+                        line.pop();
+                    }
+                    bytes = &bytes[newline + 1..];
+                    state = if line.is_empty() {
+                        StreamState::Done
+                    } else {
+                        StreamState::ChunkTrailer(Vec::new())
+                    };
+                }
+            }
+        }
+        Ok(state)
+    }
+
+    fn end_of_stream(&mut self) -> Result<(), AiError> {
+        match self.state {
+            StreamState::Close | StreamState::Done => {
+                self.state = StreamState::Done;
+                Ok(())
+            }
+            _ => Err(AiError::new(
+                AI_E_CONNECT,
+                "connection closed before the response body was complete",
+            )),
+        }
+    }
+
+    fn finish(&self) -> Result<(), AiError> {
+        if self.is_done() {
+            Ok(())
+        } else {
+            Err(AiError::new(
+                AI_E_CONNECT,
+                "connection closed before the response body was complete",
+            ))
+        }
     }
 }
 
@@ -882,6 +1423,10 @@ mod tests {
     use std::thread;
 
     fn serve_once(response: Vec<u8>) -> (String, thread::JoinHandle<String>) {
+        serve_parts(vec![response])
+    }
+
+    fn serve_parts(parts: Vec<Vec<u8>>) -> (String, thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let handle = thread::spawn(move || {
@@ -906,8 +1451,11 @@ mod tests {
             let mut body = vec![0_u8; content_length];
             reader.read_exact(&mut body).unwrap();
             request.push_str(&String::from_utf8_lossy(&body));
-            stream.write_all(&response).unwrap();
-            stream.flush().unwrap();
+            for part in parts {
+                stream.write_all(&part).unwrap();
+                stream.flush().unwrap();
+                thread::sleep(Duration::from_millis(5));
+            }
             request
         });
         (format!("http://{address}/v1/chat/completions"), handle)
@@ -1042,5 +1590,113 @@ mod tests {
             .request("GET", &format!("http://{address}/"), &[], None)
             .unwrap_err();
         assert_eq!(error.code, AI_E_CONNECT);
+    }
+
+    fn collect_stream(
+        transport: &HttpTransport,
+        url: &str,
+        headers: &[(String, String)],
+        body: Option<&str>,
+    ) -> Result<(u16, Vec<u8>), AiError> {
+        let mut status = 0_u16;
+        let mut received = Vec::new();
+        let mut on_start = |response_status: u16, _: &[(String, String)]| {
+            status = response_status;
+            Ok(())
+        };
+        let mut on_chunk = |chunk: &[u8]| {
+            received.extend_from_slice(chunk);
+            Ok(())
+        };
+        let mut handlers = StreamHandlers {
+            on_start: &mut on_start,
+            on_chunk: &mut on_chunk,
+        };
+        transport
+            .stream_request("POST", url, headers, body, None, &mut handlers)
+            .map(|()| (status, received))
+    }
+
+    #[test]
+    fn streams_content_length_responses() {
+        let body = b"data: one\n\ndata: two\n\n";
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        let (url, handle) = serve_parts(vec![
+            head.into_bytes(),
+            body[..9].to_vec(),
+            body[9..].to_vec(),
+        ]);
+        let transport = HttpTransport::new(NetworkPolicy::local_only());
+        let (status, received) = collect_stream(
+            &transport,
+            &url,
+            &[("Accept".into(), "text/event-stream".into())],
+            Some("{}"),
+        )
+        .unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(received, body);
+        let request = handle.join().unwrap();
+        assert!(request.contains("Accept: text/event-stream"));
+        assert!(!request.contains("Accept: application/json"));
+    }
+
+    #[test]
+    fn streams_chunked_responses_across_reads() {
+        let response = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
+        let split = response.len() / 2;
+        let (url, handle) = serve_parts(vec![
+            response[..split].to_vec(),
+            response[split..].to_vec(),
+        ]);
+        let transport = HttpTransport::new(NetworkPolicy::local_only());
+        let (status, received) = collect_stream(&transport, &url, &[], None).unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(received, b"hello world");
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn streams_error_status_bodies() {
+        let body = r#"{"error":{"message":"slow down"}}"#;
+        let head = format!(
+            "HTTP/1.1 429 Too Many Requests\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let (url, handle) = serve_once(head.into_bytes());
+        let transport = HttpTransport::new(NetworkPolicy::local_only());
+        let (status, received) = collect_stream(&transport, &url, &[], None).unwrap();
+        assert_eq!(status, 429);
+        assert_eq!(received, body.as_bytes());
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn stream_rejects_oversized_bodies() {
+        let body = "x".repeat(100);
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let (url, handle) = serve_once(response.into_bytes());
+        let transport = HttpTransport::new(NetworkPolicy::local_only()).with_max_response_bytes(10);
+        let error = collect_stream(&transport, &url, &[], None).unwrap_err();
+        assert_eq!(error.code, AI_E_RESPONSE_TOO_LARGE);
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn stream_rejects_truncated_bodies() {
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nshort";
+        let (url, handle) = serve_once(response.to_vec());
+        let transport = HttpTransport::new(NetworkPolicy::local_only());
+        let error = collect_stream(&transport, &url, &[], None).unwrap_err();
+        assert_eq!(error.code, AI_E_CONNECT);
+        handle.join().unwrap();
     }
 }

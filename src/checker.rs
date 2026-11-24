@@ -101,6 +101,21 @@ pub fn check_with_options(
     require_entry: bool,
 ) -> (Option<SemanticModel>, Diagnostics) {
     let mut checker = Checker::new(program);
+    // The module loader removes imports before checking. Any that remain came
+    // from stdin, the REPL, or a direct `compile` call, where no file tree is
+    // available to resolve them.
+    for item in &program.items {
+        if let Item::Import(import) = item {
+            checker.diagnostics.push(
+                Diagnostic::error(
+                    "E0510",
+                    "imports are only supported when compiling a file",
+                    import.span,
+                )
+                .with_help("run or check a `.vtx` file instead of stdin or the REPL"),
+            );
+        }
+    }
     // Register type names before resolving any field type so structs and
     // enums may refer to each other in fields and variant payloads.
     checker.collect_struct_names();
@@ -138,7 +153,69 @@ pub fn check_with_options(
     }
 }
 
+/// A pattern shape used only by the exhaustiveness matrix. `Opaque` matches
+/// nothing and is reserved for shapes the parser cannot currently produce;
+/// treating them conservatively keeps exhaustiveness sound.
+#[derive(Clone, Debug)]
+enum CoverPattern {
+    Wild,
+    Literal(LiteralPattern),
+    Variant(String, Vec<CoverPattern>),
+    Opaque,
+}
+
+struct Constructor {
+    name: String,
+    bool_value: Option<bool>,
+    field_types: Vec<Type>,
+}
+
+impl Constructor {
+    fn matches_bool(&self, value: &LiteralPattern) -> bool {
+        matches!(
+            (self.bool_value, value),
+            (Some(expected), LiteralPattern::Bool(actual)) if expected == *actual
+        )
+    }
+}
+
+fn cover_alternatives(pattern: &Pattern) -> Vec<CoverPattern> {
+    match pattern {
+        Pattern::Wildcard { .. } => vec![CoverPattern::Wild],
+        Pattern::Literal { value, .. } => vec![CoverPattern::Literal(value.clone())],
+        // Integer ranges are refutable and never contribute coverage; `Int`
+        // matches still require a `_` arm. `Opaque` keeps nested coverage
+        // conservative instead of treating a range as a wildcard.
+        Pattern::Range { .. } => vec![CoverPattern::Opaque],
+        Pattern::Variant { name, fields, .. } => {
+            let mut converted = Vec::with_capacity(fields.len());
+            for field in fields {
+                converted.push(match field {
+                    PatternArg::Bind { .. } | PatternArg::Wildcard { .. } => CoverPattern::Wild,
+                    PatternArg::Nested { pattern, .. } => cover_single(pattern),
+                });
+            }
+            vec![CoverPattern::Variant(name.clone(), converted)]
+        }
+        Pattern::Or { alternatives, .. } => {
+            alternatives.iter().flat_map(cover_alternatives).collect()
+        }
+    }
+}
+
+fn cover_single(pattern: &Pattern) -> CoverPattern {
+    let mut alternatives = cover_alternatives(pattern);
+    if alternatives.len() == 1 {
+        alternatives.pop().unwrap_or(CoverPattern::Opaque)
+    } else {
+        // Nested or-patterns are not produced by the parser. If one appears,
+        // refuse to treat it as a wildcard so exhaustiveness stays sound.
+        CoverPattern::Opaque
+    }
+}
+
 /// Coverage state accumulated while checking the arms of one `match`.
+#[derive(Clone)]
 struct MatchCoverage<'a> {
     scrutinee: &'a Type,
     enum_info: Option<&'a EnumInfo>,
@@ -841,10 +918,14 @@ impl<'a> Checker<'a> {
             wildcard_seen: false,
         };
         let mut arm_types = Vec::new();
+        let mut unguarded_patterns = Vec::new();
 
         for arm in arms {
             self.scopes.push(HashMap::new());
             self.check_pattern(&arm.pattern, &mut coverage, arm.guard.is_none());
+            if arm.guard.is_none() {
+                unguarded_patterns.push(&arm.pattern);
+            }
             if let Some(guard) = &arm.guard {
                 let guard_ty = self.check_expr(guard, Some(&Type::Bool));
                 self.expect(&guard_ty, &Type::Bool, guard.span, " in match guard");
@@ -886,8 +967,9 @@ impl<'a> Checker<'a> {
             arm_types.push((arm_ty, arm.span));
         }
 
+        let exhaustive = self.patterns_exhaustive(&scrutinee_ty, &unguarded_patterns);
         if let Some(info) = &enum_info {
-            if !coverage.wildcard_seen {
+            if !exhaustive {
                 let missing: Vec<&str> = info
                     .variants
                     .iter()
@@ -907,9 +989,23 @@ impl<'a> Checker<'a> {
                         )
                         .with_help("add the missing arms or a final `_` arm"),
                     );
+                } else {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E0316",
+                            format!(
+                                "non-exhaustive match on enum `{}`: payload patterns do not cover every value",
+                                info.name
+                            ),
+                            scrutinee.span,
+                        )
+                        .with_help(
+                            "cover every nested payload shape, or add a final `_` arm",
+                        ),
+                    );
                 }
             }
-        } else if !coverage.wildcard_seen {
+        } else if !exhaustive {
             match &scrutinee_ty {
                 Type::Bool => {
                     let missing: Vec<&str> = [true, false]
@@ -1071,6 +1167,51 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            Pattern::Range {
+                start,
+                end,
+                inclusive,
+                span,
+            } => {
+                if coverage.wildcard_seen {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            "W0003",
+                            "unreachable pattern: a previous `_` arm covers every value",
+                            *span,
+                        )
+                        .with_help("remove this arm or move it before the `_` arm"),
+                    );
+                }
+                if !matches!(scrutinee, Type::Any | Type::Int) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E0301",
+                            format!(
+                                "range pattern has type `Int`, but the matched value has type `{scrutinee}`"
+                            ),
+                            *span,
+                        )
+                        .with_help("use an integer value, or match on an enum"),
+                    );
+                }
+                let empty = if *inclusive {
+                    start > end
+                } else {
+                    start >= end
+                };
+                if empty {
+                    let example = if *inclusive { "0..=5" } else { "0..6" };
+                    self.diagnostics.push(
+                        Diagnostic::error("E0318", "range pattern is empty", *span).with_help(
+                            format!(
+                                "the upper bound must be {} the lower bound; use a non-empty range such as `{example}`",
+                                if *inclusive { "at least" } else { "greater than" }
+                            ),
+                        ),
+                    );
+                }
+            }
             Pattern::Variant {
                 name,
                 name_span,
@@ -1173,7 +1314,7 @@ impl<'a> Checker<'a> {
                             )
                             .with_help("remove this arm or merge the cases"),
                         );
-                    } else if counts {
+                    } else if counts && self.variant_pattern_covers(fields) {
                         coverage.covered.insert(variant.name.clone());
                     }
                     if fields.len() != variant.fields.len() {
@@ -1193,27 +1334,292 @@ impl<'a> Checker<'a> {
                     }
                 }
 
-                let mut binding_names = HashSet::new();
                 for (index, field) in fields.iter().enumerate() {
-                    let PatternArg::Bind { name, name_span } = field else {
-                        continue;
-                    };
-                    if !binding_names.insert(name.clone()) {
-                        self.diagnostics.push(Diagnostic::error(
-                            "E0202",
-                            format!("duplicate binding `{name}` in this pattern"),
-                            *name_span,
-                        ));
-                        continue;
-                    }
                     let ty = variant
                         .as_ref()
                         .and_then(|variant| variant.fields.get(index))
                         .map(|field| field.ty.clone())
                         .unwrap_or(Type::Any);
-                    self.declare(name, ty, false, *name_span);
+                    match field {
+                        PatternArg::Bind { name, name_span } => {
+                            self.declare(name, ty, false, *name_span);
+                        }
+                        PatternArg::Wildcard { .. } => {}
+                        PatternArg::Nested { pattern, .. } => {
+                            let nested_info = match &ty {
+                                Type::Enum(name) => self.enums.get(name).cloned(),
+                                _ => None,
+                            };
+                            let mut nested_coverage = MatchCoverage {
+                                scrutinee: &ty,
+                                enum_info: nested_info.as_ref(),
+                                strict: true,
+                                covered: HashSet::new(),
+                                covered_literals: HashSet::new(),
+                                wildcard_seen: false,
+                            };
+                            self.check_pattern(pattern, &mut nested_coverage, false);
+                        }
+                    }
                 }
             }
+            Pattern::Or { alternatives, .. } => {
+                self.check_or_pattern(alternatives, coverage, counts);
+            }
+        }
+    }
+
+    /// Checks top-level or-pattern alternatives. Each alternative is checked in
+    /// a temporary scope so bindings can be compared; the arm receives one
+    /// unified binding set. Only unguarded or-patterns contribute coverage.
+    fn check_or_pattern(
+        &mut self,
+        alternatives: &[Pattern],
+        coverage: &mut MatchCoverage<'_>,
+        counts: bool,
+    ) {
+        let mut seen = coverage.clone();
+        let mut expected: Option<Vec<(String, Type, Span)>> = None;
+        for alternative in alternatives {
+            let mut local = seen.clone();
+            self.scopes.push(HashMap::new());
+            self.check_pattern(alternative, &mut local, true);
+            let bindings = self.scopes.pop().unwrap_or_default();
+            let mut actual: Vec<(String, Type, Span)> = bindings
+                .into_iter()
+                .map(|(name, binding)| (name, binding.ty, binding.span))
+                .collect();
+            actual.sort_by_key(|(_, _, span)| (span.start, span.end));
+            match &expected {
+                Some(expected) => {
+                    self.check_or_binding_compatibility(
+                        expected,
+                        &actual,
+                        alternative.span(),
+                    );
+                }
+                None => expected = Some(actual),
+            }
+            seen = local;
+        }
+        if counts {
+            coverage.covered = seen.covered;
+            coverage.covered_literals = seen.covered_literals;
+            coverage.wildcard_seen = seen.wildcard_seen;
+        }
+        for (name, ty, span) in expected.unwrap_or_default() {
+            self.declare(&name, ty, false, span);
+        }
+    }
+
+    fn check_or_binding_compatibility(
+        &mut self,
+        expected: &[(String, Type, Span)],
+        actual: &[(String, Type, Span)],
+        span: Span,
+    ) {
+        let expected_names: HashSet<&str> =
+            expected.iter().map(|(name, _, _)| name.as_str()).collect();
+        let actual_names: HashSet<&str> =
+            actual.iter().map(|(name, _, _)| name.as_str()).collect();
+        let missing: Vec<&str> = expected_names
+            .difference(&actual_names)
+            .copied()
+            .collect();
+        let extra: Vec<&str> = actual_names
+            .difference(&expected_names)
+            .copied()
+            .collect();
+        let mut missing = missing;
+        let mut extra = extra;
+        missing.sort_unstable();
+        extra.sort_unstable();
+        if !missing.is_empty() || !extra.is_empty() {
+            let mut details = Vec::new();
+            if !missing.is_empty() {
+                details.push(format!("missing `{}`", missing.join("`, `")));
+            }
+            if !extra.is_empty() {
+                details.push(format!("unexpected `{}`", extra.join("`, `")));
+            }
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0317",
+                    format!(
+                        "or-pattern alternatives bind different names: {}",
+                        details.join("; ")
+                    ),
+                    span,
+                )
+                .with_help(
+                    "bind the same payload names in every alternative, or use `_` for ignored payloads",
+                ),
+            );
+            return;
+        }
+        let actual_types: HashMap<&str, &Type> = actual
+            .iter()
+            .map(|(name, ty, _)| (name.as_str(), ty))
+            .collect();
+        for (name, ty, _) in expected {
+            if let Some(actual_ty) = actual_types.get(name.as_str())
+                && *actual_ty != ty
+            {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E0317",
+                        format!(
+                            "or-pattern binding `{name}` has type `{actual_ty}` in one alternative and `{ty}` in another"
+                        ),
+                        span,
+                    )
+                    .with_help("make the payload types identical in every alternative"),
+                );
+            }
+        }
+    }
+
+    /// Whether a variant pattern completely covers its own variant, meaning
+    /// every payload position is irrefutable for that field's type. Partial
+    /// nested patterns such as `Node(Leaf(x))` do not mark `Node` covered.
+    fn variant_pattern_covers(&self, fields: &[PatternArg]) -> bool {
+        fields.iter().all(|field| match field {
+            PatternArg::Bind { .. } | PatternArg::Wildcard { .. } => true,
+            PatternArg::Nested { pattern, .. } => self.pattern_is_irrefutable(pattern),
+        })
+    }
+
+    /// A pattern is irrefutable when it matches every value of its own type.
+    /// Enum variants are only irrefutable when their enum has exactly one
+    /// variant; literals are always refutable.
+    fn pattern_is_irrefutable(&self, pattern: &Pattern) -> bool {
+        match pattern {
+            Pattern::Wildcard { .. } => true,
+            Pattern::Literal { .. } | Pattern::Range { .. } => false,
+            Pattern::Or { alternatives, .. } => alternatives
+                .iter()
+                .any(|alternative| self.pattern_is_irrefutable(alternative)),
+            Pattern::Variant { name, fields, .. } => {
+                let Some((owner, _)) = self.find_variant(name) else {
+                    return false;
+                };
+                let Some(info) = self.enums.get(owner) else {
+                    return false;
+                };
+                info.variants.len() == 1 && self.variant_pattern_covers(fields)
+            }
+        }
+    }
+
+    /// Matrix-based exhaustiveness over the documented pattern language.
+    /// Finite types (Bool, Unit, enums) enumerate constructors; Int, Str, and
+    /// Any require a wildcard/binding in that column. Rows are the unguarded
+    /// arms; guards never contribute coverage.
+    fn patterns_exhaustive(&self, scrutinee: &Type, patterns: &[&Pattern]) -> bool {
+        let mut rows = Vec::new();
+        for pattern in patterns {
+            for alternative in cover_alternatives(pattern) {
+                rows.push(vec![alternative]);
+            }
+        }
+        self.matrix_exhaustive(std::slice::from_ref(scrutinee), &rows)
+    }
+
+    fn matrix_exhaustive(&self, types: &[Type], rows: &[Vec<CoverPattern>]) -> bool {
+        if types.is_empty() {
+            return !rows.is_empty();
+        }
+        if rows.is_empty() {
+            return false;
+        }
+        // An all-wildcard row covers every remaining tuple. This is also the
+        // termination condition for recursive enum types: without it, a
+        // wildcard payload would expand forever.
+        if rows
+            .iter()
+            .any(|row| row.len() == types.len() && row.iter().all(|p| matches!(p, CoverPattern::Wild)))
+        {
+            return true;
+        }
+        let ty = &types[0];
+        let Some(constructors) = self.constructors_for(ty) else {
+            // Infinite or unknown domain: only a wildcard row can cover it.
+            let specialized: Vec<Vec<CoverPattern>> = rows
+                .iter()
+                .filter_map(|row| match row.first() {
+                    Some(CoverPattern::Wild) => Some(row[1..].to_vec()),
+                    _ => None,
+                })
+                .collect();
+            if specialized.is_empty() {
+                return false;
+            }
+            return self.matrix_exhaustive(&types[1..], &specialized);
+        };
+
+        for constructor in constructors {
+            let mut specialized = Vec::new();
+            for row in rows {
+                match row.first() {
+                    Some(CoverPattern::Wild) => {
+                        let mut next = vec![CoverPattern::Wild; constructor.field_types.len()];
+                        next.extend_from_slice(&row[1..]);
+                        specialized.push(next);
+                    }
+                    Some(CoverPattern::Literal(value)) if constructor.matches_bool(value) => {
+                        specialized.push(row[1..].to_vec());
+                    }
+                    Some(CoverPattern::Variant(name, fields)) if constructor.name == *name => {
+                        let mut next = fields.clone();
+                        next.extend_from_slice(&row[1..]);
+                        specialized.push(next);
+                    }
+                    _ => {}
+                }
+            }
+            let mut next_types = constructor.field_types;
+            next_types.extend_from_slice(&types[1..]);
+            if !self.matrix_exhaustive(&next_types, &specialized) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn constructors_for(&self, ty: &Type) -> Option<Vec<Constructor>> {
+        match ty {
+            Type::Bool => Some(vec![
+                Constructor {
+                    name: String::new(),
+                    bool_value: Some(true),
+                    field_types: Vec::new(),
+                },
+                Constructor {
+                    name: String::new(),
+                    bool_value: Some(false),
+                    field_types: Vec::new(),
+                },
+            ]),
+            Type::Unit => Some(vec![Constructor {
+                name: String::new(),
+                bool_value: None,
+                field_types: Vec::new(),
+            }]),
+            Type::Enum(name) => self.enums.get(name).map(|info| {
+                info.variants
+                    .iter()
+                    .map(|variant| Constructor {
+                        name: variant.name.clone(),
+                        bool_value: None,
+                        field_types: variant
+                            .fields
+                            .iter()
+                            .map(|field| field.ty.clone())
+                            .collect(),
+                    })
+                    .collect()
+            }),
+            _ => None,
         }
     }
 
@@ -2814,6 +3220,284 @@ mod tests {
                 .items
                 .iter()
                 .any(|d| d.code == "W0003" && d.message.contains("literal")),
+            "{:?}",
+            diagnostics.items
+        );
+    }
+
+    #[test]
+    fn accepts_or_patterns_and_unions_enum_coverage() {
+        check_ok(concat!(
+            "enum Shape:\n",
+            "    Circle(radius: Int)\n",
+            "    Square(side: Int)\n",
+            "\n",
+            "fn classify(shape: Shape) -> Str:\n",
+            "    match shape:\n",
+            "        Circle(size) | Square(size) if size > 5:\n",
+            "            return \"big\"\n",
+            "        Circle(size) | Square(size):\n",
+            "            return \"small\"\n",
+            "\n",
+            "fn main():\n",
+            "    print(classify(Circle(7)))\n",
+        ));
+    }
+
+    #[test]
+    fn or_patterns_cover_bool_literals_without_wildcard() {
+        check_ok(concat!(
+            "fn flag(value: Bool) -> Int:\n",
+            "    return match value:\n",
+            "        true | false: 1\n",
+            "\n",
+            "fn main():\n",
+            "    print(flag(true))\n",
+        ));
+    }
+
+    #[test]
+    fn accepts_range_patterns_on_int() {
+        check_ok(concat!(
+            "enum Code:\n",
+            "    Small(n: Int)\n",
+            "    Big(n: Int)\n",
+            "\n",
+            "fn label(code: Code) -> Str:\n",
+            "    return match code:\n",
+            "        Small(0..=9): \"digit\"\n",
+            "        Small(n) if n < 0: \"negative\"\n",
+            "        Small(_): \"small\"\n",
+            "        Big(_): \"big\"\n",
+            "\n",
+            "fn bucket(n: Int) -> Str:\n",
+            "    return match n:\n",
+            "        1..=3 | 5..=7: \"low\"\n",
+            "        -5..0: \"negative\"\n",
+            "        _: \"other\"\n",
+            "\n",
+            "fn main():\n",
+            "    print(label(Small(4)))\n",
+            "    print(bucket(2))\n",
+        ));
+    }
+
+    #[test]
+    fn rejects_range_pattern_on_non_int() {
+        let diagnostics = check_errors(concat!(
+            "fn label(s: Str) -> Str:\n",
+            "    return match s:\n",
+            "        1..5: \"range\"\n",
+            "        _: \"other\"\n",
+            "\n",
+            "fn main():\n",
+            "    print(label(\"x\"))\n",
+        ));
+        assert!(
+            diagnostics
+                .items
+                .iter()
+                .any(|d| d.code == "E0301" && d.message.contains("range pattern")),
+            "{:?}",
+            diagnostics.items
+        );
+    }
+
+    #[test]
+    fn rejects_empty_range_patterns() {
+        let diagnostics = check_errors(concat!(
+            "fn label(n: Int) -> Str:\n",
+            "    return match n:\n",
+            "        5..=1: \"inclusive\"\n",
+            "        3..3: \"half-open\"\n",
+            "        _: \"other\"\n",
+            "\n",
+            "fn main():\n",
+            "    print(label(0))\n",
+        ));
+        let empty = diagnostics
+            .items
+            .iter()
+            .filter(|d| d.code == "E0318")
+            .count();
+        assert_eq!(empty, 2, "{:?}", diagnostics.items);
+    }
+
+    #[test]
+    fn rejects_or_pattern_binding_name_mismatch() {
+        let diagnostics = check_errors(concat!(
+            "enum Shape:\n",
+            "    Circle(radius: Int)\n",
+            "    Square(side: Int)\n",
+            "\n",
+            "fn value(shape: Shape) -> Int:\n",
+            "    match shape:\n",
+            "        Circle(radius) | Square(side):\n",
+            "            return 1\n",
+            "\n",
+            "fn main():\n",
+            "    print(value(Circle(1)))\n",
+        ));
+        assert!(
+            diagnostics
+                .items
+                .iter()
+                .any(|d| d.code == "E0317" && d.message.contains("different names")),
+            "{:?}",
+            diagnostics.items
+        );
+    }
+
+    #[test]
+    fn rejects_or_pattern_binding_type_mismatch() {
+        let diagnostics = check_errors(concat!(
+            "enum Mixed:\n",
+            "    A(value: Int)\n",
+            "    B(value: Str)\n",
+            "\n",
+            "fn value(input: Mixed) -> Int:\n",
+            "    match input:\n",
+            "        A(value) | B(value):\n",
+            "            return 1\n",
+            "\n",
+            "fn main():\n",
+            "    print(value(A(1)))\n",
+        ));
+        assert!(
+            diagnostics
+                .items
+                .iter()
+                .any(|d| d.code == "E0317" && d.message.contains("has type")),
+            "{:?}",
+            diagnostics.items
+        );
+    }
+
+    #[test]
+    fn guarded_or_patterns_do_not_satisfy_exhaustiveness() {
+        let diagnostics = check_errors(concat!(
+            "fn classify(n: Int) -> Str:\n",
+            "    return match n:\n",
+            "        1 | 2 if n > 0: \"positive\"\n",
+        ));
+        assert!(
+            diagnostics.items.iter().any(|d| d.code == "E0316"),
+            "{:?}",
+            diagnostics.items
+        );
+    }
+
+    #[test]
+    fn warns_on_duplicate_or_alternative() {
+        let (_model, diagnostics) = check_source(concat!(
+            "fn label(n: Int) -> Str:\n",
+            "    return match n:\n",
+            "        1 | 1: \"one\"\n",
+            "        _: \"other\"\n",
+            "\n",
+            "fn main():\n",
+            "    print(label(1))\n",
+        ));
+        assert!(!diagnostics.has_errors(), "{:?}", diagnostics.items);
+        assert!(
+            diagnostics.items.iter().any(|d| d.code == "W0003"),
+            "{:?}",
+            diagnostics.items
+        );
+    }
+
+    #[test]
+    fn accepts_nested_patterns_without_wildcard() {
+        check_ok(concat!(
+            "enum Tree:\n",
+            "    Leaf(value: Int)\n",
+            "    Node(left: Tree, right: Tree)\n",
+            "\n",
+            "fn sum(tree: Tree) -> Int:\n",
+            "    match tree:\n",
+            "        Leaf(value):\n",
+            "            return value\n",
+            "        Node(Leaf(left), Leaf(right)):\n",
+            "            return left + right\n",
+            "        Node(Leaf(left), _):\n",
+            "            return left\n",
+            "        Node(_, Leaf(right)):\n",
+            "            return right\n",
+            "        Node(_, _):\n",
+            "            return 0\n",
+            "\n",
+            "fn main():\n",
+            "    print(sum(Leaf(1)))\n",
+        ));
+    }
+
+    #[test]
+    fn rejects_incomplete_nested_pattern_coverage() {
+        let diagnostics = check_errors(concat!(
+            "enum Tree:\n",
+            "    Leaf(value: Int)\n",
+            "    Node(left: Tree, right: Tree)\n",
+            "\n",
+            "fn sum(tree: Tree) -> Int:\n",
+            "    match tree:\n",
+            "        Leaf(value):\n",
+            "            return value\n",
+            "        Node(Leaf(value), _):\n",
+            "            return value\n",
+            "\n",
+            "fn main():\n",
+            "    print(sum(Leaf(1)))\n",
+        ));
+        assert!(
+            diagnostics.items.iter().any(|d| d.code == "E0316"),
+            "{:?}",
+            diagnostics.items
+        );
+    }
+
+    #[test]
+    fn rejects_nested_pattern_payload_type_mismatch() {
+        let diagnostics = check_errors(concat!(
+            "enum Tree:\n",
+            "    Leaf(value: Int)\n",
+            "    Node(left: Tree, right: Tree)\n",
+            "\n",
+            "fn sum(tree: Tree) -> Int:\n",
+            "    match tree:\n",
+            "        Leaf(\"text\"):\n",
+            "            return 0\n",
+            "        _:\n",
+            "            return 1\n",
+            "\n",
+            "fn main():\n",
+            "    print(sum(Leaf(1)))\n",
+        ));
+        assert!(
+            diagnostics.items.iter().any(|d| d.code == "E0301"),
+            "{:?}",
+            diagnostics.items
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_bindings_across_nested_patterns() {
+        let diagnostics = check_errors(concat!(
+            "enum Tree:\n",
+            "    Leaf(value: Int)\n",
+            "    Node(left: Tree, right: Tree)\n",
+            "\n",
+            "fn sum(tree: Tree) -> Int:\n",
+            "    match tree:\n",
+            "        Node(Leaf(value), Leaf(value)):\n",
+            "            return value\n",
+            "        _:\n",
+            "            return 0\n",
+            "\n",
+            "fn main():\n",
+            "    print(sum(Leaf(1)))\n",
+        ));
+        assert!(
+            diagnostics.items.iter().any(|d| d.code == "E0202"),
             "{:?}",
             diagnostics.items
         );

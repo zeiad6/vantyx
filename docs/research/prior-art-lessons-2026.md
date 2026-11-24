@@ -115,10 +115,11 @@ exhaustive. Swift also has to handle non-frozen enums from other modules with
 `@unknown default`, because a library can add cases later.
 
 Lesson for Vantyx: payload variants and exhaustive switching are the right
-default. Vantyx has no modules yet (T-013), so every enum is closed and adding a
-variant is source-breaking. When modules arrive, the design must decide between
-closed and extensible enums; do not leave this implicit. The current
-pre-release syntax intentionally has no `@unknown` equivalent.
+default. File-based modules now exist (T-013), but every enum remains closed
+across modules, so adding a variant is still source-breaking. A future design
+must decide explicitly between closed and extensible cross-module enums; do not
+leave this implicit. The current pre-release syntax intentionally has no
+`@unknown` equivalent.
 
 ### Zig: explicit costs, no hidden control flow
 
@@ -355,7 +356,7 @@ policy before 1.0 rather than after.
 | Explicit wildcard and unreachable-arm warnings | Rust | `W0003` for arms after `_` or duplicate variants |
 | Runtime failure for dynamic non-matches | Python/TypeScript reality | `W0004` on `Any` matches; `R0014` if no arm matches |
 | Boundary validation of dynamic values | Python typing, TypeScript | existing `R0005`; enum conformance is nominal |
-| Explicit unsupported diagnostics | Zig | `E0401` for remaining native gaps (`Any` payloads, dynamic `match`); enums and scalar literal patterns landed in T-030/T-032 |
+| Explicit unsupported diagnostics | Zig | `E0401` for remaining native gaps (`Any` payloads, dynamic `match`); enums, scalar literal patterns, nested patterns, and or-patterns landed in T-030/T-032/T-049/T-050 |
 | Deterministic collection behavior | existing ADR-0010 | keep insertion order and structural equality |
 | Compatibility discipline | Go | document that adding a variant breaks exhaustive matches |
 
@@ -377,8 +378,8 @@ policy before 1.0 rather than after.
 
 | Topic | Trigger | Candidate task/ADR |
 | --- | --- | --- |
-| Nested, tuple, and or-patterns | after guards and literal patterns are stable | new task after T-033 |
-| Or-patterns and binding modes | user demand and checker design | new task |
+| Tuple patterns | after nested and or-patterns are stable | new task (range patterns shipped as T-051) |
+| Usefulness-based nested/alternative warnings | user demand and checker design | new task |
 | Generic enums (`Option[T]`, `Result[T, E]`) | after T-018 generics | T-018 |
 | Error handling with `Result`/`?` | after enums and generics | T-016 |
 | Modules and extensible/non-frozen enums | T-013 | new ADR |
@@ -396,7 +397,10 @@ The first enum implementation is deliberately narrow:
   `Variant(field: Type, ...)`. Construction always uses parentheses, including
   `Empty()`.
 - Patterns: `_`, `Variant`, or `Variant(binding, ...)` with `_` placeholders.
-  Nested patterns are rejected with `E0112`.
+  Nested patterns were initially rejected with `E0112`; T-048/ADR-0019 later
+  added recursive payload patterns and matrix exhaustiveness in the interpreter,
+  T-049/ADR-0020 added native lowering, and T-047/T-050 added interpreter and
+  native top-level or-patterns.
 - Variant constructor names are globally unique. They cannot collide with
   functions, structs, builtin names, or enum names (`E0202`).
 - A match on a closed enum must be exhaustive or end with `_` (`E0316`).

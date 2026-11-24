@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-label="Vantyx — Script like Python. Ship native. Build AI-native.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070B16"/>
+      <stop offset="0.55" stop-color="#0B1324"/>
+      <stop offset="1" stop-color="#101A31"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5EEAD4"/>
+      <stop offset="0.5" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#38BDF8" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#38BDF8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#A78BFA" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#A78BFA" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#FFFFFF" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="320" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="320" rx="24" fill="url(#grid)"/>
+  <circle cx="225" cy="60" r="300" fill="url(#glowA)"/>
+  <circle cx="1030" cy="300" r="300" fill="url(#glowB)"/>
+  <rect x="1" y="1" width="1198" height="318" rx="24" fill="none" stroke="#1E293B" stroke-width="2"/>
+
+  <rect x="72" y="54" width="44" height="3" rx="1.5" fill="url(#accent)"/>
+  <text x="72" y="92" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="3.2" fill="#67E8F9">PRE-1.0 · RUST 2024 · ZERO DEPENDENCIES</text>
+
+  <text x="68" y="190" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="96" font-weight="800" letter-spacing="-4.5" fill="#F8FAFC">Vantyx</text>
+  <text x="72" y="232" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" fill="#94A3B8">Script like Python. Ship native. Build AI-native.</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="600" letter-spacing="1.4" fill="#CBD5E1">
+    <rect x="72" y="258" width="168" height="30" rx="8" fill="#0F172A" stroke="#1E293B"/>
+    <text x="90" y="277">INTERPRETER ORACLE</text>
+    <rect x="250" y="258" width="112" height="30" rx="8" fill="#0F172A" stroke="#1E293B"/>
+    <text x="268" y="277">C11 NATIVE</text>
+    <rect x="372" y="258" width="92" height="30" rx="8" fill="#0F172A" stroke="#1E293B"/>
+    <text x="390" y="277">AI HOST</text>
+  </g>
+
+  <line x1="700" y1="60" x2="700" y2="260" stroke="#1E293B" stroke-width="1"/>
+  <line x1="700" y1="60" x2="700" y2="150" stroke="url(#accent)" stroke-width="1" stroke-opacity="0.55"/>
+
+  <g>
+    <rect x="742" y="64" width="386" height="192" rx="14" fill="#080E1A" stroke="#22304A"/>
+    <path d="M742 78 a14 14 0 0 1 14 -14 h358 a14 14 0 0 1 14 14 v20 h-386 z" fill="#0D1626"/>
+    <circle cx="762" cy="81" r="4" fill="#F87171" fill-opacity="0.8"/>
+    <circle cx="776" cy="81" r="4" fill="#FBBF24" fill-opacity="0.8"/>
+    <circle cx="790" cy="81" r="4" fill="#34D399" fill-opacity="0.8"/>
+    <text x="1104" y="85" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" letter-spacing="1.2" fill="#475569">VANTYX 0.1</text>
+
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+      <text x="766" y="128" fill="#67E8F9">$ vantyx run hello.vtx</text>
+      <text x="766" y="152" fill="#E2E8F0">Hello, world!</text>
+      <text x="766" y="184" fill="#67E8F9">$ vantyx build hello.vtx</text>
+      <text x="766" y="208" fill="#A78BFA">✓ native binary generated</text>
+      <text x="766" y="240" fill="#64748B">$ vantyx ai chat --provider mock</text>
+    </g>
+  </g>
+</svg>

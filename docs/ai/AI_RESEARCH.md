@@ -1,10 +1,19 @@
 # AI Ecosystem Research
 
-Date: 2026-11-23
-Status: research complete for the foundation decision; not a benchmark report
+Date: 2026-11-23; refreshed 2026-11-24 after the RAG implementation
+Status: research complete for the foundation and host-side retrieval decisions;
+not a benchmark report
 Method: GitHub REST metadata, primary READMEs, official documentation, and
 direct repository inspection. No third-party benchmark was reproduced. Star
 counts and activity are snapshots, not quality scores.
+
+Refresh note (2026-11-24): all 17 candidate repositories were rechecked through
+the GitHub REST API. All were active and not archived; the star/push values in
+the matrix are that second snapshot. The MCP 2025-06-18 specification page was
+re-read for lifecycle, tools, resources, prompts, and consent requirements. No
+candidate runtime or vector store was added. The RAG work adopted a dependency-free local
+index with strict JSON persistence instead of Qdrant, LanceDB, sqlite-vec, or
+fastembed; that decision and its limits are recorded below.
 
 ## Research questions
 
@@ -13,31 +22,31 @@ counts and activity are snapshots, not quality scores.
 2. Which local/cloud protocols give the broadest model coverage with the least
    lock-in?
 3. What is the smallest honest AI foundation Vantyx can ship now, given that
-   modules, async, and a package manager do not exist yet?
+   async and a package manager do not exist yet? File-based modules now exist.
 4. Which capabilities must remain research-only until hardware or credentials
    are available?
 
-## Candidate matrix (observed 2026-11-23)
+## Candidate matrix (observed 2026-11-24)
 
 | Project | Stars | Last push | License | Primary role | Relevant capabilities | Integration cost |
 | --- | ---: | --- | --- | --- | --- | --- |
-| [Candle](https://github.com/huggingface/candle) | 21,394 | 2026-11-23 | Apache-2.0 / MIT | Rust ML framework | CPU, CUDA, Metal, WASM; safetensors, GGUF, PyTorch/npz loading; llama.cpp quantization types | Large Rust dependency tree; optional feature |
-| [Burn](https://github.com/tracel-ai/burn) | 16,334 | 2026-11-24 | Apache-2.0 / MIT | Tensor + deep learning | Training and inference; CUDA, ROCm, Metal, Vulkan, WebGPU, CPU, `no_std` Flex; autodiff; ONNX import; safetensors | Very large; best for training/numerical work |
-| [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | 7,857 | 2026-11-20 | MIT | Local LLM server/SDK | GGUF, quantization, paged attention, text/vision/video/audio, tool calling, OpenAI and Anthropic-compatible APIs | Large; best used as an external server |
+| [Candle](https://github.com/huggingface/candle) | 21,396 | 2026-11-23 | Apache-2.0 / MIT | Rust ML framework | CPU, CUDA, Metal, WASM; safetensors, GGUF, PyTorch/npz loading; llama.cpp quantization types | Large Rust dependency tree; optional feature |
+| [Burn](https://github.com/tracel-ai/burn) | 16,338 | 2026-11-24 | Apache-2.0 / MIT | Tensor + deep learning | Training and inference; CUDA, ROCm, Metal, Vulkan, WebGPU, CPU, `no_std` Flex; autodiff; ONNX import; safetensors | Very large; best for training/numerical work |
+| [mistral.rs](https://github.com/EricLBuehler/mistral.rs) | 7,858 | 2026-11-20 | MIT | Local LLM server/SDK | GGUF, quantization, paged attention, text/vision/video/audio, tool calling, OpenAI and Anthropic-compatible APIs | Large; best used as an external server |
 | [ort](https://github.com/pykeio/ort) | 2,627 | 2026-11-24 | Apache-2.0 | ONNX Runtime bindings | ONNX inference/training; CUDA, TensorRT, DirectML, CoreML, WebGPU execution providers; CPU fallback | Native ONNX Runtime library and build complexity |
 | [tract](https://github.com/sonos/tract) | 3,134 | 2026-11-23 | MIT/Apache-2.0 | Pure-Rust ONNX/NNEF inference | ONNX, NNEF, edge/embedded, WASM, streaming speech production use | Moderate; fewer LLM features |
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) | 136,091 | 2026-11-24 | MIT | C/C++ LLM inference | GGUF, CPU and many GPU backends, OpenAI-compatible server, multimodal, tool calling, MCP stdio tools | External process/server; no Rust dependency |
-| [Ollama](https://github.com/ollama/ollama) | 187,920 | 2026-11-24 | MIT | Local model manager/server | Model pull/list/show/delete, chat/generate/embeddings API, streaming, tools, structured outputs | External process; easiest local UX |
-| [tokenizers](https://github.com/huggingface/tokenizers) | 11,289 | 2026-11-23 | Apache-2.0 | Tokenization | BPE, WordPiece, Unigram, special tokens, training, WASM; ~325 KB gzipped core | Medium; model-specific files required |
-| [Qdrant](https://github.com/qdrant/qdrant) | 35,679 | 2026-11-23 | Apache-2.0 | Vector database | Filtering, hybrid search, payloads, production service | External service |
-| [LanceDB](https://github.com/lancedb/lancedb) | 11,973 | 2026-11-24 | Apache-2.0 | Embedded vector DB | Multimodal retrieval, Arrow integration, local persistence | Large native dependency |
-| [sqlite-vec](https://github.com/asg017/sqlite-vec) | 8,277 | 2026-05-18 | Apache-2.0 | SQLite vector extension | Pure C, runs anywhere SQLite runs, WASM; pre-v1 | Native extension; SQLite integration |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | 136,114 | 2026-11-24 | MIT | C/C++ LLM inference | GGUF, CPU and many GPU backends, OpenAI-compatible server, multimodal, tool calling, MCP stdio tools | External process/server; no Rust dependency |
+| [Ollama](https://github.com/ollama/ollama) | 187,950 | 2026-11-24 | MIT | Local model manager/server | Model pull/list/show/delete, chat/generate/embeddings API, streaming, tools, structured outputs | External process; easiest local UX |
+| [tokenizers](https://github.com/huggingface/tokenizers) | 11,291 | 2026-11-23 | Apache-2.0 | Tokenization | BPE, WordPiece, Unigram, special tokens, training, WASM; ~325 KB gzipped core | Medium; model-specific files required |
+| [Qdrant](https://github.com/qdrant/qdrant) | 35,680 | 2026-11-23 | Apache-2.0 | Vector database | Filtering, hybrid search, payloads, production service | External service |
+| [LanceDB](https://github.com/lancedb/lancedb) | 11,974 | 2026-11-24 | Apache-2.0 | Embedded vector DB | Multimodal retrieval, Arrow integration, local persistence | Large native dependency |
+| [sqlite-vec](https://github.com/asg017/sqlite-vec) | 8,278 | 2026-05-18 | Apache-2.0 | SQLite vector extension | Pure C, runs anywhere SQLite runs, WASM; pre-v1 | Native extension; SQLite integration |
 | [fastembed-rs](https://github.com/Anush008/fastembed-rs) | 1,055 | 2026-11-22 | Apache-2.0 | Local embeddings/reranking | ONNX via `ort`, HF tokenizers, batching | Native ONNX dependency |
 | [tch-rs](https://github.com/LaurentMazare/tch-rs) | 5,521 | 2026-11-10 | Apache-2.0 | PyTorch/LibTorch bindings | Training/inference, CUDA | Heavy LibTorch ABI; avoid for the core |
 | [llguidance](https://github.com/guidance-ai/llguidance) | 919 | 2026-11-18 | MIT | Constrained decoding | JSON Schema/grammar masks; integrated in llama.cpp, vLLM, SGLang | Server-side; Rust crate exists |
 | [Outlines](https://github.com/dottxt-ai/outlines) | 16,021 | 2026-09-21 | Apache-2.0 | Structured generation | JSON Schema/Pydantic, choices, function calls; vLLM/Ollama/llama.cpp | Python-centric; use as prior art |
 | [OpenTelemetry Rust](https://github.com/open-telemetry/opentelemetry-rust) | 2,777 | 2026-11-24 | Apache-2.0 | Observability | Traces, metrics, logs | Optional; large dependency set |
-| [MCP](https://github.com/modelcontextprotocol/modelcontextprotocol) | 9,755 | 2026-11-23 | spec (NOASSERTION) | Tool/context protocol | JSON-RPC lifecycle, tools, resources, prompts; stdio and HTTP transports | Protocol work; security-sensitive |
+| [MCP](https://github.com/modelcontextprotocol/modelcontextprotocol) | 9,756 | 2026-11-23 | spec (NOASSERTION) | Tool/context protocol | JSON-RPC lifecycle, tools, resources, prompts; stdio and HTTP transports | Protocol work; security-sensitive |
 
 All listed repositories were active and not archived at the snapshot. The
 `pushed_at` field proves activity, not production quality.
@@ -121,14 +130,20 @@ subset and bound repair retries.
 (type, required, properties, items, enum, additionalProperties) with tests.
 Never deserialize untrusted output directly into host types.
 
-### 6. Retrieval starts small and measurable
+### 6. Retrieval starts small, local, and measurable
 
 Qdrant, LanceDB, and sqlite-vec are credible, but all add a service or native
-dependency. A local in-memory index with cosine similarity and BM25 is enough to
-validate the API and the evaluation harness.
+dependency. A flat local index with cosine similarity, BM25, deterministic
+chunking, and a retrieval evaluation harness is enough to validate the API and
+the quality loop before adopting a database.
 
-**Decision:** implement a deterministic in-memory vector index and BM25 first;
-add an external store only when a benchmark shows the need.
+**Decision:** implement a deterministic in-memory vector index and BM25, then a
+local RAG pipeline over text/Markdown/code with stable line citations, a strict
+versioned JSON index saved atomically with owner-only permissions, hybrid
+reciprocal-rank fusion, and recall/precision/MRR evaluation. Add an external
+store only when a benchmark shows that flat search is the bottleneck. Do not
+claim grounded generation: the current `vantyx ai search` returns cited chunks,
+not synthesized answers.
 
 ### 7. Agents are bounded programs, not autonomous loops
 
@@ -159,11 +174,17 @@ research. Revisit when hardware and a reproducible benchmark exist.
 | Universal tokenizer claim | Model-specific tokenizers differ; a false count breaks budgets |
 | Multi-agent by default | No evidence of value; adds cost and failure modes |
 | Custom GPU runtime | No hardware to verify; high risk of fake support |
+| Qdrant / LanceDB / sqlite-vec now | Service or native dependency; flat local search is sufficient for the current corpus and evaluation harness |
+| fastembed / ort embedding model now | Adds ONNX Runtime and model files; violates the zero-dependency rule without an ADR |
+| Grounded answer generation now | Retrieval evaluation must come first; claiming grounding without generation evidence would be dishonest |
 
 ## Sources
 
-All accessed 2026-11-23. GitHub metadata from the REST API; capability claims
-from the repositories' primary READMEs or official docs.
+All accessed 2026-11-23 and rechecked 2026-11-24. GitHub metadata from the REST
+API; capability claims from the repositories' primary READMEs or official docs.
+The RAG decision additionally relies on the local implementation and tests in
+`src/ai/rag.rs`, ADR-0018, and the retrieval evaluation example; no external
+retrieval benchmark is claimed.
 
 - https://github.com/huggingface/candle
 - https://github.com/tracel-ai/burn
@@ -184,3 +205,7 @@ from the repositories' primary READMEs or official docs.
 - https://github.com/modelcontextprotocol/modelcontextprotocol and
   https://modelcontextprotocol.io/specification/2025-06-18
 - https://json-schema.org/draft/2020-12/json-schema-core.html
+- https://github.com/qdrant/qdrant (evaluated, not adopted)
+- https://github.com/lancedb/lancedb (evaluated, not adopted)
+- https://github.com/asg017/sqlite-vec (evaluated, not adopted)
+- https://github.com/Anush008/fastembed-rs (evaluated, not adopted)

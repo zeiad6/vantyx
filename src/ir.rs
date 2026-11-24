@@ -277,16 +277,35 @@ pub struct IrMatchArm {
 #[derive(Clone, Debug)]
 pub enum IrPattern {
     Wildcard,
+    Bind(IrBinding),
     Literal {
         value: IrLiteral,
+    },
+    /// Integer range: half-open when `inclusive` is false.
+    Range {
+        start: i64,
+        end: i64,
+        inclusive: bool,
     },
     Variant {
         enum_name: String,
         variant: String,
         tag: usize,
-        /// One entry per payload field; `None` means the pattern used `_`.
-        bindings: Vec<Option<IrBinding>>,
+        /// One entry per payload field, in declaration order.
+        fields: Vec<IrPatternField>,
     },
+    /// Top-level alternatives that share one binding set. Every alternative
+    /// must bind the same names with the same types; each binding records the
+    /// payload path for the alternative that introduced it.
+    Or {
+        alternatives: Vec<IrPattern>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct IrPatternField {
+    pub name: String,
+    pub pattern: IrPattern,
 }
 
 #[derive(Clone, Debug)]
@@ -296,12 +315,42 @@ pub enum IrLiteral {
     Str(String),
 }
 
+/// One payload access step: `value->payload.<variant>.<field>`.
+#[derive(Clone, Debug)]
+pub struct IrFieldPath {
+    pub variant: String,
+    pub field: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct IrBinding {
     pub name: String,
-    pub field: String,
     pub ty: IrType,
     pub span: Span,
+    /// Access path from the match scrutinee to this binding's value.
+    pub path: Vec<IrFieldPath>,
+}
+
+impl IrPattern {
+    /// Collects bindings in source traversal order. For an or-pattern this
+    /// visits every alternative, so callers that need one shared binding set
+    /// should visit a single alternative.
+    pub fn collect_bindings<'p>(&'p self, out: &mut Vec<&'p IrBinding>) {
+        match self {
+            IrPattern::Bind(binding) => out.push(binding),
+            IrPattern::Variant { fields, .. } => {
+                for field in fields {
+                    field.pattern.collect_bindings(out);
+                }
+            }
+            IrPattern::Or { alternatives } => {
+                for alternative in alternatives {
+                    alternative.collect_bindings(out);
+                }
+            }
+            IrPattern::Wildcard | IrPattern::Literal { .. } | IrPattern::Range { .. } => {}
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1246,6 +1295,150 @@ impl<'a> Builder<'a> {
 
     // ---- match ----
 
+    /// Lowers one pattern recursively. `prefix` is the payload access path to
+    /// the value this pattern matches, so nested bindings can record where
+    /// their value lives in the native enum layout.
+    fn lower_pattern(
+        &mut self,
+        pattern: &Pattern,
+        expected: &IrType,
+        prefix: &[IrFieldPath],
+    ) -> Result<IrPattern, IrError> {
+        match pattern {
+            Pattern::Wildcard { .. } => Ok(IrPattern::Wildcard),
+            Pattern::Literal { value, span } => {
+                let value = match (value, expected) {
+                    (LiteralPattern::Int(value), IrType::Int) => IrLiteral::Int(*value),
+                    (LiteralPattern::Bool(value), IrType::Bool) => IrLiteral::Bool(*value),
+                    (LiteralPattern::Str(value), IrType::Str) => IrLiteral::Str(value.clone()),
+                    (value, other) => {
+                        return Err(IrError::internal(
+                            format!(
+                                "literal pattern type `{}` does not match native type `{}`",
+                                value.type_name(),
+                                other.name()
+                            ),
+                            *span,
+                        ));
+                    }
+                };
+                Ok(IrPattern::Literal { value })
+            }
+            Pattern::Range {
+                start,
+                end,
+                inclusive,
+                span,
+            } => {
+                if !matches!(expected, IrType::Int) {
+                    return Err(IrError::internal(
+                        format!(
+                            "range pattern on non-integer native type `{}`",
+                            expected.name()
+                        ),
+                        *span,
+                    ));
+                }
+                Ok(IrPattern::Range {
+                    start: *start,
+                    end: *end,
+                    inclusive: *inclusive,
+                })
+            }
+            Pattern::Variant { name, fields, .. } => {
+                let IrType::Enum(enum_name) = expected else {
+                    return Err(IrError::internal(
+                        format!(
+                            "variant pattern `{name}` on non-enum native type `{}`",
+                            expected.name()
+                        ),
+                        pattern.span(),
+                    ));
+                };
+                let Some(info) = self.enum_map.get(enum_name).cloned() else {
+                    return Err(IrError::internal(
+                        format!("unknown enum `{enum_name}` in match"),
+                        pattern.span(),
+                    ));
+                };
+                let Some(variant) = info.variants.iter().find(|variant| variant.name == *name)
+                else {
+                    return Err(IrError::internal(
+                        format!("unknown variant `{name}` in match on `{enum_name}`"),
+                        pattern.span(),
+                    ));
+                };
+                if fields.len() != variant.fields.len() {
+                    return Err(IrError::internal(
+                        format!("variant `{name}` payload arity was not validated"),
+                        pattern.span(),
+                    ));
+                }
+                let mut lowered = Vec::with_capacity(fields.len());
+                for (field_pattern, field) in fields.iter().zip(variant.fields.iter()) {
+                    let mut path = prefix.to_vec();
+                    path.push(IrFieldPath {
+                        variant: variant.name.clone(),
+                        field: field.name.clone(),
+                    });
+                    let field_pattern = match field_pattern {
+                        PatternArg::Wildcard { .. } => IrPattern::Wildcard,
+                        PatternArg::Bind { name, name_span } => {
+                            self.declare_local(name, field.ty.clone());
+                            IrPattern::Bind(IrBinding {
+                                name: name.clone(),
+                                ty: field.ty.clone(),
+                                span: *name_span,
+                                path,
+                            })
+                        }
+                        PatternArg::Nested { pattern, .. } => {
+                            self.lower_pattern(pattern, &field.ty, &path)?
+                        }
+                    };
+                    lowered.push(IrPatternField {
+                        name: field.name.clone(),
+                        pattern: field_pattern,
+                    });
+                }
+                Ok(IrPattern::Variant {
+                    enum_name: enum_name.clone(),
+                    variant: variant.name.clone(),
+                    tag: variant.tag,
+                    fields: lowered,
+                })
+            }
+            Pattern::Or { alternatives, span } => {
+                let mut lowered = Vec::with_capacity(alternatives.len());
+                let mut expected_signature: Option<Vec<(String, IrType)>> = None;
+                for alternative in alternatives {
+                    let alternative = self.lower_pattern(alternative, expected, prefix)?;
+                    let mut bindings = Vec::new();
+                    alternative.collect_bindings(&mut bindings);
+                    let mut signature: Vec<(String, IrType)> = bindings
+                        .iter()
+                        .map(|binding| (binding.name.clone(), binding.ty.clone()))
+                        .collect();
+                    signature.sort_by(|left, right| left.0.cmp(&right.0));
+                    match &expected_signature {
+                        Some(expected_signature) if *expected_signature != signature => {
+                            return Err(IrError::internal(
+                                "or-pattern alternatives bind different native names or types",
+                                *span,
+                            ));
+                        }
+                        Some(_) => {}
+                        None => expected_signature = Some(signature),
+                    }
+                    lowered.push(alternative);
+                }
+                Ok(IrPattern::Or {
+                    alternatives: lowered,
+                })
+            }
+        }
+    }
+
     /// Lowers a match statement or expression. Pattern bindings are scoped to
     /// the arm body, and the scrutinee type must be a closed enum; dynamic
     /// `Any` matches remain interpreter-only.
@@ -1256,99 +1449,24 @@ impl<'a> Builder<'a> {
         expression: bool,
     ) -> Result<(IrExpr, Vec<IrMatchArm>), IrError> {
         let scrutinee = self.lower_expr(scrutinee)?;
-        let enum_name = match &scrutinee.ty {
-            IrType::Enum(name) => Some(name.clone()),
-            IrType::Int | IrType::Str | IrType::Bool => None,
-            other => {
-                return Err(IrError::unsupported(
-                    format!(
-                        "native `match` requires an enum or scalar value, found `{}`",
-                        other.name()
-                    ),
-                    scrutinee.span,
-                    "matching on `Any` is interpreter-only; annotate the value with a concrete type",
-                ));
-            }
-        };
-        let info = match &enum_name {
-            Some(name) => {
-                let Some(info) = self.enum_map.get(name).cloned() else {
-                    return Err(IrError::internal(
-                        format!("unknown enum `{name}` in match"),
-                        scrutinee.span,
-                    ));
-                };
-                Some(info)
-            }
-            None => None,
-        };
+        if !matches!(
+            scrutinee.ty,
+            IrType::Enum(_) | IrType::Int | IrType::Str | IrType::Bool
+        ) {
+            return Err(IrError::unsupported(
+                format!(
+                    "native `match` requires an enum or scalar value, found `{}`",
+                    scrutinee.ty.name()
+                ),
+                scrutinee.span,
+                "matching on `Any` is interpreter-only; annotate the value with a concrete type",
+            ));
+        }
 
         let mut lowered = Vec::with_capacity(arms.len());
         for arm in arms {
             self.local_scopes.push(HashMap::new());
-            let pattern = match &arm.pattern {
-                Pattern::Wildcard { .. } => IrPattern::Wildcard,
-                Pattern::Literal { value, span } => {
-                    let value = match (value, &scrutinee.ty) {
-                        (LiteralPattern::Int(value), IrType::Int) => IrLiteral::Int(*value),
-                        (LiteralPattern::Bool(value), IrType::Bool) => IrLiteral::Bool(*value),
-                        (LiteralPattern::Str(value), IrType::Str) => IrLiteral::Str(value.clone()),
-                        (value, other) => {
-                            return Err(IrError::internal(
-                                format!(
-                                    "literal pattern type `{}` does not match native scrutinee `{}`",
-                                    value.type_name(),
-                                    other.name()
-                                ),
-                                *span,
-                            ));
-                        }
-                    };
-                    IrPattern::Literal { value }
-                }
-                Pattern::Variant { name, fields, .. } => {
-                    let (Some(info), Some(enum_name)) = (&info, &enum_name) else {
-                        return Err(IrError::internal(
-                            format!("variant pattern `{name}` in a non-enum match"),
-                            arm.pattern.span(),
-                        ));
-                    };
-                    let Some(variant) = info.variants.iter().find(|variant| variant.name == *name)
-                    else {
-                        return Err(IrError::internal(
-                            format!("unknown variant `{name}` in match on `{enum_name}`"),
-                            arm.pattern.span(),
-                        ));
-                    };
-                    if fields.len() != variant.fields.len() {
-                        return Err(IrError::internal(
-                            format!("variant `{name}` payload arity was not validated"),
-                            arm.pattern.span(),
-                        ));
-                    }
-                    let mut bindings = Vec::with_capacity(fields.len());
-                    for (field_pattern, field) in fields.iter().zip(variant.fields.iter()) {
-                        match field_pattern {
-                            PatternArg::Wildcard { .. } => bindings.push(None),
-                            PatternArg::Bind { name, .. } => {
-                                self.declare_local(name, field.ty.clone());
-                                bindings.push(Some(IrBinding {
-                                    name: name.clone(),
-                                    field: field.name.clone(),
-                                    ty: field.ty.clone(),
-                                    span: arm.pattern.span(),
-                                }));
-                            }
-                        }
-                    }
-                    IrPattern::Variant {
-                        enum_name: enum_name.clone(),
-                        variant: variant.name.clone(),
-                        tag: variant.tag,
-                        bindings,
-                    }
-                }
-            };
+            let pattern = self.lower_pattern(&arm.pattern, &scrutinee.ty, &[])?;
 
             let guard = match &arm.guard {
                 Some(guard) => {

@@ -17,6 +17,7 @@ pub mod diagnostic;
 pub mod interp;
 pub mod ir;
 pub mod lexer;
+pub mod module;
 pub mod parser;
 pub mod span;
 pub mod token;
@@ -26,7 +27,7 @@ pub mod value;
 use ast::Program;
 use checker::SemanticModel;
 use diagnostic::{Diagnostic, Diagnostics};
-use span::SourceMap;
+use span::{SourceMap, SourceRegistry};
 
 #[derive(Debug)]
 pub struct CompileResult {
@@ -103,6 +104,40 @@ pub fn render_runtime_error(
             out.push_str(&format!(
                 "  at {} ({}:{}:{})\n",
                 frame.function, source_name, line, column
+            ));
+        }
+    }
+    out
+}
+
+/// Renders a runtime error using the source file recorded in each span.
+pub fn render_runtime_error_all(
+    error: &interp::RuntimeError,
+    sources: &SourceRegistry,
+) -> String {
+    let mut diagnostic = Diagnostic::error(error.code.clone(), error.message.clone(), error.span);
+    if let Some(frame) = error.stack.last() {
+        diagnostic = diagnostic.with_note(format!("in function `{}`", frame.function));
+    }
+    let mut out = match sources.get(error.span.file) {
+        Some(file) => diagnostic.render(&file.name, &file.source),
+        None => format!("error[{}]: {}\n", error.code, error.message),
+    };
+    if !error.stack.is_empty() {
+        out.push_str("stack trace:\n");
+        for frame in error.stack.iter().rev() {
+            let file = sources.get(frame.span.file);
+            let (name, line, column) = match file {
+                Some(file) => {
+                    let map = SourceMap::new(&file.name, &file.source);
+                    let (line, column) = map.line_col(frame.span.start);
+                    (file.name.as_str(), line, column)
+                }
+                None => ("<unknown>", 0, 0),
+            };
+            out.push_str(&format!(
+                "  at {} ({}:{}:{})\n",
+                frame.function, name, line, column
             ));
         }
     }

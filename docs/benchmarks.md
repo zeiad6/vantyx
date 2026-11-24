@@ -165,3 +165,32 @@ python3 benchmarks/run.py --workload map_ops --reps 5
 The runner writes `benchmarks/results/<date>.json` and `.md`. Re-running on the
 same date overwrites that date's files; preserve older results by copying them
 or changing the date handling before a new official baseline.
+
+## Local RAG plumbing benchmark (2026-11-24)
+
+`benchmarks/rag.py` measures the offline RAG path separately from the language
+workloads. It generates 200 deterministic Markdown documents (468,324 source
+bytes), indexes them with the lexical hash provider at 64 dimensions, and runs
+hybrid search for `compiler memory safety native map retrieval` with top-k 10.
+The index contains 600 chunks and 600 vectors (1,247,300 bytes).
+
+| Phase | Median ms | Min ms | Max ms |
+| --- | ---: | ---: | ---: |
+| Index (ingest + chunk + embed + save) | 41.639 | 40.347 | 42.529 |
+| Search (load + query embed + rank) | 26.720 | 25.133 | 27.154 |
+
+One warm-up pair was discarded; five measured pairs were taken; every search
+returned 10 cited hits. Index and search are separate processes, so search
+includes JSON index loading. This measures local plumbing and flat linear
+search, **not** semantic quality, trained-model latency, or vector-database
+performance. Raw results:
+[`benchmarks/results/2026-11-24-rag.json`](../benchmarks/results/2026-11-24-rag.json)
+and
+[`benchmarks/results/2026-11-24-rag.md`](../benchmarks/results/2026-11-24-rag.md).
+
+Command:
+
+```sh
+cargo build --release
+python3 benchmarks/rag.py --reps 5 --docs 200 --dimensions 64 --top-k 10
+```

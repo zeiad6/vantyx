@@ -654,6 +654,22 @@ impl<'a> Interpreter<'a> {
                 };
                 if matched { Some(Vec::new()) } else { None }
             }
+            Pattern::Range {
+                start,
+                end,
+                inclusive,
+                ..
+            } => {
+                let Value::Int(actual) = value else {
+                    return None;
+                };
+                let matched = if *inclusive {
+                    actual >= start && actual <= end
+                } else {
+                    actual >= start && actual < end
+                };
+                if matched { Some(Vec::new()) } else { None }
+            }
             Pattern::Variant { name, fields, .. } => {
                 let Value::Enum(instance) = value else {
                     return None;
@@ -664,18 +680,27 @@ impl<'a> Interpreter<'a> {
                 let variant = self.model.find_variant(name).map(|(_, variant)| variant);
                 let mut bindings = Vec::new();
                 for (index, field) in fields.iter().enumerate() {
-                    let PatternArg::Bind { name: binding, .. } = field else {
-                        continue;
-                    };
                     let slot = instance.fields.get(index)?;
-                    let ty = variant
-                        .and_then(|variant| variant.fields.get(index))
-                        .map(|field| field.ty.clone())
-                        .unwrap_or_else(|| slot.ty.clone());
-                    bindings.push((binding.clone(), slot.value.clone(), ty));
+                    match field {
+                        PatternArg::Bind { name: binding, .. } => {
+                            let ty = variant
+                                .and_then(|variant| variant.fields.get(index))
+                                .map(|field| field.ty.clone())
+                                .unwrap_or_else(|| slot.ty.clone());
+                            bindings.push((binding.clone(), slot.value.clone(), ty));
+                        }
+                        PatternArg::Wildcard { .. } => {}
+                        PatternArg::Nested { pattern, .. } => {
+                            let nested = self.pattern_bindings(pattern, &slot.value)?;
+                            bindings.extend(nested);
+                        }
+                    }
                 }
                 Some(bindings)
             }
+            Pattern::Or { alternatives, .. } => alternatives
+                .iter()
+                .find_map(|pattern| self.pattern_bindings(pattern, value)),
         }
     }
 

@@ -1,16 +1,18 @@
 # AI Architecture
 
-Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 in progress; AI-4 embedding provider interface and bounded cache implemented
+Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented but live verification blocked; AI-3 structured output and streamed text chat complete (streaming tool calls and live evidence pending); AI-4 host-side embeddings and retrieval complete (live embedding models pending)
 Date: 2026-11-24
 Related: `AI_RESEARCH.md`, `AI_SECURITY.md`, `AI_ROADMAP.md`, ADR-0007,
-ADR-0014, ADR-0015, ADR-0017
+ADR-0014, ADR-0015, ADR-0017, ADR-0018
 
 ## Position
 
 Vantyx should make AI applications natural without turning the compiler into an
 ML framework. The compiler stays small, predictable, and dependency-free. AI
 capabilities live in a host-level library and CLI first, then become language
-features only when modules, async, and a standard library exist.
+features only when async and a standard library exist. File-based modules now
+exist, so async is the remaining language prerequisite for the conceptual
+`from ai import Client` surface.
 
 This avoids two failure modes:
 
@@ -21,8 +23,8 @@ This avoids two failure modes:
 
 | Track | Scope | Current state |
 | --- | --- | --- |
-| A — Core Vantyx | Lexer, parser, checker, interpreter, native backend, memory, modules, tooling | v0.1 subset verified; modules/async/generics missing |
-| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, and embedding provider/cache implemented; live providers, streaming, and RAG pipeline pending |
+| A — Core Vantyx | Lexer, parser, checker, interpreter, native backend, memory, modules, tooling | v0.1 subset verified; modules implemented; async/generics missing |
+| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, streamed text chat, embedding providers/cache, and local retrieval/evaluation implemented; live providers and grounded generation pending |
 
 Track B must not wait for the entire Track A roadmap. It may use the host CLI and
 Rust API while language-level integration remains blocked.
@@ -33,7 +35,7 @@ Rust API while language-level integration remains blocked.
 ┌─────────────────────────────────────────────────────────────┐
 │ Language surface (future)                                   │
 │   from ai import Client / await / typed tools               │
-│   BLOCKED on modules (T-013), async (T-017), stdlib         │
+│   BLOCKED on async (T-017) and stdlib; modules (T-013) done  │
 ├─────────────────────────────────────────────────────────────┤
 │ Host API: src/ai/                                           │
 │   provider · json · sse · tokens · embedding · bm25         │
@@ -65,7 +67,7 @@ Rust API while language-level integration remains blocked.
 | `ai/extract.rs` | Strict JSON extraction, schema validation, bounded repair, usage accounting | Return unvalidated model output or exceed the repair limit |
 | `ai/embedding.rs` | Vector math, normalization, in-memory index | Hide O(n) search cost |
 | `ai/bm25.rs` | Deterministic lexical retrieval | Claim semantic retrieval |
-| `ai/rag.rs` (planned) | Chunking, retrieval, citations, grounding metadata | Claim grounding without retrieved sources |
+| `ai/rag.rs` | Bounded ingestion, stable line-cited chunks, persistent index, lexical/semantic/hybrid search, reciprocal-rank fusion, retrieval evaluation | Claim answer grounding without retrieved sources or exceed ingestion limits |
 | `ai/tools.rs` | Tool registry, JSON schemas, capabilities, allowlists | Auto-grant host permissions |
 | `ai/agent.rs` | Bounded plan/act loop, cancellation, state | Run without step/token/time limits |
 | `ai/budget.rs` | Deterministic limits and errors | Silently truncate or overspend |
@@ -119,8 +121,15 @@ pub trait Provider {
     ) -> Result<EmbeddingResponse, AiError> {
         Err(AiError::unsupported("embeddings", self.id()))
     }
-    // Streaming is planned for AI-3; the SSE parser exists but no provider
-    // exposes a streaming method yet.
+    fn chat_stream(
+        &self,
+        request: &ChatRequest,
+        budget: &mut Budget,
+        on_delta: &mut dyn FnMut(&str),
+    ) -> Result<ChatResponse, AiError> {
+        let _ = (request, budget, on_delta);
+        Err(AiError::unsupported("streaming", self.id()))
+    }
 }
 ```
 
@@ -184,14 +193,57 @@ bounded, and every attempt consumes the shared budget. Server-native constrained
 decoding is preferred when available but is not claimed yet; local validation
 remains mandatory because server support varies and may be disabled.
 
+## Streaming path
+
+```text
+validated ChatRequest
+  → provider capability check (streaming, no tools)
+  → POST with stream: true, stream_options.include_usage,
+    Accept: text/event-stream
+  → transport bytes (content-length, chunked, or close-delimited;
+    HTTPS via curl --include --no-buffer)
+  → SSE parser (raw bytes, UTF-8 carry, bounded events)
+  → delta callback + final text/finish reason/usage
+  → one budget record + optional redacted metric
+```
+
+- `Provider::chat_stream` defaults to `AI_E_UNSUPPORTED`; only the
+  OpenAI-compatible adapter advertises `streaming = true` today.
+- Text deltas are forwarded as they arrive. `[DONE]` stops processing; frames
+  after it are ignored. A malformed frame is `AI_E_PROVIDER`, never a partial
+  success.
+- Streaming tool calls are rejected before transport and on the wire with
+  `AI_E_UNSUPPORTED`; argument-fragment assembly and its permission model are
+  not implemented.
+- Error frames pass through secret redaction. Non-2xx bodies are bounded to
+  64 KiB for status mapping, and the overall body remains bounded by the
+  transport limit.
+- The CLI prints deltas with an explicit flush and rejects `--stream` with
+  `--json` or a non-OpenAI provider before any request. There is no interactive
+  cancellation keybinding yet.
+- HTTPS streaming depends on the system `curl`; the loopback path uses
+  `std::net` and is covered by offline tests. Live first-token latency and
+  throughput remain unmeasured until a real model is available.
+
 ## Embeddings and retrieval path
 
 ```text
-documents → chunk → embed → index
-query     → embed → cosine / BM25 → fuse → top-k → citations
+documents → bounded ingest → chunk → embed → persisted index
+query     → embed → cosine + BM25 → reciprocal-rank fusion → cited top-k
+                                                    ↓
+                                      retrieval evaluation (recall/precision/MRR)
 ```
 
-- The first index is in-memory and deterministic.
+- `ai/rag.rs` implements the host-side path and stops before generation. It
+  never claims that an answer is grounded merely because chunks were retrieved.
+- Ingestion is confined to one canonical root and skips symlinks, hidden paths,
+  VCS/build directories, and extensions outside an allowlist. File count,
+  per-file bytes, total source bytes, chunk count, chunk size, overlap, query
+  size, top-k, and embedding input sizes are bounded.
+- Chunk ids are stable FNV-1a values over source, line range, and text. Every
+  hit carries `source`, `start_line`, and `end_line`.
+- Indexes are strict JSON (format version 1), validated before lexical state is
+  rebuilt, saved by atomic rename, and written with mode 0600 on Unix.
 - `Provider::embed` accepts batches of up to 128 inputs (8 KiB each, 32 KiB per
   request) and 1–4096 requested dimensions. Invalid requests fail before
   transport.
@@ -204,9 +256,16 @@ query     → embed → cosine / BM25 → fuse → top-k → citations
   rejects duplicate/out-of-range indexes, validates count and dimensions, and
   records provider usage.
 - Cosine similarity requires equal dimensions; dimension mismatch is an error.
-- BM25 is lexical, not semantic; hybrid results label both scores.
-- Retrieval evaluation uses a small, licensed fixture set with recall@k and MRR;
-  this harness is not implemented yet.
+- An optional relative `--source-prefix` filter ranks only matching chunks before
+  top-k. It is a retrieval convenience, not an access-control boundary.
+- BM25 is lexical. Hybrid retrieval fuses lexical and semantic ranks with
+  reciprocal-rank fusion (k = 60) and deterministic id tie breaking. Results
+  label both scores and both ranks.
+- Search scans vectors linearly. This is honest for local corpora and is not a
+  production vector database.
+- Evaluation reports recall@k, precision@k, MRR, and per-query retrievals over
+  exact chunk-id or source-path labels. It does not measure answer accuracy,
+  hallucination rate, or grounding.
 
 ## Tools and agents
 
@@ -252,8 +311,10 @@ query     → embed → cosine / BM25 → fuse → top-k → citations
 - Embedding tests cover deterministic normalized vectors, batch limits, cache
   hits/misses/eviction/deduplication, loopback `/v1/embeddings`, response index
   and dimension validation, and unsupported-provider errors.
-- Deterministic mock/echo providers for chat, tools, and failure injection;
-  SSE parsing is unit-tested separately because no provider streams yet.
+- Deterministic mock/echo providers for chat, tools, and failure injection.
+  Streaming is covered by OpenAI-compatible stub transports, a loopback SSE CLI
+  test, HTTP content-length/chunked/close-delimited tests, and an HTTP/HTTPS
+  smoke script; no provider streams through an unverified path.
 - A loopback HTTP test server for the OpenAI-compatible adapter; no internet.
 - Security tests for denied capabilities, secret redaction, oversized responses,
   timeouts, and prompt-injection labels.
@@ -265,7 +326,7 @@ query     → embed → cosine / BM25 → fuse → top-k → citations
 - A universal tokenizer claim.
 - Autonomous multi-agent orchestration.
 - Automatic model downloads.
-- Language syntax changes before modules/async exist.
+- Language syntax changes before async and a standard library exist.
 - Claims of sandboxing that the host cannot enforce.
 
 ## Language integration gate

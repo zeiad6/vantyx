@@ -1,0 +1,37 @@
+{
+  "generated": "2026-11-24T06:43:32+00:00",
+  "kind": "local-rag-flat-index",
+  "caveat": "Offline hash embeddings and flat linear search. This measures plumbing, not semantic quality, model latency, or vector-database performance.",
+  "environment": {
+    "platform": "Linux-7.2.15+kali-amd64-x86_64-with-glibc2.43",
+    "machine": "x86_64",
+    "python": "3.14.10",
+    "binary": "/home/kali/Downloads/RustZ/target/release/vantyx",
+    "reps": 5,
+    "dimensions": 64,
+    "top_k": 10,
+    "query": "compiler memory safety native map retrieval"
+  },
+  "corpus": {
+    "documents": 200,
+    "chunks": 600,
+    "vectors": 600,
+    "source_bytes": 468324,
+    "index_bytes": 1247300
+  },
+  "index": {
+    "median_ms": 41.639,
+    "min_ms": 40.347,
+    "max_ms": 42.529
+  },
+  "search": {
+    "median_ms": 26.72,
+    "min_ms": 25.133,
+    "max_ms": 27.154
+  },
+  "hits": {
+    "count": 10,
+    "first_source": "doc-0007.md",
+    "first_line": 1
+  }
+}

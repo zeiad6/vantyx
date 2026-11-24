@@ -137,8 +137,11 @@ match shape:
 - Literal patterns dispatch on `Int`, `Str`, and `Bool` scrutinees:
   `0`, `-1`, `"ready"`, `true`, and `false`. Float and interpolated-string
   patterns are rejected (`E0113`).
-- Nested patterns are rejected with `E0112`; bind the payload and match again
-  in the arm body.
+- Nested patterns were rejected with `E0112` in the original decision; this was
+  superseded by ADR-0019 (T-048), which adds recursive payload patterns and
+  matrix exhaustiveness, and by ADR-0020 (T-049), which lowers them natively.
+  Top-level or-patterns are covered by T-047 and native or-pattern lowering by
+  ADR-0021 (T-050).
 - Duplicate bindings in one pattern are rejected (`E0202`).
 - The scrutinee must be an enum, `Int`, `Str`, `Bool`, or `Any` (`E0314`).
 - A variant pattern must belong to the matched enum (`E0315`); a variant
@@ -266,7 +269,9 @@ while preserving unqualified names for unambiguous cases.
 Revisit when any of the following becomes true:
 
 1. Nested patterns, or-patterns, or guard-visible bindings are needed by real
-   programs (new task).
+   programs (new task). Nested patterns are implemented in the interpreter and
+   native backend (T-048/T-049); top-level or-patterns are implemented in the
+   interpreter and native backend (T-047/T-050).
 2. Generics land (T-018): generic enums such as `Option[T]` and `Result[T, E]`.
 3. Modules land (T-013): qualified variants and extensible-enum policy.
 4. FFI needs explicit discriminants (T-021): decide whether to expose them.

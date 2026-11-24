@@ -1,8 +1,12 @@
 //! Source spans and line/column mapping.
 
-/// A half-open byte range in the source file.
+/// A half-open byte range in one source file.
+///
+/// `file` indexes a [`SourceRegistry`]. Single-source compilation leaves it at
+/// zero, so existing callers that only know byte offsets keep working.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Span {
+    pub file: u32,
     pub start: u32,
     pub end: u32,
 }
@@ -10,6 +14,15 @@ pub struct Span {
 impl Span {
     pub fn new(start: usize, end: usize) -> Self {
         Self {
+            file: 0,
+            start: start as u32,
+            end: end as u32,
+        }
+    }
+
+    pub fn in_file(file: u32, start: usize, end: usize) -> Self {
+        Self {
+            file,
             start: start as u32,
             end: end as u32,
         }
@@ -19,8 +32,18 @@ impl Span {
         Self::new(offset, offset)
     }
 
+    pub fn point_in_file(file: u32, offset: usize) -> Self {
+        Self::in_file(file, offset, offset)
+    }
+
+    /// A sub-span of this span, preserving the source file.
+    pub fn sub(self, start: usize, end: usize) -> Self {
+        Self::in_file(self.file, start, end)
+    }
+
     pub fn merge(self, other: Span) -> Span {
         Span {
+            file: self.file,
             start: self.start.min(other.start),
             end: self.end.max(other.end),
         }
@@ -34,9 +57,54 @@ impl Span {
     pub fn clamp(self, len: usize) -> Span {
         let len = len as u32;
         Span {
+            file: self.file,
             start: self.start.min(len),
             end: self.end.min(len).max(self.start.min(len)),
         }
+    }
+}
+
+/// One named source file loaded by the module loader.
+#[derive(Clone, Debug)]
+pub struct SourceFile {
+    pub name: String,
+    pub source: String,
+}
+
+/// Ordered source files addressed by [`Span::file`].
+#[derive(Clone, Debug, Default)]
+pub struct SourceRegistry {
+    files: Vec<SourceFile>,
+}
+
+impl SourceRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add(&mut self, name: impl Into<String>, source: impl Into<String>) -> u32 {
+        let id = self.files.len() as u32;
+        self.files.push(SourceFile {
+            name: name.into(),
+            source: source.into(),
+        });
+        id
+    }
+
+    pub fn get(&self, file: u32) -> Option<&SourceFile> {
+        self.files.get(file as usize)
+    }
+
+    pub fn len(&self) -> usize {
+        self.files.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.files.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &SourceFile> {
+        self.files.iter()
     }
 }
 

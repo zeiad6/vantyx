@@ -4,7 +4,7 @@
 //! library exist. It never downloads models or reads secrets from project
 //! files.
 
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vantyx::ai::{
@@ -26,6 +26,14 @@ Usage:
   vantyx ai embed [options] [text...]
                                    Create embeddings; mock/hash is offline and
                                    deterministic, openai uses /v1/embeddings
+  vantyx ai index --root <dir> --out <file> [options]
+                                   Chunk documents, embed them, and save a
+                                   local retrieval index with line citations
+  vantyx ai search --index <file> --query <text> [options]
+                                   Search a saved index (lexical, semantic, or
+                                   hybrid) and print cited chunks
+  vantyx ai eval --index <file> --fixture <file> [options]
+                                   Score retrieval against labelled queries
   vantyx ai tokens [text]          Estimate tokens (not a model tokenizer)
 
 Options:
@@ -44,6 +52,19 @@ Options:
   --schema <path|json>    JSON Schema for `extract` (file path or inline object)
   --repair-attempts <n>   Repair attempts after invalid output (0-3; default 1)
   --response <text>       Offline mock response for `extract`; may be repeated
+  --root <dir>            Document root for `index`
+  --out <file>            Output index path for `index`
+  --index <file>          Index path for `search` and `eval`
+  --query <text>          Search query for `search` (or positional text)
+  --source-prefix <path>  Only search chunks whose relative source starts with this path
+  --fixture <file>        Evaluation fixture for `eval`
+  --mode <name>           lexical, semantic, or hybrid (default: inferred)
+  --top-k <n>             Results or evaluation depth, 1 to 100
+  --chunk-chars <n>       Maximum characters per chunk (default 900)
+  --overlap-chars <n>     Chunk overlap in characters (default 120)
+  --ext <ext>             Indexed extension; repeat or comma-separate
+  --stream                Print OpenAI-compatible text deltas as they arrive
+                          (not compatible with --json)
   --json                  Print the response as JSON
   -                       Read the prompt from standard input
   -h, --help              Show this help
@@ -75,6 +96,18 @@ struct Options {
     schema: Option<String>,
     repair_attempts: Option<usize>,
     responses: Vec<String>,
+    root: Option<PathBuf>,
+    out: Option<PathBuf>,
+    index: Option<PathBuf>,
+    query: Option<String>,
+    source_prefix: Option<String>,
+    fixture: Option<PathBuf>,
+    mode: Option<String>,
+    top_k: Option<usize>,
+    chunk_chars: Option<usize>,
+    overlap_chars: Option<usize>,
+    extensions: Vec<String>,
+    stream: bool,
     json: bool,
     prompt_stdin: bool,
     help: bool,
@@ -97,6 +130,9 @@ pub fn run(args: &[String]) -> i32 {
         "chat" => chat(rest),
         "extract" => extract_command(rest),
         "embed" => embed(rest),
+        "index" => rag_index(rest),
+        "search" => rag_search(rest),
+        "eval" => rag_eval(rest),
         "tokens" => tokens(rest),
         other => {
             eprintln!("error: unknown `vantyx ai` command `{other}`");
@@ -314,6 +350,17 @@ fn chat(args: &[String]) -> i32 {
         Ok(messages) => messages,
         Err(code) => return code,
     };
+    if options.stream && options.json {
+        eprintln!("error: `--stream` and `--json` cannot be combined");
+        eprintln!("help: use `--stream` for live text, or `--json` for one final object");
+        return 64;
+    }
+    if options.stream && provider_name != "openai" {
+        eprintln!(
+            "error: provider `{provider_name}` does not support streaming; use --provider openai"
+        );
+        return 64;
+    }
 
     let provider = match build_provider(&config, &provider_name, &model) {
         Ok(provider) => provider,
@@ -333,9 +380,25 @@ fn chat(args: &[String]) -> i32 {
         .metrics
         .as_ref()
         .map_or_else(MetricsSink::disabled, MetricsSink::file);
-    match provider.chat(&request, &mut budget) {
+    let mut wrote_delta = false;
+    let result = if options.stream {
+        provider.chat_stream(&request, &mut budget, &mut |delta| {
+            print!("{delta}");
+            let _ = io::stdout().flush();
+            wrote_delta = true;
+        })
+    } else {
+        provider.chat(&request, &mut budget)
+    };
+    match result {
         Ok(response) => {
-            if options.json {
+            if options.stream {
+                if wrote_delta {
+                    println!();
+                } else {
+                    println!("(empty response)");
+                }
+            } else if options.json {
                 println!("{}", response.to_json());
             } else {
                 let text = response.message.text_content();
@@ -618,6 +681,579 @@ fn embed(args: &[String]) -> i32 {
     }
 }
 
+fn rag_index(args: &[String]) -> i32 {
+    let options = match parse_options(args) {
+        Ok(options) => options,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return 64;
+        }
+    };
+    if options.help {
+        print!("{AI_USAGE}");
+        return 0;
+    }
+    if !options.positional.is_empty() {
+        eprintln!("error: `vantyx ai index` takes flags only; use --root and --out");
+        return 64;
+    }
+    if options.metrics.is_some() {
+        eprintln!("error: --metrics is not supported by `vantyx ai index` yet");
+        return 64;
+    }
+    if options.source_prefix.is_some() {
+        eprintln!("error: --source-prefix is only supported by `vantyx ai search`");
+        return 64;
+    }
+    let Some(root) = options.root.as_ref() else {
+        eprintln!("error: `vantyx ai index` requires --root <dir>");
+        return 64;
+    };
+    let Some(out) = options.out.as_ref() else {
+        eprintln!("error: `vantyx ai index` requires --out <file>");
+        return 64;
+    };
+    let build_mode = match options.mode.as_deref() {
+        None | Some("semantic") => ai::SearchMode::Semantic,
+        Some("lexical") => ai::SearchMode::Lexical,
+        Some("hybrid") => {
+            eprintln!("error: build an index with --mode semantic or --mode lexical");
+            eprintln!("help: hybrid is a search mode; it needs stored vectors");
+            return 64;
+        }
+        Some(other) => {
+            eprintln!("error: unknown index mode `{other}`; expected semantic or lexical");
+            return 64;
+        }
+    };
+    let chunk_options = match ai::ChunkOptions::new(
+        options
+            .chunk_chars
+            .unwrap_or(ai::rag::DEFAULT_CHUNK_CHARS),
+        options
+            .overlap_chars
+            .unwrap_or(ai::rag::DEFAULT_OVERLAP_CHARS),
+    ) {
+        Ok(chunk_options) => chunk_options,
+        Err(error) => return report_error(&error),
+    };
+    let mut ingest = ai::IngestOptions::default();
+    if !options.extensions.is_empty() {
+        ingest.extensions = options.extensions.clone();
+    }
+    let documents = match ai::collect_documents(root, &ingest) {
+        Ok(documents) => documents,
+        Err(error) => return report_error(&error),
+    };
+    let mut chunks = Vec::new();
+    for document in &documents {
+        match ai::chunk_document(&document.source, &document.text, &chunk_options) {
+            Ok(mut document_chunks) => chunks.append(&mut document_chunks),
+            Err(error) => return report_error(&error),
+        }
+    }
+
+    let config = resolve_config(&options);
+    let provider_name = options
+        .provider
+        .clone()
+        .unwrap_or_else(|| config.provider.clone());
+    let dimensions = options.dimensions;
+    let hash_dimensions = dimensions.unwrap_or(DEFAULT_HASH_DIMENSIONS);
+    let model = options.model.clone().unwrap_or_else(|| {
+        if provider_name == "hash" || provider_name == "mock" {
+            format!("hash-embedding-{hash_dimensions}")
+        } else {
+            config.model.clone()
+        }
+    });
+
+    if build_mode == ai::SearchMode::Lexical {
+        let index = match ai::RagIndex::lexical("lexical", "none", chunks) {
+            Ok(index) => index,
+            Err(error) => return report_error(&error),
+        };
+        if let Err(error) = index.save(out) {
+            return report_error(&error);
+        }
+        let bytes = std::fs::metadata(out).map(|metadata| metadata.len()).unwrap_or(0);
+        if options.json {
+            println!(
+                "{}",
+                ai::Json::object([
+                    ("index", ai::Json::from(out.to_string_lossy().to_string())),
+                    ("mode", ai::Json::from("lexical")),
+                    ("provider", ai::Json::from("lexical")),
+                    ("model", ai::Json::from("none")),
+                    ("dimensions", ai::Json::from(0_u64)),
+                    (
+                        "documents",
+                        ai::Json::from(u64::try_from(documents.len()).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "chunks",
+                        ai::Json::from(u64::try_from(index.len()).unwrap_or(u64::MAX)),
+                    ),
+                    ("vectors", ai::Json::from(0_u64)),
+                    ("bytes", ai::Json::from(bytes)),
+                ])
+            );
+        } else {
+            println!("index: {}", out.display());
+            println!("mode: lexical (BM25 only; no embedding model called)");
+            println!("documents: {}", documents.len());
+            println!("chunks: {}", index.len());
+            println!("bytes: {bytes}");
+            println!("note: lexical indexes cannot serve semantic or hybrid search");
+        }
+        return 0;
+    }
+
+    if chunks.is_empty() {
+        eprintln!("error: no indexable documents were found under `{}`", root.display());
+        eprintln!("help: check --ext and the file contents, or use --mode lexical for an empty index");
+        return 64;
+    }
+    let provider = match build_embedding_provider(&config, &provider_name, &model, hash_dimensions) {
+        Ok(provider) => provider,
+        Err(error) => return report_error(&error),
+    };
+    let mut budget = Budget::default();
+    let (vectors, usage) = match ai::embed_chunks(
+        provider.as_ref(),
+        &model,
+        &chunks,
+        dimensions,
+        &mut budget,
+    ) {
+        Ok(result) => result,
+        Err(error) => return report_error(&error),
+    };
+    let actual_dimensions = vectors.first().map_or(hash_dimensions, ai::Vector::len);
+    let index = match ai::RagIndex::new(
+        provider.id(),
+        &model,
+        actual_dimensions,
+        chunks,
+        vectors,
+    ) {
+        Ok(index) => index,
+        Err(error) => return report_error(&error),
+    };
+    if let Err(error) = index.save(out) {
+        return report_error(&error);
+    }
+    let bytes = std::fs::metadata(out).map(|metadata| metadata.len()).unwrap_or(0);
+    if options.json {
+        println!(
+            "{}",
+            ai::Json::object([
+                ("index", ai::Json::from(out.to_string_lossy().to_string())),
+                ("mode", ai::Json::from("semantic")),
+                ("provider", ai::Json::from(index.provider().to_string())),
+                ("model", ai::Json::from(index.model().to_string())),
+                (
+                    "dimensions",
+                    ai::Json::from(u64::try_from(index.dimensions()).unwrap_or(u64::MAX)),
+                ),
+                (
+                    "documents",
+                    ai::Json::from(u64::try_from(documents.len()).unwrap_or(u64::MAX)),
+                ),
+                (
+                    "chunks",
+                    ai::Json::from(u64::try_from(index.len()).unwrap_or(u64::MAX)),
+                ),
+                (
+                    "vectors",
+                    ai::Json::from(u64::try_from(index.len()).unwrap_or(u64::MAX)),
+                ),
+                ("bytes", ai::Json::from(bytes)),
+                (
+                    "usage",
+                    ai::Json::object([
+                        (
+                            "prompt_tokens",
+                            ai::Json::from(usage.prompt_tokens),
+                        ),
+                        ("total_tokens", ai::Json::from(usage.total_tokens)),
+                    ]),
+                ),
+            ])
+        );
+    } else {
+        println!("index: {}", out.display());
+        println!("mode: semantic (stored vectors enable semantic and hybrid search)");
+        println!("provider: {}", index.provider());
+        println!("model: {}", index.model());
+        println!("dimensions: {}", index.dimensions());
+        println!("documents: {}", documents.len());
+        println!("chunks: {}", index.len());
+        println!("vectors: {}", index.len());
+        println!("bytes: {bytes}");
+        println!(
+            "usage: prompt_tokens={} total_tokens={}",
+            usage.prompt_tokens, usage.total_tokens
+        );
+        if provider.id() == "hash" {
+            println!(
+                "note: the hash provider is a deterministic lexical feature baseline, not a semantic model"
+            );
+        }
+    }
+    0
+}
+
+fn rag_search(args: &[String]) -> i32 {
+    let options = match parse_options(args) {
+        Ok(options) => options,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return 64;
+        }
+    };
+    if options.help {
+        print!("{AI_USAGE}");
+        return 0;
+    }
+    if options.metrics.is_some() {
+        eprintln!("error: --metrics is not supported by `vantyx ai search` yet");
+        return 64;
+    }
+    let Some(index_path) = options.index.as_ref() else {
+        eprintln!("error: `vantyx ai search` requires --index <file>");
+        return 64;
+    };
+    let index = match ai::RagIndex::load(index_path) {
+        Ok(index) => index,
+        Err(error) => return report_error(&error),
+    };
+    let query = match options.query.clone() {
+        Some(query) => query,
+        None if !options.positional.is_empty() => options.positional.join(" "),
+        None => {
+            eprintln!("error: `vantyx ai search` requires --query <text>");
+            return 64;
+        }
+    };
+    if query.trim().is_empty() {
+        eprintln!("error: search query must not be empty");
+        return 64;
+    }
+    let mode = match search_mode(options.mode.as_deref(), &index) {
+        Ok(mode) => mode,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return 64;
+        }
+    };
+    let top_k = options.top_k.unwrap_or(5);
+    let config = resolve_config(&options);
+    let query_vector = if mode == ai::SearchMode::Lexical {
+        None
+    } else {
+        let provider_name = options
+            .provider
+            .clone()
+            .unwrap_or_else(|| index_provider_name(&index).to_string());
+        let model = options
+            .model
+            .clone()
+            .unwrap_or_else(|| index.model().to_string());
+        let dimensions = options.dimensions.unwrap_or(index.dimensions());
+        let provider = match build_embedding_provider(&config, &provider_name, &model, dimensions) {
+            Ok(provider) => provider,
+            Err(error) => return report_error(&error),
+        };
+        if options.provider.is_some() && provider.id() != index.provider() {
+            eprintln!(
+                "warning: query provider `{}` differs from index provider `{}`",
+                provider.id(),
+                index.provider()
+            );
+        }
+        let mut budget = Budget::default();
+        match ai::embed_query(provider.as_ref(), &model, &query, options.dimensions, &mut budget) {
+            Ok(vector) => Some(vector),
+            Err(error) => return report_error(&error),
+        }
+    };
+    let hits = match index.search_with_source(
+        &query,
+        query_vector.as_ref(),
+        mode,
+        top_k,
+        options.source_prefix.as_deref(),
+    ) {
+        Ok(hits) => hits,
+        Err(error) => return report_error(&error),
+    };
+    if options.json {
+        let entries = hits
+            .iter()
+            .map(|hit| {
+                ai::Json::object([
+                    ("id", ai::Json::from(hit.id.clone())),
+                    ("source", ai::Json::from(hit.source.clone())),
+                    (
+                        "start_line",
+                        ai::Json::from(u64::try_from(hit.start_line).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "end_line",
+                        ai::Json::from(u64::try_from(hit.end_line).unwrap_or(u64::MAX)),
+                    ),
+                    ("score", ai::Json::from(f64::from(hit.score))),
+                    (
+                        "lexical_score",
+                        hit.lexical_score
+                            .map_or(ai::Json::Null, |score| ai::Json::from(f64::from(score))),
+                    ),
+                    (
+                        "semantic_score",
+                        hit.semantic_score
+                            .map_or(ai::Json::Null, |score| ai::Json::from(f64::from(score))),
+                    ),
+                    (
+                        "lexical_rank",
+                        hit.lexical_rank
+                            .map_or(ai::Json::Null, |rank| ai::Json::from(rank as u64)),
+                    ),
+                    (
+                        "semantic_rank",
+                        hit.semantic_rank
+                            .map_or(ai::Json::Null, |rank| ai::Json::from(rank as u64)),
+                    ),
+                    ("text", ai::Json::from(hit.text.clone())),
+                ])
+            })
+            .collect();
+        println!(
+            "{}",
+            ai::Json::object([
+                (
+                    "index",
+                    ai::Json::from(index_path.to_string_lossy().to_string()),
+                ),
+                ("mode", ai::Json::from(mode.as_str())),
+                ("query", ai::Json::from(query)),
+                ("hits", ai::Json::Array(entries)),
+            ])
+        );
+        return 0;
+    }
+    println!("index: {}", index_path.display());
+    println!("mode: {}", mode.as_str());
+    println!("query: {query}");
+    println!("hits: {}", hits.len());
+    for (position, hit) in hits.iter().enumerate() {
+        let excerpt = hit
+            .text
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(160)
+            .collect::<String>();
+        println!(
+            "[{}] {}:{}-{} score={:.6}",
+            position + 1,
+            hit.source,
+            hit.start_line,
+            hit.end_line,
+            hit.score
+        );
+        println!("    {excerpt}");
+    }
+    0
+}
+
+fn rag_eval(args: &[String]) -> i32 {
+    let options = match parse_options(args) {
+        Ok(options) => options,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return 64;
+        }
+    };
+    if options.help {
+        print!("{AI_USAGE}");
+        return 0;
+    }
+    if options.metrics.is_some() {
+        eprintln!("error: --metrics is not supported by `vantyx ai eval` yet");
+        return 64;
+    }
+    if options.source_prefix.is_some() {
+        eprintln!("error: --source-prefix is only supported by `vantyx ai search`");
+        return 64;
+    }
+    let Some(index_path) = options.index.as_ref() else {
+        eprintln!("error: `vantyx ai eval` requires --index <file>");
+        return 64;
+    };
+    let Some(fixture_path) = options.fixture.as_ref() else {
+        eprintln!("error: `vantyx ai eval` requires --fixture <file>");
+        return 64;
+    };
+    let index = match ai::RagIndex::load(index_path) {
+        Ok(index) => index,
+        Err(error) => return report_error(&error),
+    };
+    let metadata = match std::fs::metadata(fixture_path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            eprintln!(
+                "error: cannot read fixture `{}`: {error}",
+                fixture_path.display()
+            );
+            return 1;
+        }
+    };
+    if metadata.len() > ai::rag::MAX_INDEX_BYTES as u64 {
+        eprintln!(
+            "error: fixture `{}` is {} bytes; the limit is {}",
+            fixture_path.display(),
+            metadata.len(),
+            ai::rag::MAX_INDEX_BYTES
+        );
+        return 64;
+    }
+    let text = match std::fs::read_to_string(fixture_path) {
+        Ok(text) => text,
+        Err(error) => {
+            eprintln!(
+                "error: cannot read fixture `{}`: {error}",
+                fixture_path.display()
+            );
+            return 1;
+        }
+    };
+    let value = match ai::parse(&text) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!(
+                "error: fixture `{}` is not valid JSON: {error}",
+                fixture_path.display()
+            );
+            return 64;
+        }
+    };
+    let queries = match ai::parse_eval_queries(&value) {
+        Ok(queries) => queries,
+        Err(error) => return report_error(&error),
+    };
+    let mode = match search_mode(options.mode.as_deref(), &index) {
+        Ok(mode) => mode,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return 64;
+        }
+    };
+    let k = options.top_k.unwrap_or(5);
+    let config = resolve_config(&options);
+    let mut budget = Budget::default();
+    let provider = if mode == ai::SearchMode::Lexical {
+        None
+    } else {
+        let provider_name = options
+            .provider
+            .clone()
+            .unwrap_or_else(|| index_provider_name(&index).to_string());
+        let model = options
+            .model
+            .clone()
+            .unwrap_or_else(|| index.model().to_string());
+        let dimensions = options.dimensions.unwrap_or(index.dimensions());
+        match build_embedding_provider(&config, &provider_name, &model, dimensions) {
+            Ok(provider) => Some(provider),
+            Err(error) => return report_error(&error),
+        }
+    };
+    let model = options
+        .model
+        .clone()
+        .unwrap_or_else(|| index.model().to_string());
+    let mut encoder = |query: &str| -> Result<ai::Vector, ai::AiError> {
+        let Some(provider) = provider.as_ref() else {
+            return Err(ai::AiError::new(
+                ai::provider::AI_E_INVALID_REQUEST,
+                "lexical evaluation must not embed queries",
+            ));
+        };
+        ai::embed_query(provider.as_ref(), &model, query, options.dimensions, &mut budget)
+    };
+    let report = match ai::evaluate(&index, &queries, mode, k, &mut encoder) {
+        Ok(report) => report,
+        Err(error) => return report_error(&error),
+    };
+    if options.json {
+        println!("{}", report.to_json());
+    } else {
+        println!("mode: {}", report.mode.as_str());
+        println!("k: {}", report.k);
+        println!("queries: {}", report.queries);
+        println!("recall_at_k: {:.4}", report.recall_at_k);
+        println!("precision_at_k: {:.4}", report.precision_at_k);
+        println!("mrr: {:.4}", report.mrr);
+        for result in &report.per_query {
+            println!(
+                "- {} | recall={:.4} precision={:.4} rr={:.4}",
+                result.query, result.recall_at_k, result.precision_at_k, result.reciprocal_rank
+            );
+        }
+        println!(
+            "note: retrieval metrics only; they do not prove that a generated answer is grounded"
+        );
+    }
+    0
+}
+
+fn search_mode(
+    requested: Option<&str>,
+    index: &ai::RagIndex,
+) -> Result<ai::SearchMode, String> {
+    let mode = match requested {
+        Some(name) => ai::SearchMode::parse(name)
+            .map_err(|error| format!("unknown search mode: {error}"))?,
+        None if index.has_vectors() => ai::SearchMode::Hybrid,
+        None => ai::SearchMode::Lexical,
+    };
+    if mode != ai::SearchMode::Lexical && !index.has_vectors() {
+        return Err(
+            "this index has no vectors; rebuild it without --mode lexical or use --mode lexical"
+                .to_string(),
+        );
+    }
+    Ok(mode)
+}
+
+fn index_provider_name(index: &ai::RagIndex) -> &str {
+    match index.provider() {
+        "lexical" | "none" => "hash",
+        name => name,
+    }
+}
+
+fn build_embedding_provider(
+    config: &AiConfig,
+    provider: &str,
+    model: &str,
+    dimensions: usize,
+) -> Result<Box<dyn Provider>, ai::AiError> {
+    match provider {
+        "mock" | "hash" => HashEmbeddingProvider::new(dimensions)
+            .map(|provider| Box::new(provider) as Box<dyn Provider>),
+        "openai" => Ok(Box::new(build_openai(config, model)?)),
+        other => Err(ai::AiError::new(
+            ai::provider::AI_E_CONFIG,
+            format!(
+                "unknown embedding provider `{other}`; expected mock, hash, or openai"
+            ),
+        )),
+    }
+}
+
 fn embedding_inputs(options: &Options) -> Result<Vec<String>, i32> {
     let inputs = if options.prompt_stdin {
         read_stdin_lines()?
@@ -893,6 +1529,12 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
                 }
                 options.json = true;
             }
+            "--stream" => {
+                if inline.is_some() {
+                    return Err("--stream does not take a value".into());
+                }
+                options.stream = true;
+            }
             "--provider" => options.provider = Some(take_value(flag, inline, args, &mut index)?),
             "--model" => options.model = Some(take_value(flag, inline, args, &mut index)?),
             "--endpoint" => options.endpoint = Some(take_value(flag, inline, args, &mut index)?),
@@ -925,6 +1567,82 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             "--response" => options
                 .responses
                 .push(take_value(flag, inline, args, &mut index)?),
+            "--root" => options.root = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?)),
+            "--out" => options.out = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?)),
+            "--index" => {
+                options.index = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?));
+            }
+            "--query" => options.query = Some(take_value(flag, inline, args, &mut index)?),
+            "--source-prefix" => {
+                let value = take_value(flag, inline, args, &mut index)?;
+                if value.is_empty() {
+                    return Err("--source-prefix must not be empty".to_string());
+                }
+                options.source_prefix = Some(value);
+            }
+            "--fixture" => {
+                options.fixture = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?));
+            }
+            "--mode" => options.mode = Some(take_value(flag, inline, args, &mut index)?),
+            "--top-k" => {
+                let value = take_value(flag, inline, args, &mut index)?;
+                options.top_k = Some(
+                    value
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|value| (1..=ai::rag::MAX_TOP_K).contains(value))
+                        .ok_or_else(|| {
+                            format!(
+                                "--top-k requires an integer from 1 to {}",
+                                ai::rag::MAX_TOP_K
+                            )
+                        })?,
+                );
+            }
+            "--chunk-chars" => {
+                let value = take_value(flag, inline, args, &mut index)?;
+                options.chunk_chars = Some(
+                    value
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|value| {
+                            (ai::rag::MIN_CHUNK_CHARS..=ai::rag::MAX_CHUNK_CHARS)
+                                .contains(value)
+                        })
+                        .ok_or_else(|| {
+                            format!(
+                                "--chunk-chars requires an integer from {} to {}",
+                                ai::rag::MIN_CHUNK_CHARS, ai::rag::MAX_CHUNK_CHARS
+                            )
+                        })?,
+                );
+            }
+            "--overlap-chars" => {
+                let value = take_value(flag, inline, args, &mut index)?;
+                options.overlap_chars = Some(
+                    value
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|value| *value <= ai::rag::MAX_OVERLAP_CHARS)
+                        .ok_or_else(|| {
+                            format!(
+                                "--overlap-chars requires an integer from 0 to {}",
+                                ai::rag::MAX_OVERLAP_CHARS
+                            )
+                        })?,
+                );
+            }
+            "--ext" => {
+                for extension in take_value(flag, inline, args, &mut index)?.split(',') {
+                    let extension = extension.trim().trim_start_matches('.').to_ascii_lowercase();
+                    if extension.is_empty() || !extension.chars().all(|c| c.is_ascii_alphanumeric()) {
+                        return Err(format!(
+                            "--ext requires an alphanumeric extension, got `{extension}`"
+                        ));
+                    }
+                    options.extensions.push(extension);
+                }
+            }
             "--timeout-ms" => {
                 let value = take_value(flag, inline, args, &mut index)?;
                 options.timeout_ms = Some(
@@ -1032,6 +1750,14 @@ mod tests {
     }
 
     #[test]
+    fn parses_the_stream_flag() {
+        let options = parse_options(&args(&["--stream", "hello"])).unwrap();
+        assert!(options.stream);
+        assert_eq!(options.positional, vec!["hello"]);
+        assert!(parse_options(&args(&["--stream=true"])).is_err());
+    }
+
+    #[test]
     fn parses_embedding_dimensions() {
         let options = parse_options(&args(&[
             "--provider",
@@ -1083,8 +1809,11 @@ mod tests {
     fn capabilities_are_reported_conservatively() {
         let text = capabilities(&ProviderCapabilities::openai_compatible());
         assert!(text.contains("chat"));
-        assert!(!text.contains("streaming"));
+        assert!(text.contains("streaming"));
         assert!(text.contains("embeddings"));
+        let mock = capabilities(&ProviderCapabilities::mock());
+        assert!(mock.contains("chat"));
+        assert!(!mock.contains("streaming"));
         let hash = capabilities(&ProviderCapabilities::hash_embedding());
         assert!(hash.contains("embeddings"));
         assert!(!hash.contains("chat"));

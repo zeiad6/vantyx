@@ -7,7 +7,7 @@
 
 use super::budget::Budget;
 use super::embedding::Vector;
-use super::http::{HttpResponse, Transport};
+use super::http::{HttpResponse, StreamHandlers, Transport};
 use super::json::{self, Json};
 use super::provider::{
     AI_E_AUTH, AI_E_CONFIG, AI_E_JSON, AI_E_PROVIDER, AI_E_RATE_LIMIT, AiError, ChatRequest,
@@ -15,9 +15,11 @@ use super::provider::{
     Message, Provider, ProviderCapabilities, ResponseFormat, Role, ToolCall, Usage,
 };
 use super::redact;
+use super::sse::{SseEvent, SseParser};
 use super::tokens::{
     check_context_limit, estimate_embedding_tokens, estimate_request_tokens, estimate_tokens,
 };
+use std::cell::Cell;
 use std::time::Duration;
 
 pub struct OpenAiProvider {
@@ -108,19 +110,20 @@ impl OpenAiProvider {
     }
 
     fn status_error(&self, response: &HttpResponse) -> AiError {
-        let detail = redact::sanitize(&provider_detail(&response.body), &self.secrets(), 512);
+        self.status_error_body(response.status, &response.body)
+    }
+
+    fn status_error_body(&self, status: u16, body: &str) -> AiError {
+        let detail = redact::sanitize(&provider_detail(body), &self.secrets(), 512);
         let suffix = if detail.is_empty() {
             String::new()
         } else {
             format!(": {detail}")
         };
-        match response.status {
+        match status {
             401 | 403 => AiError::new(
                 AI_E_AUTH,
-                format!(
-                    "provider authentication failed (HTTP {}){suffix}",
-                    response.status
-                ),
+                format!("provider authentication failed (HTTP {status}){suffix}"),
             ),
             429 => AiError::retryable(
                 AI_E_RATE_LIMIT,
@@ -134,7 +137,7 @@ impl OpenAiProvider {
             ),
             500..=599 => AiError::retryable(
                 AI_E_PROVIDER,
-                format!("provider failed with HTTP {}{suffix}", response.status),
+                format!("provider failed with HTTP {status}{suffix}"),
             ),
             status => AiError::new(
                 AI_E_PROVIDER,
@@ -186,6 +189,118 @@ impl OpenAiProvider {
     }
 }
 
+struct ChatStreamState<'a> {
+    model: String,
+    id: Option<String>,
+    text: String,
+    finish_reason: FinishReason,
+    usage: Option<Usage>,
+    done: bool,
+    on_delta: &'a mut dyn FnMut(&str),
+    secrets: &'a [&'a str],
+}
+
+impl<'a> ChatStreamState<'a> {
+    fn new(
+        model: &str,
+        on_delta: &'a mut dyn FnMut(&str),
+        secrets: &'a [&'a str],
+    ) -> Self {
+        Self {
+            model: model.to_string(),
+            id: None,
+            text: String::new(),
+            finish_reason: FinishReason::Stop,
+            usage: None,
+            done: false,
+            on_delta,
+            secrets,
+        }
+    }
+
+    fn handle(&mut self, event: SseEvent) -> Result<(), AiError> {
+        if self.done {
+            return Ok(());
+        }
+        let data = event.data.trim();
+        if data.is_empty() {
+            return Ok(());
+        }
+        if data == "[DONE]" {
+            self.done = true;
+            return Ok(());
+        }
+        let value = json::parse(data).map_err(|error| {
+            AiError::new(
+                AI_E_JSON,
+                format!("provider stream frame is invalid JSON: {error}"),
+            )
+        })?;
+        if let Some(error) = value.get("error") {
+            let detail = redact::sanitize(
+                &provider_detail(&error.to_compact_string()),
+                self.secrets,
+                512,
+            );
+            return Err(AiError::new(
+                AI_E_PROVIDER,
+                format!("provider error: {detail}"),
+            ));
+        }
+        if let Some(id) = value.get("id").and_then(Json::as_str) {
+            self.id = Some(id.to_string());
+        }
+        if let Some(model) = value.get("model").and_then(Json::as_str) {
+            self.model = model.to_string();
+        }
+        if let Some(usage) = value.get("usage").filter(|usage| !usage.is_null()) {
+            let prompt_tokens = usage
+                .get("prompt_tokens")
+                .and_then(Json::as_u64)
+                .unwrap_or(0);
+            let completion_tokens = usage
+                .get("completion_tokens")
+                .and_then(Json::as_u64)
+                .unwrap_or(0);
+            let total_tokens = usage
+                .get("total_tokens")
+                .and_then(Json::as_u64)
+                .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
+            self.usage = Some(Usage {
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            });
+        }
+        let Some(choice) = value
+            .get("choices")
+            .and_then(Json::as_array)
+            .and_then(|choices| choices.first())
+        else {
+            return Ok(());
+        };
+        if let Some(reason) = choice.get("finish_reason").and_then(Json::as_str) {
+            self.finish_reason = FinishReason::from_wire(Some(reason));
+        }
+        let Some(delta) = choice.get("delta") else {
+            return Ok(());
+        };
+        if delta
+            .get("tool_calls")
+            .and_then(Json::as_array)
+            .is_some_and(|calls| !calls.is_empty())
+        {
+            return Err(AiError::unsupported("streaming tool calls", "openai"));
+        }
+        let content = parse_content(delta.get("content"));
+        if !content.is_empty() {
+            self.text.push_str(&content);
+            (self.on_delta)(&content);
+        }
+        Ok(())
+    }
+}
+
 impl Provider for OpenAiProvider {
     fn id(&self) -> &str {
         &self.id
@@ -202,7 +317,7 @@ impl Provider for OpenAiProvider {
         let prompt_estimate = estimate_request_tokens(request) as u64;
         budget.check_tokens(prompt_estimate)?;
 
-        let body = build_request_json(request).to_compact_string();
+        let body = build_request_json(request, false).to_compact_string();
         let timeout = request.timeout_ms.map(Duration::from_millis);
         let response = self.transport.execute_with_timeout(
             "POST",
@@ -282,6 +397,125 @@ impl Provider for OpenAiProvider {
             finish_reason: FinishReason::from_wire(
                 choice.get("finish_reason").and_then(Json::as_str),
             ),
+            usage: Usage {
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            },
+        })
+    }
+
+    fn chat_stream(
+        &self,
+        request: &ChatRequest,
+        budget: &mut Budget,
+        on_delta: &mut dyn FnMut(&str),
+    ) -> Result<ChatResponse, AiError> {
+        request.validate()?;
+        self.check_capabilities(request)?;
+        if !self.capabilities.streaming {
+            return Err(AiError::unsupported("streaming", &self.id));
+        }
+        if !request.tools.is_empty() {
+            return Err(AiError::unsupported("streaming tool calls", &self.id));
+        }
+        check_context_limit(request, self.capabilities.max_context_tokens)?;
+        let prompt_estimate = estimate_request_tokens(request) as u64;
+        budget.check_tokens(prompt_estimate)?;
+
+        let body = build_request_json(request, true).to_compact_string();
+        let timeout = request.timeout_ms.map(Duration::from_millis);
+        let mut headers = self.headers();
+        headers.retain(|(name, _)| !name.eq_ignore_ascii_case("accept"));
+        headers.push(("Accept".into(), "text/event-stream".into()));
+
+        let status = Cell::new(0_u16);
+        let failed = Cell::new(false);
+        let mut error_body = String::new();
+        let mut parser = SseParser::default();
+        let secrets = self.secrets();
+        let mut state = ChatStreamState::new(&request.model, on_delta, &secrets);
+        let mut on_start = |response_status: u16, _headers: &[(String, String)]| {
+            status.set(response_status);
+            failed.set(!(200..300).contains(&response_status));
+            Ok(())
+        };
+        let mut on_chunk = |chunk: &[u8]| {
+            if failed.get() {
+                if error_body.len() < 64 * 1024 {
+                    let remaining = 64 * 1024 - error_body.len();
+                    let take = remaining.min(chunk.len());
+                    error_body.push_str(&String::from_utf8_lossy(&chunk[..take]));
+                }
+                return Ok(());
+            }
+            let events = parser.push_bytes(chunk).map_err(|error| {
+                AiError::new(
+                    AI_E_PROVIDER,
+                    format!("provider event stream is invalid: {error}"),
+                )
+            })?;
+            for event in events {
+                state.handle(event)?;
+            }
+            Ok(())
+        };
+        let mut handlers = StreamHandlers {
+            on_start: &mut on_start,
+            on_chunk: &mut on_chunk,
+        };
+        self.transport.stream(
+            "POST",
+            &chat_url(&self.base_url),
+            &headers,
+            Some(&body),
+            timeout,
+            &mut handlers,
+        )?;
+        if failed.get() {
+            return Err(self.status_error_body(status.get(), &error_body));
+        }
+        let events = parser.finish().map_err(|error| {
+            AiError::new(
+                AI_E_PROVIDER,
+                format!("provider event stream is invalid: {error}"),
+            )
+        })?;
+        for event in events {
+            state.handle(event)?;
+        }
+        let text = state.text;
+        let prompt_tokens = state
+            .usage
+            .as_ref()
+            .map_or(prompt_estimate, |usage| usage.prompt_tokens);
+        let completion_tokens = state
+            .usage
+            .as_ref()
+            .map_or_else(|| estimate_tokens(&text) as u64, |usage| usage.completion_tokens);
+        let total_tokens = state
+            .usage
+            .as_ref()
+            .map_or_else(
+                || prompt_tokens.saturating_add(completion_tokens),
+                |usage| usage.total_tokens,
+            );
+        budget.record_tokens(total_tokens)?;
+        Ok(ChatResponse {
+            id: state.id,
+            model: state.model,
+            message: Message {
+                role: Role::Assistant,
+                content: if text.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![ContentPart::text(text)]
+                },
+                name: None,
+                tool_call_id: None,
+                tool_calls: Vec::new(),
+            },
+            finish_reason: state.finish_reason,
             usage: Usage {
                 prompt_tokens,
                 completion_tokens,
@@ -502,7 +736,7 @@ fn build_embedding_request_json(request: &EmbeddingRequest) -> Json {
     Json::object(entries)
 }
 
-fn build_request_json(request: &ChatRequest) -> Json {
+fn build_request_json(request: &ChatRequest, stream: bool) -> Json {
     let mut entries: Vec<(&str, Json)> = Vec::new();
     entries.push(("model", Json::from(request.model.clone())));
     entries.push((
@@ -575,6 +809,13 @@ fn build_request_json(request: &ChatRequest) -> Json {
         if let Some(value) = value {
             entries.push(("response_format", value));
         }
+    }
+    if stream {
+        entries.push(("stream", Json::Bool(true)));
+        entries.push((
+            "stream_options",
+            Json::object([("include_usage", Json::Bool(true))]),
+        ));
     }
     Json::object(entries)
 }
@@ -811,6 +1052,81 @@ mod tests {
         }
     }
 
+    struct StreamStubTransport {
+        status: u16,
+        chunks: Vec<Vec<u8>>,
+        captured: Capture,
+    }
+
+    impl StreamStubTransport {
+        fn new(status: u16, chunks: Vec<Vec<u8>>) -> (Self, Capture) {
+            let captured = Rc::new(RefCell::new(Vec::new()));
+            (
+                Self {
+                    status,
+                    chunks,
+                    captured: Rc::clone(&captured),
+                },
+                captured,
+            )
+        }
+    }
+
+    impl Transport for StreamStubTransport {
+        fn execute(
+            &self,
+            _method: &str,
+            _url: &str,
+            _headers: &[(String, String)],
+            _body: Option<&str>,
+        ) -> Result<HttpResponse, AiError> {
+            Ok(HttpResponse {
+                status: self.status,
+                headers: Vec::new(),
+                body: String::new(),
+            })
+        }
+
+        fn stream(
+            &self,
+            method: &str,
+            url: &str,
+            headers: &[(String, String)],
+            body: Option<&str>,
+            timeout: Option<Duration>,
+            handlers: &mut StreamHandlers<'_>,
+        ) -> Result<(), AiError> {
+            self.captured.borrow_mut().push((
+                method.to_string(),
+                url.to_string(),
+                headers.to_vec(),
+                body.map(ToString::to_string),
+                timeout,
+            ));
+            (handlers.on_start)(self.status, &[])?;
+            for chunk in &self.chunks {
+                (handlers.on_chunk)(chunk)?;
+            }
+            Ok(())
+        }
+    }
+
+    fn stream_provider(status: u16, chunks: Vec<Vec<u8>>) -> (OpenAiProvider, Capture) {
+        let (transport, capture) = StreamStubTransport::new(status, chunks);
+        (
+            OpenAiProvider::new(
+                "http://127.0.0.1:11434/v1",
+                Some("sk-secret".into()),
+                Box::new(transport),
+            ),
+            capture,
+        )
+    }
+
+    fn sse(data: &str) -> Vec<u8> {
+        format!("data: {data}\n\n").into_bytes()
+    }
+
     fn response_body() -> String {
         r#"{"id":"chat-1","model":"test-model","choices":[{"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#.to_string()
     }
@@ -862,6 +1178,190 @@ mod tests {
         assert_eq!(body.get("temperature").unwrap().as_f64(), Some(0.2));
         assert_eq!(body.get("max_tokens").unwrap().as_u64(), Some(64));
         assert!(body.get("timeout_ms").is_none());
+        assert!(body.get("stream").is_none());
+    }
+
+    #[test]
+    fn streams_text_deltas_and_usage() {
+        let (provider, capture) = stream_provider(
+            200,
+            vec![
+                sse(r#"{"id":"chat-9","model":"test-model","choices":[{"delta":{"role":"assistant","content":"hel"},"finish_reason":null}]}"#),
+                sse(r#"{"choices":[{"delta":{"content":"lo"},"finish_reason":null}]}"#),
+                sse(r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#),
+                sse(r#"{"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}"#),
+                sse("[DONE]"),
+            ],
+        );
+        let mut budget = Budget::default();
+        let mut request = ChatRequest::new("test-model", vec![Message::user("hi")]);
+        request.timeout_ms = Some(1500);
+        let mut deltas = Vec::new();
+        let response = provider
+            .chat_stream(&request, &mut budget, &mut |delta| {
+                deltas.push(delta.to_string());
+            })
+            .unwrap();
+        assert_eq!(deltas, vec!["hel", "lo"]);
+        assert_eq!(response.message.text_content(), "hello");
+        assert_eq!(response.id.as_deref(), Some("chat-9"));
+        assert_eq!(response.model, "test-model");
+        assert_eq!(response.finish_reason, FinishReason::Stop);
+        assert_eq!(response.usage.total_tokens, 9);
+        assert_eq!(budget.used_tokens(), 9);
+
+        let captured = capture.borrow();
+        assert_eq!(captured[0].0, "POST");
+        assert_eq!(captured[0].1, "http://127.0.0.1:11434/v1/chat/completions");
+        assert_eq!(captured[0].4, Some(Duration::from_millis(1500)));
+        assert!(
+            captured[0]
+                .2
+                .iter()
+                .any(|(name, value)| name == "Accept" && value == "text/event-stream")
+        );
+        let body = json::parse(captured[0].3.as_deref().unwrap()).unwrap();
+        assert_eq!(body.get("stream").unwrap().as_bool(), Some(true));
+        assert_eq!(
+            body.get("stream_options")
+                .unwrap()
+                .get("include_usage")
+                .unwrap()
+                .as_bool(),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn stream_preserves_utf8_split_across_chunks() {
+        let encoded = format!(
+            "data: {}\n\n",
+            r#"{"choices":[{"delta":{"content":"hé😀"},"finish_reason":"stop"}]}"#
+        )
+        .into_bytes();
+        let split = encoded
+            .iter()
+            .position(|byte| *byte == 0xC3)
+            .expect("é start byte")
+            + 1;
+        let (provider, _) = stream_provider(
+            200,
+            vec![encoded[..split].to_vec(), encoded[split..].to_vec()],
+        );
+        let mut budget = Budget::default();
+        let request = ChatRequest::new("m", vec![Message::user("hi")]);
+        let mut deltas = Vec::new();
+        let response = provider
+            .chat_stream(&request, &mut budget, &mut |delta| {
+                deltas.push(delta.to_string());
+            })
+            .unwrap();
+        assert_eq!(deltas, vec!["hé😀"]);
+        assert_eq!(response.message.text_content(), "hé😀");
+    }
+
+    #[test]
+    fn stream_ignores_frames_after_done() {
+        let (provider, _) = stream_provider(
+            200,
+            vec![
+                sse(r#"{"choices":[{"delta":{"content":"A"},"finish_reason":null}]}"#),
+                sse("[DONE]"),
+                sse(r#"{"choices":[{"delta":{"content":"B"},"finish_reason":null}]}"#),
+            ],
+        );
+        let mut budget = Budget::default();
+        let request = ChatRequest::new("m", vec![Message::user("hi")]);
+        let mut deltas = Vec::new();
+        let response = provider
+            .chat_stream(&request, &mut budget, &mut |delta| {
+                deltas.push(delta.to_string());
+            })
+            .unwrap();
+        assert_eq!(deltas, vec!["A"]);
+        assert_eq!(response.message.text_content(), "A");
+    }
+
+    #[test]
+    fn stream_redacts_error_frames() {
+        let (provider, _) = stream_provider(
+            200,
+            vec![sse(r#"{"error":{"message":"bad key sk-secret"}}"#)],
+        );
+        let mut budget = Budget::default();
+        let request = ChatRequest::new("m", vec![Message::user("hi")]);
+        let error = provider
+            .chat_stream(&request, &mut budget, &mut |_| {})
+            .unwrap_err();
+        assert_eq!(error.code, AI_E_PROVIDER);
+        assert!(error.message.contains("[REDACTED]"));
+        assert!(!error.message.contains("sk-secret"));
+    }
+
+    #[test]
+    fn stream_maps_http_errors() {
+        let (provider, _) = stream_provider(
+            429,
+            vec![br#"{"error":{"message":"slow down"}}"#.to_vec()],
+        );
+        let mut budget = Budget::default();
+        let request = ChatRequest::new("m", vec![Message::user("hi")]);
+        let error = provider
+            .chat_stream(&request, &mut budget, &mut |_| {})
+            .unwrap_err();
+        assert_eq!(error.code, AI_E_RATE_LIMIT);
+        assert!(error.retryable);
+    }
+
+    #[test]
+    fn stream_rejects_tools_and_tool_call_deltas() {
+        let (provider, capture) = stream_provider(200, Vec::new());
+        let mut budget = Budget::default();
+        let mut request = ChatRequest::new("m", vec![Message::user("hi")]);
+        request.tools.push(ToolSpec {
+            name: "word_count".into(),
+            description: "count words".into(),
+            parameters: Json::object([("type", Json::from("object"))]),
+        });
+        let error = provider
+            .chat_stream(&request, &mut budget, &mut |_| {})
+            .unwrap_err();
+        assert_eq!(error.code, AI_E_UNSUPPORTED);
+        assert!(capture.borrow().is_empty());
+
+        let (provider, _) = stream_provider(
+            200,
+            vec![sse(
+                r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"x","arguments":"{}"}}]},"finish_reason":null}]}"#,
+            )],
+        );
+        let request = ChatRequest::new("m", vec![Message::user("hi")]);
+        let error = provider
+            .chat_stream(&request, &mut budget, &mut |_| {})
+            .unwrap_err();
+        assert_eq!(error.code, AI_E_UNSUPPORTED);
+    }
+
+    #[test]
+    fn stream_estimates_usage_when_the_provider_omits_it() {
+        let (provider, _) = stream_provider(
+            200,
+            vec![sse(
+                r#"{"choices":[{"delta":{"content":"hello"},"finish_reason":"stop"}]}"#,
+            )],
+        );
+        let mut budget = Budget::default();
+        let request = ChatRequest::new("m", vec![Message::user("hi")]);
+        let response = provider
+            .chat_stream(&request, &mut budget, &mut |_| {})
+            .unwrap();
+        assert!(response.usage.prompt_tokens > 0);
+        assert!(response.usage.completion_tokens > 0);
+        assert_eq!(
+            response.usage.total_tokens,
+            response.usage.prompt_tokens + response.usage.completion_tokens
+        );
+        assert_eq!(budget.used_tokens(), response.usage.total_tokens);
     }
 
     #[test]

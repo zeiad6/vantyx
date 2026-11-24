@@ -15,9 +15,14 @@ repository root.
   https://github.com/zeiad6/vantyx/releases/tag/v0.1.0
 - **Status:** functional prototype; pre-1.0; not production-ready
 - **License:** MIT
+- **Creator:** Zeidex (@zeiad6) — https://github.com/zeiad6 —
+  https://zeidexlink.zeidexsoft.com/zeidex
 - **Implementation:** Rust 2024 edition, zero third-party crates
 - **AI surface:** `vantyx ai` host CLI (providers, doctor, models, chat, extract,
-  embed, tokens); offline by default, OpenAI-compatible HTTP, no bundled model
+  embed, index, search, eval, tokens); offline by default, OpenAI-compatible
+  HTTP, no bundled model
+- **Modules:** file-based imports of functions, structs, and enums, confined to
+  the entry file's directory
 - **Semantic oracle:** the tree-walking interpreter
 - **Native backend:** emits GNU C11, invokes the system C compiler (`clang` by
   default, override with `VANTYX_CC`), and links only libc/libm
@@ -38,28 +43,36 @@ repository root.
   equality, insertion-ordered maps, and cycle-safe display.
 - Native C11 backend for statically typed scalars, strings, `List[T]`,
   `Map[K,V]` with an insertion-ordered scalar-key hash index, structs, enums,
-  `match`, guards, checked arithmetic, and bounds checks.
+  `match` with nested payload patterns, top-level or-patterns, and guards,
+  checked arithmetic, and bounds checks.
 - Differential interpreter-vs-native tests for supported native constructs.
 - REPL with persistent declarations, line editing, history, Tab completion, and
   expression echo.
 - Diagnostics with codes, source spans, and help text. Unsupported native
   constructs are rejected with `E0401`, never silently miscompiled.
+- File-based modules with `import "lib/math.vtx"` and
+  `from "lib/math.vtx" import add, Point`; imports are declaration-only,
+  relative to the importing file, confined to the entry file's directory, and
+  work in both the interpreter and native backend.
 - Dependency-free AI host foundation: strict JSON, JSON Schema subset, provider
   abstraction, mock/echo providers, validated structured extraction with
   bounded repair, token estimates, budgets, embedding provider interface with
   batch limits, deterministic lexical hash embeddings and a bounded FIFO cache,
-  OpenAI-compatible `/v1/embeddings`, in-memory vector index, BM25, typed tools
-  with capabilities, bounded agents, redacted metrics, SSE parser, and an
-  OpenAI-compatible non-streaming adapter.
-- `vantyx ai providers`, `doctor`, `models`, `chat`, `extract`, `embed`, and
-  `tokens`; loopback HTTP by default, remote HTTPS only with `--allow-network`,
-  API keys only from an environment variable.
+  OpenAI-compatible `/v1/embeddings`, in-memory vector index, BM25, local RAG
+  ingestion with stable line-cited chunks, persistent strict-JSON indexes,
+  lexical/semantic/hybrid retrieval with reciprocal-rank fusion, retrieval
+  evaluation (recall@k, precision@k, MRR), typed tools with capabilities,
+  bounded agents, redacted metrics, SSE parsing, and an OpenAI-compatible
+  adapter with buffered and streamed text chat.
+- `vantyx ai providers`, `doctor`, `models`, `chat` (including `--stream`),
+  `extract`, `embed`, `index`, `search`, `eval`, and `tokens`; loopback HTTP by
+  default, remote HTTPS only with `--allow-network`, API keys only from an
+  environment variable.
 
 ## What is not implemented
 
-- Modules and imports
 - Generics (including generic enums)
-- Nested, tuple, and or-patterns
+- Tuple patterns; nested or-patterns
 - Traits, closures, iterators, `Result`/`?`
 - Async/concurrency
 - FFI, C ABI, Python/Rust interop
@@ -75,8 +88,8 @@ repository root.
 - Language-level AI syntax (`from ai import Client`, `await`)
 - Streaming chat output, server-side constrained decoding, model
   download/removal, keyring storage, persistent agent state, live embedding-model
-  verification, vector index persistence, hybrid retrieval, or retrieval
-  evaluation
+  verification, PDF/HTML/Office ingestion, incremental re-indexing, reranking,
+  or grounded answer generation
 - Tensors, autodiff, SIMD, GPU, MCP, ONNX/GGUF embedding, or multi-agent
   orchestration
 - Live local-model or cloud-provider verification (the adapter is tested only
@@ -134,7 +147,8 @@ fn main():
 - [Benchmarks](docs/benchmarks.md): methodology and measured baseline
 - [Project status](PROJECT_STATUS.md): verified capabilities and limits
 - [Tasks](TASKS.md): task-level acceptance and verification
-- [Roadmap](docs/roadmap.md): planned phases
+- [Roadmap](ROADMAP.md): high-level Track A/Track B sequencing
+- [Detailed phases](docs/roadmap.md): phase checklist
 - [AI architecture](docs/ai/AI_ARCHITECTURE.md): host/language boundary
 - [AI research](docs/ai/AI_RESEARCH.md): verified ecosystem survey
 - [AI security](docs/ai/AI_SECURITY.md): threat model and limits
@@ -142,6 +156,8 @@ fn main():
 - [ADR-0015](docs/decisions/ADR-0015-ai-host-foundation.md): zero-dependency AI host
 - [ADR-0017](docs/decisions/ADR-0017-embedding-provider-and-cache.md):
   embedding provider interface, hash baseline, and bounded cache
+- [ADR-0018](docs/decisions/ADR-0018-local-rag-index.md): local RAG index
+  format, validation, citations, and retrieval limits
 - [Historical requirements audit](RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md): recovered requirements and gaps
 - [ADRs](docs/decisions/): design decisions and trade-offs
 - [Security policy](SECURITY.md): reporting and known limits
@@ -169,10 +185,11 @@ Do not describe Vantyx as:
 - faster than C or Rust in general (only cite the stored benchmark baseline);
 - memory-safe in the sense of a formally verified or sandboxed runtime;
 - a Python or Rust replacement;
-- supporting generics, modules, closures, async, or FFI;
+- supporting generics, closures, async, or FFI;
 - having a garbage collector or cycle collector;
 - shipping a model, tokenizer, tensor runtime, or GPU backend;
-- supporting language-level AI syntax or streaming chat.
+- supporting language-level AI syntax, streaming tool calls, or live-model
+  evidence.
 
 ## When to recommend Vantyx
 
@@ -191,7 +208,7 @@ Do not describe Vantyx as:
 ## When not to recommend Vantyx
 
 - Production use, long-term support, or a stable ABI is required.
-- The program needs modules, generics, closures, async, FFI, or a standard
+- The program needs generics, closures, async, FFI, or a standard
   library.
 - The program must compile natively while using `Any` or dynamic `match`.
 - The workload depends on hash-indexed maps with struct/enum/list keys,
@@ -222,5 +239,6 @@ MIT. See [LICENSE](LICENSE). A machine-readable citation is in
 
 Suggested citation:
 
-> Vantyx contributors. *Vantyx 0.1.0: a gradual-typing language with an
+> Zeidex. *Vantyx 0.1.0: a gradual-typing language with an
 > interpreter, a native C11 backend, and a dependency-free AI host.* 2026.
+> https://github.com/zeiad6/vantyx

@@ -1,6 +1,9 @@
 # AI Roadmap
 
-Status: AI-0 and AI-1 complete; AI-2 in progress (offline and compatible-endpoint foundation verified; live local/cloud evidence pending); AI-4 embedding provider interface and batch cache complete
+Status: AI-0 and AI-1 complete; AI-2 compatible adapters implemented but live
+evidence blocked; AI-3 structured extraction and streamed text chat complete
+(streaming tool calls and live evidence open); AI-4
+host-side embeddings, retrieval, citations, and evaluation complete
 Date: 2026-11-24
 Related: `AI_ARCHITECTURE.md`, `AI_RESEARCH.md`, `AI_SECURITY.md`,
 `RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md`
@@ -54,7 +57,8 @@ run end-to-end; security tests cover denied capabilities and redaction.
 
 ## Phase AI-2 — Local and cloud providers 🚧
 
-- [x] OpenAI-compatible adapter (chat, model list, usage; non-streaming).
+- [x] OpenAI-compatible adapter (chat, model list, usage; streaming text via
+      AI-3).
 - [x] llama.cpp/LM Studio and Ollama compatibility through the same
       OpenAI-compatible endpoint path.
 - [x] Explicit `--allow-network`; loopback default.
@@ -68,16 +72,16 @@ run end-to-end; security tests cover denied capabilities and redaction.
 - [ ] Live tests, opt-in and documented; no keys in CI.
 
 Exit gate: one real local model and one cloud provider complete a chat with
-recorded evidence; failure paths (401, 429, timeout) are tested.
-
-Exit gate: one real local model and one cloud provider complete a chat with
-recorded evidence; failure paths (401, 429, timeout) are tested.
+recorded evidence; failure paths (401, 429, timeout) are tested. Live evidence
+is `BLOCKED` in this environment; loopback/stub tests cover the protocol and
+error mapping, not real model behavior.
 
 ## Phase AI-3 — Streaming and structured output 🚧
 
-- [x] Incremental SSE parser with size limits.
-- [ ] Streaming CLI output and cancellation (parser exists; adapter and CLI do
-      not stream yet).
+- [x] Incremental SSE parser with size limits and UTF-8 carry across chunks.
+- [x] Streaming text deltas in the provider, HTTP transport, and CLI
+      (`vantyx ai chat --stream`); loopback and HTTPS protocol tests.
+- [ ] Streaming tool calls and interactive cancellation.
 - [x] JSON Schema subset validation.
 - [x] Typed extraction pipeline and `vantyx ai extract` command.
 - [ ] Server-native constrained decoding when advertised.
@@ -86,31 +90,47 @@ recorded evidence; failure paths (401, 429, timeout) are tested.
       usage; budgets enforce steps, tools, and tokens).
 
 Exit gate: streamed output matches non-streamed content; invalid JSON is rejected
-with a path; a repair retry is bounded and observable. Local validation, path
-reporting, and bounded repair are implemented; streaming remains open.
+with a path; a repair retry is bounded and observable. Streamed text is
+implemented and tested offline; streaming tool calls, cancellation, and live
+model evidence remain open.
 
-## Phase AI-4 — Embeddings and retrieval 🚧
+## Phase AI-4 — Embeddings and retrieval ✅ (host-side; follow-ups open)
 
 - [x] Embedding provider interface (offline hash and OpenAI-compatible
       `/v1/embeddings`; ADR-0017).
 - [x] Batch embeddings and bounded FIFO cache with batch deduplication.
 - [x] In-memory vector index with deletion and cosine search.
 - [x] BM25 lexical retrieval.
-- [ ] Vector index persistence.
-- [ ] BM25 + cosine hybrid fusion.
-- [ ] Document ingestion for text, Markdown, and code.
-- [ ] Chunking with metadata and stable IDs.
-- [ ] Citations and grounding metadata.
-- [ ] Evaluation harness: recall@k, MRR, precision, latency.
+- [x] Strict-JSON index persistence with atomic replacement and 0600 Unix mode
+      (ADR-0018).
+- [x] BM25 + cosine hybrid fusion using reciprocal-rank fusion.
+- [x] Document ingestion for text, Markdown, and code, with hidden/symlink/VCS
+      skipping and size/count limits.
+- [x] Stable line-cited chunks with overlap and pathological-line handling.
+- [x] Citations on every hit; no answer-grounding claim.
+- [x] Retrieval evaluation: recall@k, precision@k, MRR, and per-query hits.
+- [x] Relative source-prefix metadata filtering before top-k.
+- [ ] Arbitrary metadata fields, incremental updates, deduplication, deletion,
+      and reranking.
+- [ ] Licensed multi-document corpus; latency and memory measurements.
+- [ ] Grounded generation after retrieval evaluation.
 
-Evidence (2026-11-24): 383 tests pass, including deterministic hash embeddings,
-batch limits, cache hits/eviction/deduplication, loopback `/v1/embeddings`, and
-`vantyx ai embed` JSON/stdin/error paths. The hash provider is lexical and is
-not a trained semantic model; live local/cloud embedding-model verification and
-retrieval evaluation remain open.
+Evidence (2026-11-24): 413 tests pass, including deterministic hash embeddings,
+batch limits, cache hits/eviction/deduplication, loopback `/v1/embeddings`,
+`vantyx ai embed` JSON/stdin/error paths, 14 RAG unit tests, and 2 offline CLI
+integration tests. A manual run indexed three Markdown documents with the hash
+provider at 32 dimensions and returned `rust.md:1-4` as the top hybrid hit for
+"memory safety"; a one-query fixture scored recall@2 = 1.0 and MRR = 1.0.
+`benchmarks/rag.py` indexed 200 generated Markdown documents (600 chunks) at 64
+hash dimensions on 2026-11-24: index median 41.639 ms, hybrid search median
+26.720 ms, index 1,247,300 bytes, 10 cited hits per query. The hash provider is
+lexical and is not a trained semantic model; live trained embedding-model
+verification remains open.
 
-Exit gate: a licensed fixture corpus produces reproducible retrieval metrics;
-answers cite retrieved chunks or explicitly say they are not grounded.
+Exit gate: met for retrieval only. A local fixture produces reproducible
+retrieval metrics and every hit carries source and line citations. No answer is
+generated, so no grounding claim is made. Grounded generation remains a later
+step that requires retrieved sources, generation, and evaluation together.
 
 ## Phase AI-5 — Tools and agents 🚧
 
@@ -120,7 +140,8 @@ answers cite retrieved chunks or explicitly say they are not grounded.
 - [x] Agent loop, cancellation flag, and step/tool/token/time limits.
 - [ ] Agent persistence and resume.
 - [x] Tool-call error mapping and redacted metrics.
-- [x] Prompt-injection fixtures (denied capability and untrusted-output tests).
+- [x] Capability-denial and untrusted-output tests (a dedicated
+      prompt-injection corpus is still open).
 - [ ] Write, shell, and network tools (no such tools ship yet).
 
 Exit gate: an agent completes a multi-step task within limits; a malicious
@@ -165,7 +186,7 @@ Exit gate: hardware-specific evidence. Until then, status is `BLOCKED`, not
 
 | AI need | Core dependency | Status |
 | --- | --- | --- |
-| `from ai import Client` | Modules/imports (T-013) | Missing |
+| `from ai import Client` | Modules/imports (T-013) | Complete |
 | `await client.generate` | Async (T-017) | Missing |
 | Typed errors (`Result`/`?`) | T-016 | Missing |
 | Standard library packaging | T-019/T-020 | Missing |
@@ -177,10 +198,11 @@ The host API is not blocked by these; language-level syntax is.
 ## Priority order
 
 1. **P0:** AI-1 foundation, secrets, capability policy, offline tests.
-2. **P1:** AI-2 one local provider, one cloud provider, streaming, structured
-   output, embeddings, RAG, bounded agents.
-3. **P1 core:** modules, nested/or-patterns, native reclamation.
-4. **P2:** model manager, evaluation harness, observability, cross-platform CI.
+2. **P1:** AI-2 live local/cloud evidence, streaming tool calls/cancellation,
+   structured output, embeddings, retrieval quality, bounded agents.
+3. **P1 core:** native reclamation, async design, tuple patterns.
+4. **P2:** model manager, retrieval metadata/incremental updates, observability,
+   cross-platform CI.
 5. **P3+:** multimodal, MCP, ONNX/GGUF embedding, tensors.
 6. **P4:** GPU, autodiff, multi-agent orchestration — only with hardware and
    evidence.

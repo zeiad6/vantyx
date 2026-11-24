@@ -1,6 +1,6 @@
 # Historical Requirements Audit
 
-Date: 2026-11-23
+Date: 2026-11-23; reconciled 2026-11-24 after T-013 and T-046
 Repository: RustZ (public name `vantyx`; renamed from `auren`)
 Auditor: autonomous engineering session
 Scope: every requirement recoverable from `TASKS.md`, `PROJECT_STATUS.md`,
@@ -26,56 +26,60 @@ because a document says so; the table cites code or an observed command.
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | 241 passed: 126 library unit, 7 CLI unit, 41 e2e, 67 native |
+| `cargo test` | 241 passed at first audit: 126 library unit, 7 CLI unit, 41 e2e, 67 native (historical; see current re-verification below) |
 | `cargo build` / `--release` | succeeded earlier in the session; re-checked before release claims |
 | `cargo clippy --all-targets -- -D warnings` | clean at the last recorded gate |
-| Public CI | runs 45308499010, 45308796021, 45309035756 passed (pre-rename); run 45317367818 passed after rename and AI foundation; run 45318733338 passed with structured extraction (357 tests); run 45321718008 passed with the map hash index (358 tests) |
+| Public CI | runs 45308499010, 45308796021, 45309035756 passed (pre-rename); run 45317367818 passed after rename and AI foundation; run 45318733338 passed with structured extraction (357 tests); run 45321718008 passed with the map hash index (358 tests); runs 45330680289 and 45330898922 passed with embeddings (383 tests) |
 | Source AI references | none (`grep` over `src/`, `tests/`, `Cargo.toml`) |
 | Modules / imports | no AST or parser support |
 | Async / await | no language support; only a host thread for the interpreter stack |
 | Tensor / GPU code | none at initial inspection; still none |
 | Embedding code | vector math and in-memory index existed at initial inspection; T-045 adds provider interface, hash baseline, bounded cache, and `/v1/embeddings` |
 
-## Post-implementation verification (2026-11-23)
+## Current re-verification (2026-11-24)
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | **383 passed**: 237 library unit, 12 CLI unit, 25 AI integration, 41 e2e, 68 native (2026-11-24, after T-045); the earlier 358-, 357-, and 340-test runs also passed |
+| `cargo test` | **457 passed**: 297 library unit, 13 CLI unit, 30 AI integration, 44 e2e, 73 native (2026-11-24, after T-052); earlier 437-, 430-, 429-, 422-, 413-, 383-, 358-, 357-, and 340-test runs also passed |
 | Map benchmark | `map_ops` native 3.597 ms, interpreter 121.728 ms, C 2.884 ms, Rust 4.495 ms (2026-11-24; `benchmarks/results/2026-11-24.*`) |
 | `cargo build` / `--release` | both succeeded after the AI foundation and rename |
 | `cargo clippy --all-targets -- -D warnings` | clean, zero warnings |
 | Examples | all five interpreter/native outputs identical |
 | Rename | code, CLI, extension, env vars, tests, docs, CI, GitHub repository, and clean-clone CI complete |
-| AI host | `src/ai/` foundation and `vantyx ai` CLI implemented; offline and loopback tests pass |
+| AI host | `src/ai/` foundation and `vantyx ai` CLI implemented; offline and loopback tests pass; streamed text chat is covered by loopback HTTP and HTTPS smoke tests |
 | Embeddings | deterministic hash provider, batch limits, bounded cache, OpenAI-compatible `/v1/embeddings`, and `vantyx ai embed` implemented; offline/loopback tests pass |
+| Modules (T-013) | file imports, path confinement, cycles, declaration-only modules, interpreter/native differential test, and `E0501`–`E0512` |
+| RAG (T-046) | bounded ingestion, stable cited chunks, strict versioned JSON index, BM25/cosine/hybrid RRF search, source-prefix filtering, and recall/precision/MRR evaluation; 14 unit + 2 CLI tests and a manual 3-document run |
+| Or-patterns (T-047/T-050) | top-level `|` alternatives, shared binding-set checking (`E0317`), exhaustiveness integration, ordered interpreter matching, and native short-circuit lowering with conditional binding initialization; parser/checker/e2e/native tests; ADR-0021 |
+| Nested patterns (T-048/T-049) | recursive payload patterns, multi-level bindings, matrix exhaustiveness, guard exclusion, and native short-circuit lowering with path-based bindings; parser/checker/e2e/native tests; ADR-0019/ADR-0020 |
 | AI live evidence | none; no local server, embedding model, or cloud credentials available |
-| Language-level AI | still blocked on modules (T-013) and async (T-017) |
-| Tensor / GPU / embedding model code | none; only vector math and an in-memory index |
+| Language-level AI | still blocked on async (T-017); the modules prerequisite (T-013) is complete |
+| Tensor / GPU / embedding model code | none; vector math, provider embeddings, and a persisted flat retrieval index exist, but no tensor runtime or trained local model ships |
 
 ## Status summary
 
 | Status | Core tasks | Directive requirements |
 | --- | ---: | ---: |
-| VERIFIED / COMPLETE | 28 | 9 |
-| IN_PROGRESS | 1 | 0 |
-| READY | 1 | 0 |
-| BACKLOG / MISSING | 11 | 13 |
-| BLOCKED | 1 | 4 |
-| PARTIAL | 0 | 19 |
+| COMPLETE (including documented subsets) | 32 | 16 |
+| IN_PROGRESS | 0 | 0 |
+| READY | 0 | 0 |
+| MISSING | 10 | 11 |
+| BLOCKED | 0 | 3 |
+| PARTIAL | 0 | 15 |
 | BROKEN | 0 | 0 |
 | SUPERSEDED | 0 | 0 |
 | **Total tracked** | **42** | **45** |
 
-Core tasks use the `TASKS.md` vocabulary; directive rows use
-`COMPLETE`/`PARTIAL`/`MISSING`/`BLOCKED`. The two columns are not directly
-comparable because `BACKLOG` core tasks are counted as missing work in the
-directive column.
+Counts are derived from the rows below, not from prior reports. Core rows use
+the `TASKS.md` vocabulary; directive rows use
+`COMPLETE`/`PARTIAL`/`MISSING`/`BLOCKED`. `COMPLETE (subset)` and
+`COMPLETE (offline/loopback)` are counted as complete because the documented
+subset has tests and evidence; the missing scope is listed in the same row. The
+directive matrix includes 45 rows covering the AI extension plus the recovered
+cross-cutting requirements. Core rows T-036–T-043 are tracked in `TASKS.md` and
+the AI matrix rather than duplicated here; T-044–T-050 are included above.
 
-Core tasks marked `BACKLOG` in `TASKS.md` are counted as `MISSING` here because
-no implementation exists. The 25 "complete" core tasks include T-010 and T-024
-through T-035; their documented subset limits remain real gaps, listed below.
-
-## Core task matrix (T-001 … T-035)
+## Core task matrix (T-001 … T-050)
 
 | ID | Requirement | Implementation / evidence | Status | Missing work | Priority | Action |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -85,14 +89,14 @@ through T-035; their documented subset limits remain real gaps, listed below.
 | T-004 | Diagnostic renderer | `src/diagnostic.rs`, 3 unit tests | COMPLETE | — | P0 | Keep |
 | T-005 | Gradual checker | `src/checker.rs`, 47 unit tests | COMPLETE | Flow narrowing/generics are T-018 | P0 | Keep |
 | T-006 | Tree-walking runtime | `src/interp.rs`, 23 unit tests + e2e | COMPLETE | — | P0 | Keep |
-| T-007 | CLI | `src/main.rs`; `run/check/build/repl/version/help` | COMPLETE | AI subcommands do not exist | P0 | Extend |
-| T-008 | E2E suite | `tests/e2e.rs`, 41 tests | COMPLETE | — | P0 | Keep |
+| T-007 | CLI | `src/main.rs`; `run/check/build/repl/version/help` plus `vantyx ai` host commands | COMPLETE | Keep command help and errors synchronized | P0 | Extend |
+| T-008 | E2E suite | `tests/e2e.rs`, 44 tests including modules, or-patterns, and integer ranges | COMPLETE | — | P0 | Keep |
 | T-009 | REPL | `src/repl.rs`; persistence tests | COMPLETE | Multi-line recall, field completion (T-034) | P1 | Extend |
-| T-010 | IR + native backend | `src/ir.rs`, `src/codegen_c.rs`, 68 differential tests | COMPLETE (subset) | Reclamation, debug info, optimization, more types | P0 | Extend |
+| T-010 | IR + native backend | `src/ir.rs`, `src/codegen_c.rs`, 73 differential tests including imported modules, nested-pattern support, native or-patterns, and integer ranges | COMPLETE (subset) | Reclamation, debug info, optimization, more types | P0 | Extend |
 | T-011 | Bytecode VM | None | MISSING | Entire VM and benchmark | P2 | Defer |
 | T-012 | Ownership / escape analysis | None | MISSING | Design, analysis, tests | P2 | Defer |
-| T-013 | Modules and imports | None | MISSING | Parser, checker, interpreter, native, tests | P1 | **Next core** |
-| T-014 | Enums and matching | AST/checker/interp/IR/codegen; 12 e2e + native tests | COMPLETE (subset) | Nested/or/range/float patterns, generic enums | P1 | Extend |
+| T-013 | Modules and imports | `src/module.rs`, import AST/parser, `E0501`–`E0512`, 12 unit tests, e2e and native tests, manual interpreter/native smoke | COMPLETE (subset) | Namespaces, aliases, re-exports, package-relative lookup, incremental builds | P1 | Keep |
+| T-014 | Enums and matching | AST/checker/interp/IR/codegen; 12 e2e + native tests | COMPLETE (subset) | Range/float patterns, generic enums | P1 | Extend |
 | T-015 | Closures and iterators | None | MISSING | Syntax, capture semantics, native lowering | P2 | Defer |
 | T-016 | `Result` / `?` | None | MISSING | Types, propagation, native lowering | P2 | Defer |
 | T-017 | Async and concurrency | None | MISSING | Design, runtime, cancellation, tests | P3 | Defer |
@@ -110,19 +114,27 @@ through T-035; their documented subset limits remain real gaps, listed below.
 | T-029 | REPL editing/history/echo | `src/repl.rs`, 7 CLI unit + e2e tests | COMPLETE | — | P3 | Keep |
 | T-030 | Native enums/match | Tagged C structs; differential tests | COMPLETE (subset) | Allocation benchmark | P2 | Extend |
 | T-031 | Bracketed-match diagnostic | Parser test + e2e test | COMPLETE | — | P3 | Keep |
-| T-032 | Scalar literal patterns | Parser/checker/interp/IR/C; tests | COMPLETE | Float/range/or patterns | P2 | Extend |
+| T-032 | Scalar literal patterns | Parser/checker/interp/IR/C; tests | COMPLETE | Float patterns | P2 | Extend |
 | T-033 | Match guards | Parser/checker/interp/IR/C; tests | COMPLETE | Guards cannot bind or mutate | P2 | Keep |
 | T-034 | REPL multi-line history/field completion | None | MISSING | Entire task | P4 | Defer |
-| T-035 | Public repository and launch kit | Public repo, CI, release, issue, `llms.txt` | COMPLETE | Rename to Vantyx; AI discovery update | P1 | Rename |
+| T-035 | Public repository and launch kit | Public repo, CI, release, issue, `llms.txt`; Vantyx rename verified by GitHub and clean-clone CI | COMPLETE | Keep discovery material current | P1 | Maintain |
 | T-044 | Native scalar-key map hash index | `src/codegen_c.rs`; `large_scalar_maps_match`; 2026-11-24 benchmark | COMPLETE | Structural-key hashing; adversarial seed | P1 | Keep |
-| T-045 | Embedding provider interface, batch embeddings, cache, and CLI | `src/ai/provider.rs`, `src/ai/embedding_provider.rs`, `src/ai/openai.rs`, `src/ai_cli.rs`; 383-test run; loopback `/v1/embeddings` | COMPLETE (offline/loopback) | Live embedding model; persistence; RAG | P1 | Extend |
+| T-045 | Embedding provider interface, batch embeddings, cache, and CLI | `src/ai/provider.rs`, `src/ai/embedding_provider.rs`, `src/ai/openai.rs`, `src/ai_cli.rs`; 413-test run; loopback `/v1/embeddings`; ADR-0017 | COMPLETE (offline/loopback) | Live embedding-model evidence; TTL/persistent cache | P1 | Extend |
+| T-046 | Local RAG ingestion, hybrid retrieval, citations, persistence, source filtering, and evaluation | `src/ai/rag.rs` (14 unit tests), `src/ai_cli.rs` (`index`/`search`/`eval`), `tests/ai.rs` (2 integration tests), `examples/ai/retrieval-eval.json`; ADR-0018 | COMPLETE (offline/loopback) | PDF/HTML/Office ingestion, arbitrary metadata fields, incremental updates, deletion/dedup, reranking, grounded generation, live corpus evaluation | P1 | Extend |
+| T-047 | Top-level or-patterns with shared bindings and exhaustiveness | `src/ast.rs` (`Pattern::Or`), `src/parser.rs`, `src/checker.rs` (`E0317`), `src/interp.rs`; parser + 5 checker + e2e tests | COMPLETE (interpreter; native lowering added by T-050) | Or-patterns over `Any` natively | P1 | Extend |
+| T-048 | Nested payload patterns with multi-level bindings and matrix exhaustiveness | `src/ast.rs` (`PatternArg::Nested`), `src/parser.rs`, `src/checker.rs` (`CoverPattern`, `matrix_exhaustive`), `src/interp.rs`; parser + 4 checker + e2e tests; ADR-0019 | COMPLETE (interpreter; native lowering added by T-049) | Tuple patterns; nested unreachable analysis | P1 | Extend |
+| T-049 | Native nested-pattern lowering with path-based bindings and single-evaluation guards | `src/ir.rs` (recursive `IrPattern`, `IrFieldPath`), `src/codegen_c.rs` (recursive conditions, binding declarations), `tests/native.rs::nested_patterns_match`, extended e2e; ADR-0020 | COMPLETE (interpreter/native differential) | Tuple patterns; nested unreachable analysis | P1 | Extend |
+| T-050 | Native top-level or-pattern lowering with one shared binding set | `src/ir.rs` (`IrPattern::Or`, `collect_bindings`), `src/codegen_c.rs` (`or_binding_declarations`, alternative conditions), `tests/native.rs` or-pattern differential tests; ADR-0021 | COMPLETE (interpreter/native differential) | Nested or-patterns; tuple patterns; usefulness analysis | P1 | Extend |
+| T-051 | Integer range patterns with half-open and inclusive bounds | `src/token.rs`/`src/lexer.rs` (`DotDot`/`DotDotEq`), `src/ast.rs` (`Pattern::Range`), `src/parser.rs` (`finish_range_pattern`), `src/checker.rs` (`E0318`), `src/interp.rs`, `src/ir.rs` (`IrPattern::Range`), `src/codegen_c.rs`; parser + 3 checker + e2e + native differential tests; ADR-0022 | COMPLETE (interpreter/native differential) | Range expressions; float/character/computed bounds; interval usefulness analysis | P1 | Extend |
+| T-052 | Streamed OpenAI-compatible text chat through the provider, HTTP transport, and CLI | `src/ai/provider.rs` (`chat_stream`, `streaming` capability), `src/ai/sse.rs` (`push_bytes` UTF-8 carry), `src/ai/http.rs` (`Transport::stream`, content-length/chunked/close-delimited, `curl --include --no-buffer`), `src/ai/openai.rs` (`ChatStreamState`, streaming request JSON), `src/ai_cli.rs` (`--stream`), `tools/streaming_smoke.py`; unit, loopback CLI, and HTTP/HTTPS smoke tests; ADR-0023 | COMPLETE (offline/loopback; live provider blocked) | Streaming tool calls, interactive cancellation, live first-token/tokens-per-second evidence | P1 | Extend |
+| T-053 | Remove the unrelated `auren` account from contributor attribution | `git filter-branch` over branches and tags, force-with-lease push of `main` and `v0.1.0`, `.mailmap`; contributor API and commit-identity checks | COMPLETE (history rewritten with explicit authorization) | None; old hashes are historical | P1 | Keep |
 
 ### Core partials that must not be described as finished
 
 | Area | What exists | What is still missing |
 | --- | --- | --- |
 | Native backend | Typed subset with lists, maps (scalar-key hash index), structs, enums, strings, guards | Reclamation, cycle handling, structural-key hashing, debug info, optimization, `Any` |
-| Pattern matching | Enum, wildcard, scalar literal, guards | Nested, or-patterns, ranges, floats, interpolated strings, generic enums |
+| Pattern matching | Enum, wildcard, scalar literal, nested payloads, top-level or-patterns, integer ranges, guards | Tuple patterns, floats, interpolated strings, generic enums |
 | REPL | Line editing, single-line history, top-level completion | Multi-line recall, field completion, local completion |
 | Memory | Interpreter `Rc` with cycles; native intentional leaks | Cycle collector or ownership/escape analysis; sandbox |
 | Tooling | `run/check/build/repl` | Formatter, linter, test runner, package manager, LSP, debugger |
@@ -153,15 +165,16 @@ through T-035; their documented subset limits remain real gaps, listed below.
 | Regression/stress suites | PARTIAL | 241 tests; fuzz smoke is manual | P2 | CI fuzz job |
 | Native map hash index | COMPLETE for scalar keys (T-044, ADR-0016) | ADR-0010 revisit criterion | P1 | Keep; consider structural keys |
 | Enum allocation benchmark | MISSING | T-030 scope limit | P3 | Benchmark |
-| Nested/or-patterns | MISSING | Rejected by checker (`E0112`) | P2 | Implement |
-| `ROADMAP.md` at repository root | MISSING | Actual file is `docs/roadmap.md` | P3 | Add pointer or move |
+| Nested patterns | COMPLETE for interpreter and native payload nesting (T-048/T-049) | Matrix exhaustiveness; path-based native lowering | P1 | Keep |
+| Or-patterns | COMPLETE for top-level alternatives in the interpreter and native backend (T-047/T-050) | Shared bindings; native conditional initialization | P1 | Keep |
+| `ROADMAP.md` at repository root | COMPLETE | Canonical high-level roadmap; `docs/roadmap.md` retains phase detail | P3 | Keep synchronized |
 
 ## Vantyx AI directive matrix
 
 The directive is broad. Requirements are grouped so that each row is testable.
-"Language-level" means usable from `.auren` source; "host-level" means a Rust
-library or CLI capability. The distinction matters because modules and async do
-not exist yet.
+"Language-level" means usable from `.vtx` source; "host-level" means a Rust
+library or CLI capability. The distinction matters because file-based modules
+exist but async does not.
 
 | ID | Requirement | Current state | Status | Missing work | Priority | Action |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -179,10 +192,10 @@ not exist yet.
 | AI-012 | Tool calling with capabilities | Typed tool registry, capability sets, path roots, approval enum, timeouts, redacted logging | COMPLETE | Only read-only demo tools ship; add dangerous tools with approvals | P1 | Maintain |
 | AI-013 | Agent loop with hard limits | Bounded loop with step/tool/token/time limits and cancellation flag | PARTIAL | Persistent state and resume | P1 | Extend |
 | AI-014 | Multi-agent orchestration research | No evidence gathered; deliberately unbuilt | MISSING | Research only if a measurable use case appears | P3 | Defer |
-| AI-015 | RAG ingestion/chunking | None | MISSING | Text/Markdown/code ingestion, chunking, metadata | P2 | Implement |
-| AI-016 | Embeddings and vector store | Provider interface, batch limits, deterministic hash provider, bounded cache, OpenAI-compatible `/v1/embeddings`, vector math, and in-memory index | PARTIAL | Live embedding-model evidence, persistence, larger-scale search evaluation | P1 | Extend |
-| AI-017 | Hybrid search / BM25 | BM25 with Unicode tokenization, add/replace/remove, ranked hits | PARTIAL | Hybrid fusion and evaluation | P2 | Extend |
-| AI-018 | Retrieval evaluation harness | None | MISSING | Recall/precision/MRR fixtures | P2 | Implement |
+| AI-015 | RAG ingestion/chunking | `src/ai/rag.rs` bounded recursive text/Markdown/code ingestion, stable line-cited chunks; filtering and limit tests | COMPLETE (subset) | PDF/HTML/Office, arbitrary metadata fields, incremental re-index, dedup/deletion | P1 | Extend |
+| AI-016 | Embeddings and vector store | Provider interface, batch limits, deterministic hash provider, bounded cache, OpenAI-compatible `/v1/embeddings`, vector math, in-memory index, and strict-JSON persisted RAG index | PARTIAL | Live trained embedding-model evidence; approximate/large-scale index; vector-database integration | P1 | Extend |
+| AI-017 | Hybrid search / BM25 | BM25 with Unicode tokenization, cosine semantic search, hybrid reciprocal-rank fusion, deterministic ties, source-prefix filtering, and cited hits | COMPLETE (subset) | Reranking and arbitrary metadata filters | P2 | Extend |
+| AI-018 | Retrieval evaluation harness | `vantyx ai eval` reports recall@k, precision@k, MRR, and per-query hits from a JSON fixture; offline integration test | COMPLETE (retrieval-only) | Grounding/hallucination/latency metrics; licensed multi-document corpus | P2 | Extend |
 | AI-019 | Tensor primitives | None | MISSING | Shape/dtype/strides/matmul or documented non-goal | P3 | Research |
 | AI-020 | Automatic differentiation | None | MISSING | Evaluate Burn instead of custom autodiff | P4 | Research |
 | AI-021 | Numerical reliability tests | None | MISSING | NaN/inf/overflow/precision/determinism | P3 | Implement with tensors |
@@ -196,20 +209,20 @@ not exist yet.
 | AI-029 | ONNX/GGUF/Safetensors/Python interop | None | MISSING | Format support or documented non-goal | P3 | Research |
 | AI-030 | AI test architecture | Mock/echo providers, stub transport, loopback HTTP, SSE, timeout, cancellation, permission tests | COMPLETE | Keep offline by default | P0 | Maintain |
 | AI-031 | Working AI prototypes | Offline CLI chat, JSON output, metrics, bounded tool-agent loop, loopback OpenAI-compatible chat | PARTIAL | One real local-model example and one real cloud example | P2 | Build after live verification |
-| AI-032 | Language-level `from ai import Client` | None | BLOCKED | Depends on modules (T-013) and async (T-017) | P1 | Unblock via host CLI first |
+| AI-032 | Language-level `from ai import Client` | None | BLOCKED | Depends on async (T-017); modules (T-013) are complete | P1 | Unblock via host CLI first |
 | AI-033 | `await` / async runtime | None | BLOCKED | T-017 | P3 | Defer |
-| AI-034 | Modules/imports | None | BLOCKED | T-013 | P1 | Core track |
+| AI-034 | Modules/imports | `src/module.rs`, import AST/parser, module tests, e2e/native differential coverage | COMPLETE (subset) | Namespaces, aliases, re-exports, package-relative imports | P1 | Keep |
 | AI-035 | Standard library / package manager | None | MISSING | T-019/T-020; needed for AI ecosystem | P2 | Core track |
 | AI-036 | AI execution sandbox | None | MISSING | Process/WASM/OS sandbox; documented limits | P2 | Design |
 | AI-037 | Secrets and credentials | Generic policy only | PARTIAL | No AI credential store; env/keyring policy | P0 | Implement |
 | AI-038 | Prompt-injection defense | Model output treated as untrusted; tool arguments schema-validated; capabilities deny by default; denied-tool tests | PARTIAL | Dedicated prompt-injection fixture corpus and retrieval trust labels | P0 | Extend |
 | AI-039 | Model download integrity | None | MISSING | Checksums, size, license, provenance, resume | P2 | Implement |
-| AI-040 | AI discovery material | `README.md`, `llms.txt`, launch kit, status, and AI docs updated with verified offline AI claims | COMPLETE | Keep synchronized after live verification | P1 | Maintain |
+| AI-040 | AI discovery material | `README.md`, `llms.txt`, launch kit, status, root `ROADMAP.md`, and AI docs updated with verified modules/RAG claims | COMPLETE | Keep synchronized after live verification | P1 | Maintain |
 | AI-041 | Cross-platform CI | Ubuntu only | PARTIAL | macOS/Windows matrix | P2 | Add |
 | AI-042 | Honest performance claims | Benchmark rules exist | PARTIAL | AI benchmarks do not exist | P1 | Enforce |
 | AI-043 | Versioning/release process | v0.1.0 pre-release | PARTIAL | Stability policy, changelog, tags | P2 | Document |
 | AI-044 | Dependency policy for AI | ADR-0015: zero-dependency host, HTTP/subprocess boundary first | COMPLETE | New ADR required before embedding any engine | P0 | Maintain |
-| AI-045 | `ROADMAP.md` synchronization | `docs/roadmap.md` only | PARTIAL | Root roadmap and AI phases | P3 | Add |
+| AI-045 | `ROADMAP.md` synchronization | Root `ROADMAP.md` summarizes Track A/Track B; `docs/roadmap.md` retains phase detail; AI phases synchronized | COMPLETE | Keep both synchronized at each gate | P3 | Maintain |
 
 ### Directive conflicts resolved in this audit
 
@@ -222,9 +235,10 @@ not exist yet.
    explicit HTTP/subprocess boundaries for local servers and cloud APIs. Any
    embedded inference engine requires a new ADR that documents binary size,
    build complexity, licenses, and platform support. Do not add one silently.
-3. **AI as first-class language syntax vs missing modules/async.** Resolution:
-   build the host-level AI toolkit now (`vantyx ai` + Rust library), keep the
-   language surface unchanged until T-013 and T-017 land, and document the gap.
+3. **AI as first-class language syntax vs missing async/stdlib.** Resolution:
+   build the host-level AI toolkit now (`vantyx ai` + Rust library); modules
+   (T-013) are complete, while the language surface waits for T-017 and a
+   standard library. Document the gap explicitly.
 4. **"15 prototypes" vs "do not create 15 broken demos."** Resolution: ship a
    small number of real, tested prototypes first.
 5. **GPU claims vs no verified GPU.** Resolution: mark GPU `BLOCKED` until a
@@ -289,7 +303,59 @@ interpreter 121.728 ms, C 2.884 ms, and Rust 4.495 ms. GitHub Actions run
 45321718008 passed build, all 358 tests, clippy, release build, and differential
 examples on commit `f55c91c`.
 
-Re-verification after T-045 on 2026-11-24: `cargo test` — 383 passed (237
+Re-verification after T-052 on 2026-11-24: `cargo test` — 457 passed
+(297 library unit + 13 CLI unit + 30 AI integration + 44 end-to-end + 73 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched; fuzz smoke produced controlled
+diagnostics. Streaming tests cover text deltas, split UTF-8, `[DONE]`,
+post-`[DONE]` frames, error-frame redaction, 429 mapping, tools/tool-call
+rejection, usage fallback, content-length/chunked/close-delimited bodies,
+request JSON, CLI option rejection, and a loopback CLI run.
+`python3 tools/streaming_smoke.py` observed incremental HTTP and HTTPS deltas
+with `stream: true` and `Accept: text/event-stream`; HTTPS used a self-signed
+certificate and the system `curl`. No live model was available, so this is
+protocol evidence, not model-behavior evidence.
+
+Re-verification after T-051 on 2026-11-24: `cargo test` — 437 passed
+(281 library unit + 12 CLI unit + 27 AI integration + 44 end-to-end + 73 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched; fuzz smoke produced controlled
+diagnostics. Range-pattern tests cover half-open and inclusive bounds,
+negative bounds, nested payload positions, or-pattern alternatives, `Int`
+exhaustiveness still requiring `_`, `E0301` on non-integer scrutinees, `E0318`
+for empty ranges, and interpreter/native differential output.
+
+Re-verification after T-050 on 2026-11-24: `cargo test` — 430 passed
+(276 library unit + 12 CLI unit + 27 AI integration + 43 end-to-end + 72 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched; fuzz smoke produced controlled diagnostics
+for 9 limit cases and 400 inputs. Native or-pattern tests cover enum
+alternatives with multiple payloads, guards, scalar literals, `Bool` coverage,
+zero-payload variants, match expressions, and alternatives that bind nested
+payloads at different depths. Nested-pattern tests cover recursive complete
+and incomplete coverage, payload type mismatch, duplicate bindings, runtime
+payload extraction, zero-payload nested variants, enum-typed nested bindings,
+nested guards, and differential interpreter/native output. Or-pattern
+interpreter tests cover enum and `Bool` coverage, binding-name/type mismatch
+rejection, guarded exhaustiveness, and payload binding.
+
+Re-verification after T-047 on 2026-11-24: `cargo test` — 422 passed
+(270 library unit + 12 CLI unit + 27 AI integration + 43 end-to-end + 70 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched.
+
+Re-verification after T-013/T-046 on 2026-11-24: `cargo test` — 413 passed
+(263 library unit + 12 CLI unit + 27 AI integration + 42 end-to-end + 69 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched; fuzz smoke produced controlled diagnostics
+for 9 limit cases and 400 inputs. Module tests cover both import forms, selection,
+cycles, path escape, duplicate/unknown names, non-entry statements and `main`,
+and resource limits. RAG tests cover deterministic ingestion, stable cited
+chunks, pathological lines, strict index validation, semantic/hybrid ranking,
+0600 persistence, evaluation metrics, and CLI mode/limit rejection. Live
+local/cloud AI and a trained embedding model remain absent.
+
+Earlier re-verification after T-045 on 2026-11-24: `cargo test` — 383 passed (237
 library unit + 12 CLI unit + 25 AI integration + 41 end-to-end + 68 native);
 `cargo clippy --all-targets -- -D warnings` clean; debug and release builds
 succeeded; all five examples matched. Embedding tests cover offline determinism,
@@ -302,18 +368,22 @@ commit `52dd1ae`.
 
 ### P1 — Core language recovery
 
-1. Modules and imports (T-013) — prerequisite for language-level AI.
-2. Nested/or-patterns.
+1. Tuple patterns once a tuple type exists, and usefulness-based unreachable analysis (range patterns shipped in T-051).
+2. Streaming tool calls and interactive cancellation (T-052 follow-ups); live first-token and throughput evidence remains part of T-040.
 3. Native memory reclamation design.
-4. Native map hash index after a benchmark.
+4. Async design for language-level AI (T-017).
+5. Retrieval arbitrary metadata fields, incremental re-indexing, and a
+   licensed corpus evaluation (T-046 follow-ups; source-prefix filtering ships).
 
 ### P2 — Ecosystem
 
-1. RAG ingestion and evaluation.
+1. Retrieval arbitrary metadata fields, incremental updates, and
+   grounded-generation design without overclaiming (source-prefix filtering
+   ships).
 2. Model manager with integrity checks.
-4. Observability and budgets.
-5. Cross-platform CI.
-6. Standard library and formatter.
+3. Observability and budgets.
+4. Cross-platform CI.
+5. Standard library and formatter.
 
 ### P3+ — Research-only until evidence exists
 
@@ -323,12 +393,15 @@ embedding, and language-level async AI APIs.
 ## Historical completion gate
 
 The previous engineering directives are **not** complete. The core language
-reaches a verified v0.1 subset, the rename is applied locally, and the offline
-AI host foundation now exists with tests. The following previously requested
-items remain open: modules, generics, traits, closures, iterators, `Result`/`?`,
-async, concurrency, FFI, formatter, linter, package manager, standard library,
-native reclamation, cycle handling, native map indexing, REPL multi-line
-history, REPL field completion, enum benchmarks, cross-platform CI, debug info,
-compiler optimization, language-level AI syntax, live local/cloud AI evidence,
-and the GitHub repository rename. This audit is the baseline for closing them
-honestly.
+reaches a verified v0.1 subset with file-based modules; the Vantyx rename is
+complete in code, documentation, GitHub, and clean-clone CI; and the offline AI
+host foundation now includes embeddings, local RAG retrieval, citations, and
+retrieval evaluation with tests; nested payload patterns and top-level
+or-patterns are implemented in the interpreter and native backend. The
+following previously requested items remain open: generics, traits, closures, iterators, `Result`/`?`, async, concurrency,
+FFI, formatter, linter, package manager, standard library, native reclamation,
+cycle handling, structural-key map hashing, REPL multi-line history, REPL field
+completion, enum benchmarks, cross-platform CI, debug info, compiler
+optimization, language-level AI syntax, live local/cloud AI and embedding-model
+evidence, PDF/HTML/Office ingestion, incremental re-indexing, reranking, and
+grounded generation. This audit is the baseline for closing them honestly.

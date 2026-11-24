@@ -10,18 +10,25 @@
 
 use crate::ast::{BinOp, UnOp};
 use crate::ir::*;
-use crate::span::SourceMap;
+use crate::span::{SourceMap, SourceRegistry, Span};
 use std::fmt::Write as _;
 
-/// Emits a complete, self-contained C translation unit.
+/// Emits a complete, self-contained C translation unit for one source file.
 pub fn emit(program: &IrProgram, source_name: &str, source: &str) -> String {
-    Emitter::new(program, source_name, source).emit()
+    let mut sources = SourceRegistry::new();
+    sources.add(source_name, source);
+    emit_with_sources(program, &sources)
+}
+
+/// Emits C for a program whose spans may refer to several imported files.
+pub fn emit_with_sources(program: &IrProgram, sources: &SourceRegistry) -> String {
+    Emitter::new(program, sources).emit()
 }
 
 struct Emitter<'a> {
     program: &'a IrProgram,
-    source_name: &'a str,
-    map: SourceMap<'a>,
+    sources: &'a SourceRegistry,
+    entry_name: &'a str,
     out: String,
     indent: usize,
     temp: usize,
@@ -34,11 +41,15 @@ struct Emitter<'a> {
 }
 
 impl<'a> Emitter<'a> {
-    fn new(program: &'a IrProgram, source_name: &'a str, source: &'a str) -> Self {
+    fn new(program: &'a IrProgram, sources: &'a SourceRegistry) -> Self {
+        let entry_name = sources
+            .get(0)
+            .map(|file| file.name.as_str())
+            .unwrap_or("<unknown>");
         Self {
             program,
-            source_name,
-            map: SourceMap::new(source_name, source),
+            sources,
+            entry_name,
             out: String::new(),
             indent: 0,
             temp: 0,
@@ -118,8 +129,18 @@ impl<'a> Emitter<'a> {
         self.out.push('\n');
     }
 
-    fn position(&self, span: crate::span::Span) -> (usize, usize) {
-        self.map.line_col(span.start)
+    fn position(&self, span: Span) -> (usize, usize) {
+        match self.sources.get(span.file) {
+            Some(file) => SourceMap::new(&file.name, &file.source).line_col(span.start),
+            None => (1, 1),
+        }
+    }
+
+    fn source_name_for(&self, span: Span) -> &str {
+        self.sources
+            .get(span.file)
+            .map(|file| file.name.as_str())
+            .unwrap_or("<unknown>")
     }
 
     /// Wraps a rendered expression for a C condition. Expressions from
@@ -736,6 +757,8 @@ impl<'a> Emitter<'a> {
                 self.function_name(&function.name)
             ));
             self.indent += 1;
+            let source = self.source_name_for(function.span).to_string();
+            self.line(&format!("vantyx_source_name = {};", c_string(&source)));
             self.line("if (vantyx_call_depth >= 256) {");
             self.indent += 1;
             self.line(&format!(
@@ -775,7 +798,7 @@ impl<'a> Emitter<'a> {
         self.indent += 1;
         self.line(&format!(
             "vantyx_source_name = {};",
-            c_string(self.source_name)
+            c_string(self.entry_name)
         ));
         match self.program.entry {
             IrEntry::TopLevel => self.line("vantyx_top_level();"),
@@ -794,28 +817,176 @@ impl<'a> Emitter<'a> {
 
     // ---- statements ----
 
-    /// Returns the C condition for a non-wildcard pattern, or `None` for `_`.
-    fn pattern_condition(&self, pattern: &IrPattern, scrutinee: &str) -> Option<String> {
+    /// Returns the C condition for a refutable pattern, or `None` when the
+    /// pattern is irrefutable (`_` or a binding).
+    fn pattern_condition(&self, pattern: &IrPattern, base: &str) -> Option<String> {
         match pattern {
-            IrPattern::Wildcard => None,
+            IrPattern::Wildcard | IrPattern::Bind(_) => None,
             IrPattern::Literal { value } => Some(match value {
-                IrLiteral::Int(value) => format!("{scrutinee} == {}", c_int(*value)),
-                IrLiteral::Bool(true) => scrutinee.to_string(),
-                IrLiteral::Bool(false) => format!("!{scrutinee}"),
+                IrLiteral::Int(value) => format!("{base} == {}", c_int(*value)),
+                IrLiteral::Bool(true) => base.to_string(),
+                IrLiteral::Bool(false) => format!("!{base}"),
                 IrLiteral::Str(value) => {
-                    format!("strcmp({scrutinee}, {}) == 0", c_string(value))
+                    format!("strcmp({base}, {}) == 0", c_string(value))
                 }
             }),
-            IrPattern::Variant { tag, .. } => Some(format!("{scrutinee}->tag == {tag}")),
+            IrPattern::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                let upper = if *inclusive { "<=" } else { "<" };
+                Some(format!(
+                    "({base} >= {} && {base} {upper} {})",
+                    c_int(*start),
+                    c_int(*end)
+                ))
+            }
+            IrPattern::Variant {
+                variant, tag, fields, ..
+            } => {
+                let mut conditions = vec![format!("{base}->tag == {tag}")];
+                for field in fields {
+                    let child = format!(
+                        "{}->payload.{}.{}",
+                        base,
+                        self.variant_member(variant),
+                        self.field(&field.name)
+                    );
+                    if let Some(condition) = self.pattern_condition(&field.pattern, &child) {
+                        conditions.push(condition);
+                    }
+                }
+                Some(conditions.join(" && "))
+            }
+            IrPattern::Or { alternatives } => {
+                let mut conditions = Vec::with_capacity(alternatives.len());
+                for alternative in alternatives {
+                    let condition = self.pattern_condition(alternative, base)?;
+                    conditions.push(format!("({condition})"));
+                }
+                Some(conditions.join(" || "))
+            }
         }
+    }
+
+    fn collect_pattern_bindings<'p>(&self, pattern: &'p IrPattern, out: &mut Vec<&'p IrBinding>) {
+        match pattern {
+            IrPattern::Bind(binding) => out.push(binding),
+            IrPattern::Variant { fields, .. } => {
+                for field in fields {
+                    self.collect_pattern_bindings(&field.pattern, out);
+                }
+            }
+            IrPattern::Or { alternatives } => {
+                // Alternatives share one binding set. The first alternative
+                // supplies the names and types; initialization is emitted per
+                // alternative by `binding_declarations`.
+                if let Some(first) = alternatives.first() {
+                    self.collect_pattern_bindings(first, out);
+                }
+            }
+            IrPattern::Wildcard | IrPattern::Literal { .. } | IrPattern::Range { .. } => {}
+        }
+    }
+
+    fn binding_expr(&self, binding: &IrBinding, scrutinee: &str) -> String {
+        let mut expression = scrutinee.to_string();
+        for step in &binding.path {
+            let _ = write!(
+                expression,
+                "->payload.{}.{}",
+                self.variant_member(&step.variant),
+                self.field(&step.field)
+            );
+        }
+        expression
+    }
+
+    fn binding_declarations(&self, pattern: &IrPattern, scrutinee: &str) -> String {
+        if let IrPattern::Or { alternatives } = pattern {
+            return self.or_binding_declarations(alternatives, scrutinee);
+        }
+        let mut bindings = Vec::new();
+        self.collect_pattern_bindings(pattern, &mut bindings);
+        let mut text = String::new();
+        for binding in bindings {
+            let _ = write!(
+                text,
+                "{} {} = {}; ",
+                self.ctype(&binding.ty),
+                self.local(&binding.name),
+                self.binding_expr(binding, scrutinee)
+            );
+        }
+        text
+    }
+
+    /// Declares the shared or-pattern bindings once, then initializes each
+    /// from the alternative that matched. The arm condition already proved
+    /// that at least one alternative matches, so the assignments are total.
+    fn or_binding_declarations(&self, alternatives: &[IrPattern], scrutinee: &str) -> String {
+        let mut shared = Vec::new();
+        if let Some(first) = alternatives.first() {
+            self.collect_pattern_bindings(first, &mut shared);
+        }
+        if shared.is_empty() {
+            return String::new();
+        }
+        let mut text = String::new();
+        for binding in &shared {
+            let _ = write!(
+                text,
+                "{} {} = {}; ",
+                self.ctype(&binding.ty),
+                self.local(&binding.name),
+                self.zero_value(&binding.ty)
+            );
+        }
+        let mut first_branch = true;
+        for alternative in alternatives {
+            let mut bindings = Vec::new();
+            self.collect_pattern_bindings(alternative, &mut bindings);
+            let mut assignments = String::new();
+            for binding in bindings {
+                let _ = write!(
+                    assignments,
+                    "{} = {}; ",
+                    self.local(&binding.name),
+                    self.binding_expr(binding, scrutinee)
+                );
+            }
+            match self.pattern_condition(alternative, scrutinee) {
+                Some(condition) => {
+                    if first_branch {
+                        let _ = write!(text, "if ({condition}) {{ {assignments} }} ");
+                        first_branch = false;
+                    } else {
+                        let _ = write!(
+                            text,
+                            "else if ({condition}) {{ {assignments} }} "
+                        );
+                    }
+                }
+                None => {
+                    if first_branch {
+                        let _ = write!(text, "{{ {assignments} }} ");
+                    } else {
+                        let _ = write!(text, "else {{ {assignments} }} ");
+                    }
+                    break;
+                }
+            }
+        }
+        text
     }
 
     /// Returns the C condition for an arm, or `None` for an unguarded wildcard.
     ///
-    /// A guard on a variant pattern may reference payload bindings. Those
-    /// bindings do not exist in the surrounding scope, so the condition uses a
-    /// GNU C statement expression that tests the tag, declares the bindings,
-    /// and evaluates the guard.
+    /// A guard on a pattern with bindings cannot see those bindings in the
+    /// surrounding scope, so the condition uses a GNU C statement expression
+    /// that tests the full nested pattern, declares every binding, and
+    /// evaluates the guard.
     fn arm_condition(&mut self, arm: &IrMatchArm, scrutinee: &str) -> Option<String> {
         let pattern = self.pattern_condition(&arm.pattern, scrutinee);
         let guard = arm.guard.as_ref().map(|guard| self.expr(guard));
@@ -824,53 +995,24 @@ impl<'a> Emitter<'a> {
             (Some(condition), None) => Some(condition),
             (None, Some(guard)) => Some(guard),
             (Some(condition), Some(guard)) => {
-                let has_bindings = matches!(
-                    &arm.pattern,
-                    IrPattern::Variant { bindings, .. }
-                        if bindings.iter().any(Option::is_some)
-                );
-                if !has_bindings {
+                let mut bindings = Vec::new();
+                self.collect_pattern_bindings(&arm.pattern, &mut bindings);
+                if bindings.is_empty() {
                     return Some(format!("({condition}) && ({guard})"));
                 }
                 let ok = self.fresh("arm_ok");
-                let mut text = format!("({{ bool {ok} = ({condition}); if ({ok}) {{ ");
-                if let IrPattern::Variant {
-                    variant, bindings, ..
-                } = &arm.pattern
-                {
-                    for binding in bindings.iter().flatten() {
-                        let _ = write!(
-                            text,
-                            "{} {} = {}->payload.{}.{}; ",
-                            self.ctype(&binding.ty),
-                            self.local(&binding.name),
-                            scrutinee,
-                            self.variant_member(variant),
-                            self.field(&binding.field)
-                        );
-                    }
-                }
-                let _ = write!(text, "{ok} = ({guard}); }} {ok}; }})");
-                Some(text)
+                let declarations = self.binding_declarations(&arm.pattern, scrutinee);
+                Some(format!(
+                    "({{ bool {ok} = ({condition}); if ({ok}) {{ {declarations}{ok} = ({guard}); }} {ok}; }})"
+                ))
             }
         }
     }
 
     fn match_arm_statements(&mut self, arm: &IrMatchArm, scrutinee: &str) {
-        if let IrPattern::Variant {
-            variant, bindings, ..
-        } = &arm.pattern
-        {
-            for binding in bindings.iter().flatten() {
-                self.line(&format!(
-                    "{} {} = {}->payload.{}.{};",
-                    self.ctype(&binding.ty),
-                    self.local(&binding.name),
-                    scrutinee,
-                    self.variant_member(variant),
-                    self.field(&binding.field)
-                ));
-            }
+        let declarations = self.binding_declarations(&arm.pattern, scrutinee);
+        if !declarations.is_empty() {
+            self.line(&declarations);
         }
         let IrMatchBody::Block(stmts) = &arm.body else {
             unreachable!("match statement arms contain blocks");
@@ -1263,21 +1405,23 @@ impl<'a> Emitter<'a> {
                     UnOp::Not => format!("(!({value}))"),
                 }
             }
-            IrExprKind::Call { name, args } => self.call_expr(&self.function_name(name), args),
+            IrExprKind::Call { name, args } => {
+                self.call_expr(&self.function_name(name), args, Some(expr.span))
+            }
             IrExprKind::Builtin { name, args } => self.builtin_expr(name, args, expr),
             IrExprKind::Field { base, name } => {
                 let base = self.expr(base);
                 format!("({base})->{}", self.field(name))
             }
             IrExprKind::Construct { name, args } => {
-                self.call_expr(&self.constructor_name(name), args)
+                self.call_expr(&self.constructor_name(name), args, None)
             }
             IrExprKind::ConstructVariant {
                 enum_name,
                 variant,
                 args,
                 ..
-            } => self.call_expr(&self.variant_name(enum_name, variant), args),
+            } => self.call_expr(&self.variant_name(enum_name, variant), args, None),
             IrExprKind::Match { scrutinee, arms } => {
                 self.match_expr(scrutinee, arms, &expr.ty, expr.span)
             }
@@ -1488,23 +1632,7 @@ impl<'a> Emitter<'a> {
         let IrMatchBody::Expr(expr) = &arm.body else {
             unreachable!("match expression arms contain expressions");
         };
-        let mut prelude = String::new();
-        if let IrPattern::Variant {
-            variant, bindings, ..
-        } = &arm.pattern
-        {
-            for binding in bindings.iter().flatten() {
-                let _ = write!(
-                    prelude,
-                    "{} {} = {}->payload.{}.{}; ",
-                    self.ctype(&binding.ty),
-                    self.local(&binding.name),
-                    scrutinee,
-                    self.variant_member(variant),
-                    self.field(&binding.field)
-                );
-            }
-        }
+        let prelude = self.binding_declarations(&arm.pattern, scrutinee);
         let value = self.expr(expr);
         format!("({{ {prelude}{value}; }})")
     }
@@ -1647,24 +1775,37 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn call_expr(&mut self, callee: &str, args: &[IrExpr]) -> String {
-        if args.len() < 2 || !args.iter().any(has_effects) {
+    fn call_expr(&mut self, callee: &str, args: &[IrExpr], call_span: Option<Span>) -> String {
+        let call = if args.len() < 2 || !args.iter().any(has_effects) {
             let rendered = args
                 .iter()
                 .map(|arg| self.expr(arg))
                 .collect::<Vec<_>>()
                 .join(", ");
-            return format!("{callee}({rendered})");
-        }
-        let mut prelude = String::new();
-        let mut names = Vec::with_capacity(args.len());
-        for arg in args {
-            let value = self.expr(arg);
-            let name = self.fresh("arg");
-            let _ = write!(prelude, "{} {name} = {value}; ", self.ctype(&arg.ty));
-            names.push(name);
-        }
-        format!("({{ {prelude}{callee}({}); }})", names.join(", "))
+            format!("{callee}({rendered})")
+        } else {
+            let mut prelude = String::new();
+            let mut names = Vec::with_capacity(args.len());
+            for arg in args {
+                let value = self.expr(arg);
+                let name = self.fresh("arg");
+                let _ = write!(prelude, "{} {name} = {value}; ", self.ctype(&arg.ty));
+                names.push(name);
+            }
+            format!("({{ {prelude}{callee}({}); }})", names.join(", "))
+        };
+
+        // A user function sets `vantyx_source_name` on entry. Restore the call
+        // site's file before continuing so later errors report the right file.
+        let Some(span) = call_span else {
+            return call;
+        };
+        let caller = self.source_name_for(span).to_string();
+        let temp = self.fresh("call");
+        format!(
+            "({{ __typeof__({call}) {temp} = {call}; vantyx_source_name = {}; {temp}; }})",
+            c_string(&caller)
+        )
     }
 
     fn builtin_expr(&mut self, name: &str, args: &[IrExpr], call: &IrExpr) -> String {
@@ -1932,11 +2073,7 @@ fn collect_stmt_desc_types(stmt: &IrStmt, out: &mut Vec<IrType>) {
         IrStmtKind::Match { scrutinee, arms } => {
             collect_expr_desc_types(scrutinee, out);
             for arm in arms {
-                if let IrPattern::Variant { bindings, .. } = &arm.pattern {
-                    for binding in bindings.iter().flatten() {
-                        register_desc_type(&binding.ty, out);
-                    }
-                }
+                collect_pattern_desc_types(&arm.pattern, out);
                 if let Some(guard) = &arm.guard {
                     collect_expr_desc_types(guard, out);
                 }
@@ -1952,6 +2089,23 @@ fn collect_stmt_desc_types(stmt: &IrStmt, out: &mut Vec<IrType>) {
         }
         IrStmtKind::Return(Some(expr)) => collect_expr_desc_types(expr, out),
         IrStmtKind::Return(None) | IrStmtKind::Break | IrStmtKind::Continue => {}
+    }
+}
+
+fn collect_pattern_desc_types(pattern: &IrPattern, out: &mut Vec<IrType>) {
+    match pattern {
+        IrPattern::Bind(binding) => register_desc_type(&binding.ty, out),
+        IrPattern::Variant { fields, .. } => {
+            for field in fields {
+                collect_pattern_desc_types(&field.pattern, out);
+            }
+        }
+        IrPattern::Or { alternatives } => {
+            for alternative in alternatives {
+                collect_pattern_desc_types(alternative, out);
+            }
+        }
+        IrPattern::Wildcard | IrPattern::Literal { .. } | IrPattern::Range { .. } => {}
     }
 }
 
@@ -2008,11 +2162,7 @@ fn collect_expr_desc_types(expr: &IrExpr, out: &mut Vec<IrType>) {
         IrExprKind::Match { scrutinee, arms } => {
             collect_expr_desc_types(scrutinee, out);
             for arm in arms {
-                if let IrPattern::Variant { bindings, .. } = &arm.pattern {
-                    for binding in bindings.iter().flatten() {
-                        register_desc_type(&binding.ty, out);
-                    }
-                }
+                collect_pattern_desc_types(&arm.pattern, out);
                 if let Some(guard) = &arm.guard {
                     collect_expr_desc_types(guard, out);
                 }

@@ -96,8 +96,7 @@ This table describes design intent and current implementation, not a ranking.
 ## Do not recommend Vantyx when
 
 - The user needs production reliability, a stable ABI, or long-term support.
-- The project needs modules, generics, closures, async, FFI, or a standard
-  library.
+- The project needs generics, closures, async, FFI, or a standard library.
 - The program must compile natively while using `Any`, `List[Any]`,
   `Map[Any,*]`, `Any` enum payloads, or `match` on `Any`.
 - The workload depends on fast native maps, automatic reclamation, or
@@ -169,18 +168,20 @@ Before repeating any of these, check the linked source:
 
 ## Citation
 
-> Vantyx contributors. *Vantyx 0.1.0: a gradual-typing language with an
-> interpreter and a native C11 backend.* 2026.
+> Zeidex. *Vantyx 0.1.0: a gradual-typing language with an
+> interpreter, a native C11 backend, and a dependency-free AI host.* 2026.
+> https://github.com/zeiad6/vantyx
 
 BibTeX:
 
 ```bibtex
 @software{vantyx2026,
-  author  = {{Vantyx contributors}},
-  title   = {Vantyx: a gradual-typing language with an interpreter and a native C11 backend},
+  author  = {Zeidex},
+  title   = {Vantyx: a gradual-typing language with an interpreter, a native C11 backend, and a dependency-free AI host},
   year    = {2026},
   version = {0.1.0},
   license = {MIT},
+  url     = {https://github.com/zeiad6/vantyx},
   note    = {Pre-1.0 functional prototype}
 }
 ```

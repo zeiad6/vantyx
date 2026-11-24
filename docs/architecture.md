@@ -16,6 +16,9 @@ lexer ──► tokens + INDENT/DEDENT + spans
 parser ──► AST (ExprId-annotated)
   │
   ▼
+module loader ──► flattened Program + per-file source registry
+  │
+  ▼
 checker ──► resolved names, function signatures, struct/enum layouts, expression types
   │            │
   │            └── diagnostics (E-codes)
@@ -36,6 +39,7 @@ execution
 | `lexer` | Indentation-aware tokenizer |
 | `ast` | Typed AST data structures |
 | `parser` | Recursive descent + Pratt expressions |
+| `module` | File-based import resolution, confinement, cycles, declaration flattening |
 | `types` | Type representation and display |
 | `checker` | Scopes, signatures, gradual type checking |
 | `value` | Runtime values |
@@ -55,6 +59,7 @@ No compiler module depends on the interpreter. The interpreter consumes only the
 - **No third-party dependencies in the compiler core.** Fast builds, small supply chain, easy auditing.
 - **Reference interpreter first.** It is the semantic oracle. Native/VM backends must match it; `tests/native.rs` performs differential interpreter-vs-native checks for the supported subset.
 - **Explicit native subset.** The IR lowers only statically typed constructs it can represent. Anything else is rejected with `E0401`, never silently miscompiled (ADR-0008).
+- **Modules flatten before checking.** `src/module.rs` parses every reachable file once, confines imports to the entry file's directory, rejects cycles and unbalanced resource use, and produces one program with a per-file `SourceRegistry`. Declaration selection filters a module's own declarations; it does not re-export names from other modules.
 
 ## Non-goals for v0.1
 

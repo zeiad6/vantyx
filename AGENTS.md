@@ -51,13 +51,14 @@ python3 benchmarks/run.py --reps 5
 | Path | Responsibility |
 | --- | --- |
 | `src/lexer.rs` | Indentation-aware lexer; spans; non-panicking recovery |
-| `src/parser.rs` | Recursive-descent/Pratt parser; depth guards |
+| `src/parser.rs` | Recursive-descent/Pratt parser; import syntax; depth guards |
+| `src/module.rs` | File-based module loader, path confinement, cycles, declaration flattening |
 | `src/checker.rs` | Scopes, gradual typing, enums, exhaustiveness |
 | `src/interp.rs` | Reference tree-walking runtime |
 | `src/ir.rs` | Typed, backend-neutral IR; `E0401` boundary |
 | `src/codegen_c.rs` | GNU C11 backend and runtime helpers |
 | `src/repl.rs` | Zero-dependency REPL editor, history, and completion (ADR-0013) |
-| `src/ai/` | Dependency-free AI host: JSON, providers, schema, extraction, tools, agents, retrieval, HTTP |
+| `src/ai/` | Dependency-free AI host: JSON, providers, schema, extraction, tools, agents, BM25/vector retrieval, RAG ingestion/search/evaluation, HTTP |
 | `src/ai_cli.rs` | `vantyx ai` commands |
 | `src/types.rs` | Semantic types and type-expression resolution |
 | `src/value.rs` | Interpreter values, display, equality |
@@ -68,31 +69,46 @@ python3 benchmarks/run.py --reps 5
 ## Current verified baseline (2026-11-24)
 
 - Public repository: https://github.com/zeiad6/vantyx (MIT; renamed from
-  `zeiad6/auren`; CI run 45330680289 green on `main` with 383 tests; earlier
-  runs and a clean clone verified; T-045 is verified with 383 tests).
-- `cargo test`: 383 passed (237 library unit + 12 CLI unit + 25 AI integration +
-  41 e2e + 68 native).
+  `zeiad6/auren`; last pushed CI run 45330898922 green on `main` with 383
+  tests; earlier runs and a clean clone verified). The current working tree
+  contains T-013/T-046/T-047/T-048/T-049/T-050/T-051/T-052 work with 457
+  local tests; CI verification for that work is pending.
+- `cargo test`: 457 passed (297 library unit + 13 CLI unit + 30 AI integration +
+  44 e2e + 73 native).
 - Clippy clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
 - Native support: scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key
-  hash index, structs, enums, `match` with guards, checked arithmetic, bounds
-  checks, structural equality.
+  hash index, structs, enums, `match` with nested payload patterns, top-level
+  or-patterns, integer range patterns and guards, imported modules, checked
+  arithmetic, bounds checks, structural equality.
 - Native rejects: `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads,
-  `match` on `Any`, unannotated value-returning functions.
-- AI host support: offline mock/echo chat, OpenAI-compatible non-streaming chat
-  and model listing, strict JSON and JSON Schema subset, validated structured
-  extraction with bounded repair, token estimates, budgets, embedding provider
-  interface with batch limits, deterministic lexical hash embeddings and a
-  bounded FIFO cache, OpenAI-compatible `/v1/embeddings`, in-memory vector
-  index, BM25, typed tools with capabilities, bounded agents, redacted metrics,
+  `match` on `Any`, tuple/float patterns, unannotated value-returning
+  functions.
+- AI host support: offline mock/echo chat, OpenAI-compatible chat and model
+  listing, streamed text chat with SSE and incremental HTTP/curl transport,
+  strict JSON and JSON Schema subset, validated structured extraction with
+  bounded repair, token estimates, budgets, embedding provider interface with
+  batch limits, deterministic lexical hash embeddings and a bounded FIFO cache,
+  OpenAI-compatible `/v1/embeddings`, in-memory vector index, BM25, local RAG
+  ingestion/chunking/citations, lexical/semantic/hybrid retrieval, retrieval
+  evaluation, typed tools with capabilities, bounded agents, redacted metrics,
   and `vantyx ai`.
 - Known gaps: no reclamation, O(n) structural-key native maps and a fixed hash
-  seed for scalar keys, no modules/generics/closures/async/FFI, block-shaped
-  `match` cannot appear inside parentheses, REPL history recall is single-line
-  and completion is top-level-only, no live local/cloud AI or embedding-model
-  evidence, no streaming/constrained decoding/model manager/keyring, no vector
-  persistence/hybrid retrieval/RAG evaluation, no language-level AI syntax, no
-  tensors or GPU support.
+  seed for scalar keys, no generics/closures/async/FFI, block-shaped `match`
+  cannot appear inside parentheses, native or-pattern conditions re-test
+  alternatives when initializing bindings,
+  REPL history recall is single-line and completion is
+  top-level-only, no live local/cloud AI or embedding-model evidence, no
+  streaming tool calls or interactive cancellation, no constrained
+  decoding/model manager/keyring, no PDF/HTML/Office ingestion, incremental
+  re-indexing, reranking, or grounded generation, no language-level AI syntax,
+  no tensors or GPU support.
+- Attribution: the developer is **Zeidex** (`zeiad6`,
+  https://zeidexlink.zeidexsoft.com/zeidex). The 2026-11-24 history correction
+  replaced the historical placeholder identity `Auren Contributors` with
+  `Zeidex <48607619+zeiad6@users.noreply.github.com>` for every reachable
+  commit and moved the `v0.1.0` tag; `.mailmap` remains for old hashes. Do not
+  credit any other contributor without verified work.
 
 ## Definition of done
 

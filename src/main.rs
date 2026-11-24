@@ -7,10 +7,13 @@ use repl::{Editor, ReadOutcome};
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use vantyx::ast::Program;
+use vantyx::checker::SemanticModel;
 use vantyx::diagnostic::Severity;
-use vantyx::{compile, compile_with_options, render_runtime_error};
+use vantyx::span::SourceRegistry;
+use vantyx::{compile, compile_with_options, render_runtime_error_all};
 
 const USAGE: &str = "\
 Vantyx 0.1.0 - a safe, gradually typed language
@@ -86,8 +89,59 @@ fn read_source(path: &str) -> Result<String, i32> {
     }
 }
 
-fn display_name(path: &str) -> &str {
-    if path == "-" { "<stdin>" } else { path }
+/// A successfully checked entry file and every source it imported.
+struct Compiled {
+    program: Program,
+    model: SemanticModel,
+    sources: SourceRegistry,
+}
+
+/// Loads an entry file (and its modules), or compiles stdin as one source.
+fn compile_entry(path: &str) -> Result<Compiled, i32> {
+    if path == "-" {
+        let source = read_source(path)?;
+        let result = compile(&source);
+        if !result.diagnostics.is_empty() {
+            eprint!("{}", result.render("<stdin>", &source));
+        }
+        if result.has_errors() {
+            return Err(1);
+        }
+        let (Some(program), Some(model)) = (result.program, result.model) else {
+            eprintln!("error: internal compiler error: missing program after successful check");
+            return Err(1);
+        };
+        let mut sources = SourceRegistry::new();
+        sources.add("<stdin>", source);
+        return Ok(Compiled {
+            program,
+            model,
+            sources,
+        });
+    }
+
+    let loaded = match vantyx::module::load_file(Path::new(path)) {
+        Ok(loaded) => loaded,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return Err(1);
+        }
+    };
+    if !loaded.diagnostics.is_empty() {
+        eprint!("{}", loaded.render());
+    }
+    if loaded.has_errors() {
+        return Err(1);
+    }
+    let (Some(program), Some(model)) = (loaded.program, loaded.model) else {
+        eprintln!("error: internal compiler error: missing program after successful check");
+        return Err(1);
+    };
+    Ok(Compiled {
+        program,
+        model,
+        sources: loaded.sources,
+    })
 }
 
 /// A `Send` writer that locks stdout per operation. The interpreter runs on a
@@ -105,25 +159,13 @@ impl Write for StdoutWriter {
 }
 
 fn run_file(path: &str) -> i32 {
-    let source = match read_source(path) {
-        Ok(source) => source,
+    let compiled = match compile_entry(path) {
+        Ok(compiled) => compiled,
         Err(code) => return code,
-    };
-    let name = display_name(path);
-    let result = compile(&source);
-    if !result.diagnostics.is_empty() {
-        eprint!("{}", result.render(name, &source));
-    }
-    if result.has_errors() {
-        return 1;
-    }
-    let (Some(program), Some(model)) = (&result.program, &result.model) else {
-        eprintln!("error: internal compiler error: missing program after successful check");
-        return 1;
     };
 
     let mut out = StdoutWriter;
-    match vantyx::interp::run(program, model, &mut out) {
+    match vantyx::interp::run(&compiled.program, &compiled.model, &mut out) {
         Ok(()) => {
             if let Err(error) = out.flush() {
                 eprintln!("error: failed to flush output: {error}");
@@ -132,44 +174,29 @@ fn run_file(path: &str) -> i32 {
             0
         }
         Err(error) => {
-            eprint!("{}", render_runtime_error(&error, name, &source));
+            eprint!(
+                "{}",
+                render_runtime_error_all(&error, &compiled.sources)
+            );
             2
         }
     }
 }
 
 fn check_file(path: &str) -> i32 {
-    let source = match read_source(path) {
-        Ok(source) => source,
-        Err(code) => return code,
-    };
-    let name = display_name(path);
-    let result = compile(&source);
-    if !result.diagnostics.is_empty() {
-        eprint!("{}", result.render(name, &source));
+    match compile_entry(path) {
+        Ok(_) => 0,
+        Err(code) => code,
     }
-    if result.has_errors() { 1 } else { 0 }
 }
 
 fn build_file(path: &str, output: Option<&str>) -> i32 {
-    let source = match read_source(path) {
-        Ok(source) => source,
+    let compiled = match compile_entry(path) {
+        Ok(compiled) => compiled,
         Err(code) => return code,
     };
-    let name = display_name(path);
-    let result = compile(&source);
-    if !result.diagnostics.is_empty() {
-        eprint!("{}", result.render(name, &source));
-    }
-    if result.has_errors() {
-        return 1;
-    }
-    let (Some(program), Some(model)) = (&result.program, &result.model) else {
-        eprintln!("error: internal compiler error: missing program after successful check");
-        return 1;
-    };
 
-    let ir = match vantyx::ir::build(program, model) {
+    let ir = match vantyx::ir::build(&compiled.program, &compiled.model) {
         Ok(ir) => ir,
         Err(error) => {
             let mut diagnostic =
@@ -177,7 +204,14 @@ fn build_file(path: &str, output: Option<&str>) -> i32 {
             if let Some(help) = error.help {
                 diagnostic = diagnostic.with_help(help);
             }
-            eprint!("{}", diagnostic.render(name, &source));
+            let rendered = match compiled.sources.get(error.span.file) {
+                Some(file) => diagnostic.render(&file.name, &file.source),
+                None => format!(
+                    "error[{}]: {}\n",
+                    diagnostic.code, diagnostic.message
+                ),
+            };
+            eprint!("{rendered}");
             return 1;
         }
     };
@@ -199,7 +233,7 @@ fn build_file(path: &str, output: Option<&str>) -> i32 {
         }
     };
 
-    let c_source = vantyx::codegen_c::emit(&ir, name, &source);
+    let c_source = vantyx::codegen_c::emit_with_sources(&ir, &compiled.sources);
     let temp = match write_generated_c(&c_source) {
         Ok(path) => path,
         Err(code) => return code,
@@ -321,7 +355,9 @@ fn execute_snippet(state: &mut ReplState, entry: &str, out: &mut (dyn Write + Se
         .count();
     let auto_main = state.source.is_empty();
     if let Err(error) = vantyx::interp::run_repl(program, model, prefix, auto_main, out) {
-        eprint!("{}", render_runtime_error(&error, "<repl>", &source));
+        let mut sources = SourceRegistry::new();
+        sources.add("<repl>", source.clone());
+        eprint!("{}", render_runtime_error_all(&error, &sources));
         return;
     }
 

@@ -5,7 +5,10 @@
 
 use crate::span::Span;
 
-pub type ExprId = u32;
+/// Globally unique across a compilation. Multi-file parsing seeds the high 32
+/// bits with the source-file id so imported and entry expressions never share
+/// an id in the checker's type map.
+pub type ExprId = u64;
 
 #[derive(Debug, Clone)]
 pub struct Program {
@@ -18,7 +21,27 @@ pub enum Item {
     Fn(FnDecl),
     Struct(StructDecl),
     Enum(EnumDecl),
+    Import(ImportDecl),
     Stmt(Stmt),
+}
+
+/// A top-level `import "path"` or `from "path" import a, b` declaration.
+///
+/// The module loader resolves these before checking; the checker rejects any
+/// that survive (for example in stdin or REPL input).
+#[derive(Debug, Clone)]
+pub struct ImportDecl {
+    pub path: String,
+    pub path_span: Span,
+    /// `None` imports every declaration in the module.
+    pub names: Option<Vec<ImportName>>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportName {
+    pub name: String,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -193,8 +216,9 @@ impl MatchArmBody {
     }
 }
 
-/// v0.1 patterns are deliberately small: a wildcard or one variant with
-/// positional bindings/wildcards. Nested patterns are a documented follow-up.
+/// v0.1 patterns are deliberately small: a wildcard, a literal, a variant with
+/// positional bindings/wildcards/nested patterns, or an alternation of those
+/// patterns. Payload positions may recursively contain another pattern.
 #[derive(Debug, Clone)]
 pub enum Pattern {
     Wildcard {
@@ -204,10 +228,21 @@ pub enum Pattern {
         value: LiteralPattern,
         span: Span,
     },
+    /// Integer range: `low..high` is half-open, `low..=high` is inclusive.
+    Range {
+        start: i64,
+        end: i64,
+        inclusive: bool,
+        span: Span,
+    },
     Variant {
         name: String,
         name_span: Span,
         fields: Vec<PatternArg>,
+        span: Span,
+    },
+    Or {
+        alternatives: Vec<Pattern>,
         span: Span,
     },
 }
@@ -234,15 +269,35 @@ impl Pattern {
         match self {
             Pattern::Wildcard { span }
             | Pattern::Literal { span, .. }
-            | Pattern::Variant { span, .. } => *span,
+            | Pattern::Range { span, .. }
+            | Pattern::Variant { span, .. }
+            | Pattern::Or { span, .. } => *span,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum PatternArg {
-    Bind { name: String, name_span: Span },
-    Wildcard { span: Span },
+    Bind {
+        name: String,
+        name_span: Span,
+    },
+    Wildcard {
+        span: Span,
+    },
+    Nested {
+        pattern: Box<Pattern>,
+        span: Span,
+    },
+}
+
+impl PatternArg {
+    pub fn span(&self) -> Span {
+        match self {
+            PatternArg::Bind { name_span, .. } => *name_span,
+            PatternArg::Wildcard { span } | PatternArg::Nested { span, .. } => *span,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

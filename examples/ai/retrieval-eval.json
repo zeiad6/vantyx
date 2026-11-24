@@ -1,0 +1,12 @@
+{
+  "queries": [
+    {
+      "query": "modules and imports",
+      "relevant": ["language_specification.md"]
+    },
+    {
+      "query": "embedding provider bounded cache",
+      "relevant": ["ai/AI_ARCHITECTURE.md", "ai/AI_RESEARCH.md"]
+    }
+  ]
+}

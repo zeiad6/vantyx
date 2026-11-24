@@ -588,7 +588,6 @@ impl ProviderCapabilities {
     pub fn mock() -> Self {
         Self {
             chat: true,
-            // Streaming is planned for AI-3; no streaming method exists yet.
             streaming: false,
             tools: true,
             json_object: true,
@@ -605,8 +604,8 @@ impl ProviderCapabilities {
     pub fn openai_compatible() -> Self {
         Self {
             chat: true,
-            // The adapter currently performs non-streaming requests only.
-            streaming: false,
+            // Text streaming over SSE; tool-call streaming is not implemented.
+            streaming: true,
             tools: true,
             json_object: true,
             // Server-side JSON-schema support varies; enable explicitly.
@@ -642,6 +641,18 @@ pub trait Provider {
     /// stable `AI_E_UNSUPPORTED` error by default.
     fn chat(&self, _request: &ChatRequest, _budget: &mut Budget) -> Result<ChatResponse, AiError> {
         Err(AiError::unsupported("chat", self.id()))
+    }
+
+    /// Sends a streaming chat request. Text deltas are delivered to `on_delta`
+    /// as they arrive; the returned response aggregates the full text and
+    /// usage. Providers without streaming support return `AI_E_UNSUPPORTED`.
+    fn chat_stream(
+        &self,
+        _request: &ChatRequest,
+        _budget: &mut Budget,
+        _on_delta: &mut dyn FnMut(&str),
+    ) -> Result<ChatResponse, AiError> {
+        Err(AiError::unsupported("streaming", self.id()))
     }
 
     /// Sends an embedding request. Providers that do not support embeddings

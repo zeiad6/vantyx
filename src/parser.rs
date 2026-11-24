@@ -2,11 +2,15 @@
 
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Diagnostics};
-use crate::lexer::lex_fragment;
+use crate::lexer::lex_fragment_in_file;
 use crate::span::Span;
 use crate::token::{Token, TokenKind};
 
-const MAX_EXPR_DEPTH: usize = 256;
+// Keep this below the native stack budget: each level recurses through
+// `parse_expr_bp`, `parse_expr_inner`, and `parse_primary`. 256 levels fit an
+// 8 MiB process stack but overflowed the 2 MiB stack used by Rust test
+// threads once spans grew a file id, so 128 is the safe portable limit.
+const MAX_EXPR_DEPTH: usize = 128;
 /// Maximum height of an expression tree. Pratt parsing builds left-deep
 /// chains iteratively, so the nesting counter alone cannot bound the AST.
 const MAX_AST_DEPTH: usize = 256;
@@ -15,13 +19,20 @@ const MAX_AST_DEPTH: usize = 256;
 const MAX_BLOCK_DEPTH: usize = 256;
 /// Maximum nested type constructors such as `List[List[...]]`.
 const MAX_TYPE_DEPTH: usize = 64;
+/// Maximum nested payload patterns such as `Node(Leaf(Value(x)))`.
+const MAX_PATTERN_DEPTH: usize = 64;
 /// Maximum nested string interpolations such as `"{ "{...}" }"`.
 const MAX_INTERP_DEPTH: usize = 32;
 const UNARY_BP: u8 = 60;
 
 pub fn parse(source: &str, tokens: Vec<Token>) -> (Program, Diagnostics) {
+    parse_in_file(source, tokens, 0)
+}
+
+/// Parse tokens that belong to `file` in a multi-file compilation.
+pub fn parse_in_file(source: &str, tokens: Vec<Token>, file: u32) -> (Program, Diagnostics) {
     let tokens = if tokens.is_empty() {
-        vec![Token::new(TokenKind::Eof, Span::point(0))]
+        vec![Token::new(TokenKind::Eof, Span::point_in_file(file, 0))]
     } else {
         tokens
     };
@@ -30,10 +41,14 @@ pub fn parse(source: &str, tokens: Vec<Token>) -> (Program, Diagnostics) {
         tokens,
         pos: 0,
         diagnostics: Diagnostics::new(),
-        next_id: 0,
+        // File 0 owns ids `0..2^32`; file N owns `N << 32 ..`. The checker
+        // keys expression types by this id, so ids must not collide across a
+        // multi-file program.
+        next_id: u64::from(file) << 32,
         depth: 0,
         block_depth: 0,
         type_depth: 0,
+        pattern_depth: 0,
         interp_depth: 0,
         depth_reported: false,
     };
@@ -46,10 +61,11 @@ struct Parser<'a> {
     tokens: Vec<Token>,
     pos: usize,
     diagnostics: Diagnostics,
-    next_id: u32,
+    next_id: u64,
     depth: usize,
     block_depth: usize,
     type_depth: usize,
+    pattern_depth: usize,
     interp_depth: usize,
     depth_reported: bool,
 }
@@ -258,6 +274,14 @@ impl<'a> Parser<'a> {
                     self.error("E0104", "unexpected indentation", span);
                     self.skip_indented_block();
                 }
+                TokenKind::Import => match self.parse_import(false) {
+                    Ok(import) => items.push(Item::Import(import)),
+                    Err(()) => self.synchronize(),
+                },
+                TokenKind::From => match self.parse_import(true) {
+                    Ok(import) => items.push(Item::Import(import)),
+                    Err(()) => self.synchronize(),
+                },
                 TokenKind::Fn => match self.parse_fn() {
                     Ok(function) => items.push(Item::Fn(function)),
                     Err(()) => self.synchronize(),
@@ -281,6 +305,69 @@ impl<'a> Parser<'a> {
             items,
             span: start_span.merge(end_span),
         }
+    }
+
+    fn parse_import(&mut self, from: bool) -> Result<ImportDecl, ()> {
+        let start = self.advance().span;
+        let path_token = self.expect(TokenKind::Str(String::new()), "an import path string")?;
+        let TokenKind::Str(raw) = path_token.kind else {
+            return Err(());
+        };
+        let path = self.import_path(&raw, path_token.span)?;
+        let mut names = None;
+        if from {
+            self.expect(TokenKind::Import, " after the module path")?;
+            let mut imported: Vec<ImportName> = Vec::new();
+            loop {
+                let (name, span) = self.expect_ident("an imported name")?;
+                if imported.iter().any(|item| item.name == name) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E0511",
+                            format!("duplicate imported name `{name}`"),
+                            span,
+                        )
+                        .with_help("each name may appear once per import"),
+                    );
+                } else {
+                    imported.push(ImportName { name, span });
+                }
+                if !self.eat(&TokenKind::Comma) {
+                    break;
+                }
+            }
+            names = Some(imported);
+        }
+        let end = self.peek().span;
+        self.expect_stmt_end()?;
+        Ok(ImportDecl {
+            path,
+            path_span: path_token.span,
+            names,
+            span: start.merge(end),
+        })
+    }
+
+    fn import_path(&mut self, raw: &str, span: Span) -> Result<String, ()> {
+        if raw.is_empty() {
+            self.diagnostics.push(
+                Diagnostic::error("E0512", "import path must not be empty", span)
+                    .with_help("write a path such as `import \"lib/math.vtx\"`"),
+            );
+            return Err(());
+        }
+        if raw.contains(['{', '}', '\\']) || raw.chars().any(char::is_control) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0512",
+                    "import paths must be plain strings without interpolation or escapes",
+                    span,
+                )
+                .with_help("use forward slashes and literal path characters"),
+            );
+            return Err(());
+        }
+        Ok(raw.to_string())
     }
 
     fn parse_fn(&mut self) -> Result<FnDecl, ()> {
@@ -699,6 +786,44 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, ()> {
+        let first = self.parse_pattern_atom()?;
+        if !self.check(&TokenKind::Pipe) {
+            return Ok(first);
+        }
+        let mut alternatives = vec![first];
+        while self.eat(&TokenKind::Pipe) {
+            alternatives.push(self.parse_pattern_atom()?);
+        }
+        let span = alternatives
+            .first()
+            .map(Pattern::span)
+            .unwrap_or_else(|| self.peek().span)
+            .merge(
+                alternatives
+                    .last()
+                    .map(Pattern::span)
+                    .unwrap_or_else(|| self.peek().span),
+            );
+        Ok(Pattern::Or { alternatives, span })
+    }
+
+    fn parse_pattern_atom(&mut self) -> Result<Pattern, ()> {
+        self.pattern_depth += 1;
+        if self.pattern_depth > MAX_PATTERN_DEPTH {
+            self.pattern_depth -= 1;
+            self.error(
+                "E0112",
+                format!("pattern nesting exceeds the maximum depth of {MAX_PATTERN_DEPTH}"),
+                self.peek().span,
+            );
+            return Err(());
+        }
+        let result = self.parse_pattern_atom_inner();
+        self.pattern_depth -= 1;
+        result
+    }
+
+    fn parse_pattern_atom_inner(&mut self) -> Result<Pattern, ()> {
         let start = self.peek().span;
         if let TokenKind::Ident(name) = &self.peek().kind
             && name == "_"
@@ -709,6 +834,9 @@ impl<'a> Parser<'a> {
         match self.peek().kind.clone() {
             TokenKind::Int(value) => {
                 self.advance();
+                if self.check(&TokenKind::DotDot) || self.check(&TokenKind::DotDotEq) {
+                    return self.finish_range_pattern(value, start);
+                }
                 return Ok(Pattern::Literal {
                     value: LiteralPattern::Int(value),
                     span: start,
@@ -741,6 +869,9 @@ impl<'a> Parser<'a> {
                         ));
                         return Err(());
                     };
+                    if self.check(&TokenKind::DotDot) || self.check(&TokenKind::DotDotEq) {
+                        return self.finish_range_pattern(value, start);
+                    }
                     return Ok(Pattern::Literal {
                         value: LiteralPattern::Int(value),
                         span: start.merge(int_span),
@@ -807,30 +938,38 @@ impl<'a> Parser<'a> {
                             self.advance();
                             fields.push(PatternArg::Wildcard { span: field_start });
                         }
+                        TokenKind::Ident(_)
+                            if matches!(self.peek_kind_n(1), TokenKind::LParen) =>
+                        {
+                            let pattern = self.parse_pattern_atom()?;
+                            fields.push(PatternArg::Nested {
+                                span: pattern.span(),
+                                pattern: Box::new(pattern),
+                            });
+                        }
                         TokenKind::Ident(field_name) => {
                             self.advance();
-                            if self.check(&TokenKind::LParen) {
-                                self.diagnostics.push(
-                                    Diagnostic::error(
-                                        "E0112",
-                                        "nested patterns are not supported yet",
-                                        field_start,
-                                    )
-                                    .with_help(
-                                        "bind the payload and match on it in the arm body",
-                                    ),
-                                );
-                                return Err(());
-                            }
                             fields.push(PatternArg::Bind {
                                 name: field_name,
                                 name_span: field_start,
                             });
                         }
+                        TokenKind::Int(_)
+                        | TokenKind::True
+                        | TokenKind::False
+                        | TokenKind::Str(_)
+                        | TokenKind::Minus
+                        | TokenKind::Float(_) => {
+                            let pattern = self.parse_pattern_atom()?;
+                            fields.push(PatternArg::Nested {
+                                span: pattern.span(),
+                                pattern: Box::new(pattern),
+                            });
+                        }
                         _ => {
                             let span = self.peek().span;
                             let message = format!(
-                                "expected a binding or `_` in a pattern, found {}",
+                                "expected a binding, `_`, or a nested pattern, found {}",
                                 self.peek().kind.describe()
                             );
                             self.diagnostics.push(Diagnostic::error("E0101", message, span));
@@ -854,6 +993,80 @@ impl<'a> Parser<'a> {
             name_span,
             fields,
             span,
+        })
+    }
+
+    /// Consumes `..` or `..=` and an integer upper bound after an integer
+    /// pattern literal. Both bounds accept an optional minus sign.
+    fn finish_range_pattern(&mut self, start: i64, start_span: Span) -> Result<Pattern, ()> {
+        let inclusive = self.check(&TokenKind::DotDotEq);
+        self.advance();
+        let end = match self.peek().kind.clone() {
+            TokenKind::Int(value) => {
+                let span = self.peek().span;
+                self.advance();
+                (value, span)
+            }
+            TokenKind::Minus => {
+                let minus_span = self.peek().span;
+                self.advance();
+                match self.peek().kind.clone() {
+                    TokenKind::Int(value) => {
+                        let int_span = self.peek().span;
+                        self.advance();
+                        match value.checked_neg() {
+                            Some(value) => (value, minus_span.merge(int_span)),
+                            None => {
+                                self.diagnostics.push(Diagnostic::error(
+                                    "E0113",
+                                    "integer literal is out of range for a pattern",
+                                    minus_span.merge(int_span),
+                                ));
+                                return Err(());
+                            }
+                        }
+                    }
+                    _ => {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E0101",
+                                "expected an integer literal after `-` in a range pattern",
+                                minus_span.merge(self.peek().span),
+                            )
+                            .with_help("range bounds must be integer literals such as `-5..0`"),
+                        );
+                        return Err(());
+                    }
+                }
+            }
+            TokenKind::Float(_) => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E0113",
+                        "float range bounds are not supported",
+                        self.peek().span,
+                    )
+                    .with_help("range patterns use integer bounds such as `0..=9`"),
+                );
+                return Err(());
+            }
+            _ => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E0101",
+                        "expected an integer literal as the range end",
+                        self.peek().span,
+                    )
+                    .with_help("range patterns use integer bounds such as `0..=9` or `0..10`"),
+                );
+                return Err(());
+            }
+        };
+        Ok(Pattern::Range {
+            start,
+            end: end.0,
+            inclusive,
+            span: start_span.merge(end.1),
         })
     }
 
@@ -1340,7 +1553,7 @@ impl<'a> Parser<'a> {
                             Diagnostic::error(
                                 "E0003",
                                 "trailing backslash in string",
-                                Span::new(base + escape_start, base + i),
+                                span.sub(base + escape_start, base + i),
                             )
                             .with_help("escape the backslash as `\\\\`"),
                         );
@@ -1364,7 +1577,7 @@ impl<'a> Parser<'a> {
                                 Diagnostic::error(
                                     "E0003",
                                     format!("unknown escape sequence `\\{esc}`"),
-                                    Span::new(base + escape_start, base + i + esc.len_utf8()),
+                                    span.sub(base + escape_start, base + i + esc.len_utf8()),
                                 )
                                 .with_help("valid escapes: \\n \\t \\r \\\\ \\\" \\{ \\}"),
                             );
@@ -1420,7 +1633,7 @@ impl<'a> Parser<'a> {
                             Diagnostic::error(
                                 "E0003",
                                 "unterminated string interpolation",
-                                Span::new(base + i, base + raw.len()),
+                                span.sub(base + i, base + raw.len()),
                             )
                             .with_help("add a closing `}` or escape it as `}}`"),
                         );
@@ -1432,7 +1645,7 @@ impl<'a> Parser<'a> {
                             Diagnostic::error(
                                 "E0003",
                                 "empty string interpolation",
-                                Span::new(base + expr_start, base + end),
+                                span.sub(base + expr_start, base + end),
                             )
                             .with_help("put an expression between the braces"),
                         );
@@ -1441,7 +1654,8 @@ impl<'a> Parser<'a> {
                     if !text.is_empty() {
                         parts.push(StrPart::Text(std::mem::take(&mut text)));
                     }
-                    let expr = self.parse_embedded_expr(expr_source, base + expr_start)?;
+                    let expr =
+                        self.parse_embedded_expr(expr_source, base + expr_start, span.file)?;
                     parts.push(StrPart::Expr(expr));
                     i = end + 1;
                 }
@@ -1455,7 +1669,7 @@ impl<'a> Parser<'a> {
                         Diagnostic::error(
                             "E0003",
                             "unexpected `}` in string",
-                            Span::new(base + i, base + i + 1),
+                            span.sub(base + i, base + i + 1),
                         )
                         .with_help("use `}}` for a literal closing brace"),
                     );
@@ -1478,7 +1692,12 @@ impl<'a> Parser<'a> {
         Ok(self.new_expr(ExprKind::Str(parts), span))
     }
 
-    fn parse_embedded_expr(&mut self, source: &str, base: usize) -> Result<Expr, ()> {
+    fn parse_embedded_expr(
+        &mut self,
+        source: &str,
+        base: usize,
+        file: u32,
+    ) -> Result<Expr, ()> {
         self.interp_depth += 1;
         if self.interp_depth > MAX_INTERP_DEPTH {
             self.interp_depth -= 1;
@@ -1487,7 +1706,7 @@ impl<'a> Parser<'a> {
                 format!(
                     "string interpolation nesting is too deep (maximum is {MAX_INTERP_DEPTH})"
                 ),
-                Span::point(base),
+                Span::point_in_file(file, base),
             );
             return Err(());
         }
@@ -1496,7 +1715,7 @@ impl<'a> Parser<'a> {
         let leading = source.len() - source.trim_start().len();
         let source = source.trim_start();
         let base = base + leading;
-        let lexed = lex_fragment(source, base);
+        let lexed = lex_fragment_in_file(source, base, file);
         let had_errors = lexed.diagnostics.has_errors();
         self.diagnostics.extend(lexed.diagnostics);
         if had_errors {
@@ -1512,6 +1731,7 @@ impl<'a> Parser<'a> {
             depth: 0,
             block_depth: 0,
             type_depth: self.type_depth,
+            pattern_depth: 0,
             interp_depth: self.interp_depth,
             depth_reported: self.depth_reported,
         };
@@ -1950,5 +2170,204 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_nested_patterns() {
+        let source = concat!(
+            "enum Tree:\n",
+            "    Leaf(value: Int)\n",
+            "    Node(left: Tree, right: Tree)\n",
+            "\n",
+            "fn main():\n",
+            "    match Node(Leaf(1), Leaf(2)):\n",
+            "        Node(Leaf(value), _):\n",
+            "            print(value)\n",
+            "        _:\n",
+            "            print(0)\n",
+        );
+        let program = parse_ok(source);
+        let Item::Fn(main) = &program.items[1] else {
+            panic!("expected function");
+        };
+        let StmtKind::Match { arms, .. } = &main.body.stmts[0].kind else {
+            panic!("expected match statement");
+        };
+        let Pattern::Variant { name, fields, .. } = &arms[0].pattern else {
+            panic!("expected variant pattern");
+        };
+        assert_eq!(name, "Node");
+        assert_eq!(fields.len(), 2);
+        let PatternArg::Nested { pattern, .. } = &fields[0] else {
+            panic!("expected nested pattern");
+        };
+        let Pattern::Variant {
+            name,
+            fields: leaf_fields,
+            ..
+        } = pattern.as_ref()
+        else {
+            panic!("expected nested variant pattern");
+        };
+        assert_eq!(name, "Leaf");
+        assert!(matches!(
+            leaf_fields.as_slice(),
+            [PatternArg::Bind { name, .. }] if name == "value"
+        ));
+        assert!(matches!(fields[1], PatternArg::Wildcard { .. }));
+    }
+
+    #[test]
+    fn deeply_nested_patterns_are_rejected_without_overflow() {
+        let mut pattern = String::from("x");
+        for _ in 0..70 {
+            pattern = format!("A({pattern})");
+        }
+        let source = format!(
+            "fn main():\n    match value:\n        {pattern}:\n            print(1)\n        _:\n            print(0)\n"
+        );
+        let diagnostics = parse_err(&source);
+        assert!(
+            diagnostics
+                .items
+                .iter()
+                .any(|d| d.code == "E0112" && d.message.contains("nesting")),
+            "{:?}",
+            diagnostics.items
+        );
+    }
+
+    #[test]
+    fn parses_range_patterns() {
+        let source = concat!(
+            "fn label(n: Int) -> Str:\n",
+            "    return match n:\n",
+            "        0..3: \"low\"\n",
+            "        3..=9: \"mid\"\n",
+            "        -5..-1: \"negative\"\n",
+            "        _: \"other\"\n",
+        );
+        let program = parse_ok(source);
+        let Item::Fn(label) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let StmtKind::Return(Some(Expr {
+            kind: ExprKind::Match { arms, .. },
+            ..
+        })) = &label.body.stmts[0].kind
+        else {
+            panic!("expected match expression");
+        };
+        assert!(matches!(
+            arms[0].pattern,
+            Pattern::Range {
+                start: 0,
+                end: 3,
+                inclusive: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            arms[1].pattern,
+            Pattern::Range {
+                start: 3,
+                end: 9,
+                inclusive: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            arms[2].pattern,
+            Pattern::Range {
+                start: -5,
+                end: -1,
+                inclusive: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_nested_range_patterns() {
+        let source = concat!(
+            "enum Box:\n",
+            "    Value(n: Int)\n",
+            "\n",
+            "fn label(box: Box) -> Str:\n",
+            "    return match box:\n",
+            "        Value(0..=9): \"digit\"\n",
+            "        Value(_): \"other\"\n",
+        );
+        let program = parse_ok(source);
+        let Item::Fn(label) = &program.items[1] else {
+            panic!("expected function");
+        };
+        let StmtKind::Return(Some(Expr {
+            kind: ExprKind::Match { arms, .. },
+            ..
+        })) = &label.body.stmts[0].kind
+        else {
+            panic!("expected match expression");
+        };
+        let Pattern::Variant { fields, .. } = &arms[0].pattern else {
+            panic!("expected variant pattern");
+        };
+        let PatternArg::Nested { pattern, .. } = &fields[0] else {
+            panic!("expected nested pattern");
+        };
+        assert!(matches!(
+            **pattern,
+            Pattern::Range {
+                start: 0,
+                end: 9,
+                inclusive: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_or_patterns() {
+        let source = concat!(
+            "fn label(n: Int) -> Str:\n",
+            "    return match n:\n",
+            "        1 | 2 | 3: \"small\"\n",
+            "        _: \"other\"\n",
+        );
+        let program = parse_ok(source);
+        let Item::Fn(label) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let StmtKind::Return(Some(Expr {
+            kind: ExprKind::Match { arms, .. },
+            ..
+        })) = &label.body.stmts[0].kind
+        else {
+            panic!("expected match expression");
+        };
+        let Pattern::Or {
+            alternatives,
+            span,
+        } = &arms[0].pattern
+        else {
+            panic!("expected or-pattern, got {:?}", arms[0].pattern);
+        };
+        assert_eq!(alternatives.len(), 3);
+        assert!(matches!(
+            alternatives[0],
+            Pattern::Literal {
+                value: LiteralPattern::Int(1),
+                ..
+            }
+        ));
+        assert!(matches!(
+            alternatives[2],
+            Pattern::Literal {
+                value: LiteralPattern::Int(3),
+                ..
+            }
+        ));
+        assert_eq!(span.start, alternatives[0].span().start);
+        assert_eq!(span.end, alternatives[2].span().end);
     }
 }

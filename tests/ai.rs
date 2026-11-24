@@ -3,6 +3,7 @@
 //! These tests are offline: the only HTTP server is a loopback stub started by
 //! the test itself. No model, API key, or internet access is required.
 
+use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -84,6 +85,48 @@ fn serve_openai_once(response_body: &str) -> (String, thread::JoinHandle<String>
         );
         stream.write_all(response.as_bytes()).unwrap();
         stream.flush().unwrap();
+        request
+    });
+    (format!("http://{address}/v1"), handle)
+}
+
+fn serve_sse_once(chunks: Vec<String>) -> (String, thread::JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut request = String::new();
+        let mut content_length = 0;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            if line == "\r\n" {
+                break;
+            }
+            if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                content_length = value.trim().parse().unwrap_or(0);
+            }
+            request.push_str(&line);
+        }
+        let mut request_body = vec![0_u8; content_length];
+        reader.read_exact(&mut request_body).unwrap();
+        request.push_str(&String::from_utf8_lossy(&request_body));
+        let body = chunks.concat();
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(head.as_bytes()).unwrap();
+        stream.flush().unwrap();
+        for chunk in &chunks {
+            stream.write_all(chunk.as_bytes()).unwrap();
+            stream.flush().unwrap();
+            thread::sleep(Duration::from_millis(10));
+        }
         request
     });
     (format!("http://{address}/v1"), handle)
@@ -190,6 +233,101 @@ fn json_output_includes_usage_and_finish_reason() {
             .unwrap()
             > 0
     );
+}
+
+#[test]
+fn streamed_chat_prints_deltas_and_sends_a_stream_request() {
+    let (endpoint, handle) = serve_sse_once(vec![
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hel\"},\"finish_reason\":null}]}\n\n"
+            .to_string(),
+        "data: {\"choices\":[{\"delta\":{\"content\":\"lo \"},\"finish_reason\":null}]}\n\n"
+            .to_string(),
+        "data: {\"choices\":[{\"delta\":{\"content\":\"world\"},\"finish_reason\":\"stop\"}]}\n\n"
+            .to_string(),
+        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":3,\"total_tokens\":7}}\n\n"
+            .to_string(),
+        "data: [DONE]\n\n".to_string(),
+    ]);
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--model",
+            "demo",
+            "--stream",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    assert_eq!(run.stdout, "hello world\n");
+    let request = handle.join().unwrap();
+    assert!(request.contains("Accept: text/event-stream"));
+    assert!(request.contains("\"stream\":true"));
+    assert!(request.contains("\"include_usage\":true"));
+    assert!(request.contains("\"stream_options\""));
+}
+
+#[test]
+fn stream_rejects_non_streaming_providers_and_json() {
+    let run = vantyx(
+        &["ai", "chat", "--provider", "mock", "--stream", "hello"],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 64);
+    assert!(run.stderr.contains("does not support streaming"));
+
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "openai",
+            "--endpoint",
+            "http://127.0.0.1:1/v1",
+            "--model",
+            "demo",
+            "--stream",
+            "--json",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 64);
+    assert!(run.stderr.contains("cannot be combined"));
+}
+
+#[test]
+fn streamed_chat_reports_provider_error_frames() {
+    let (endpoint, handle) = serve_sse_once(vec![
+        "data: {\"error\":{\"message\":\"bad request\"}}\n\n".to_string(),
+    ]);
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--model",
+            "demo",
+            "--stream",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 1);
+    assert!(run.stderr.contains("provider error"), "{}", run.stderr);
+    handle.join().unwrap();
 }
 
 #[test]
@@ -334,10 +472,13 @@ fn openai_chat_cli_uses_a_loopback_server() {
 }
 
 #[test]
-fn openai_capabilities_do_not_claim_unimplemented_streaming() {
+fn openai_capabilities_claim_text_streaming() {
     let capabilities = ProviderCapabilities::openai_compatible();
     assert!(capabilities.chat);
-    assert!(!capabilities.streaming);
+    assert!(capabilities.streaming);
+    // Tool calls remain available in non-streaming mode; streaming tool calls
+    // are rejected explicitly by the adapter.
+    assert!(capabilities.tools);
     assert!(capabilities.embeddings);
 }
 
@@ -674,4 +815,252 @@ fn extract_validates_a_loopback_openai_response() {
     let captured = handle.join().unwrap();
     assert!(captured.starts_with("POST /v1/chat/completions HTTP/1.1"));
     assert!(captured.contains(r#""response_format":{"type":"json_object"}"#));
+}
+
+#[test]
+fn rag_index_search_and_eval_are_offline_and_cited() {
+    let root = temp_path("rag-corpus");
+    fs::create_dir_all(root.join("sub")).unwrap();
+    fs::write(
+        root.join("rust.md"),
+        "# Rust\nRust enforces memory safety without a garbage collector.\nOwnership prevents use-after-free.\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("sub/python.md"),
+        "# Python\nPython is used for data science and automation.\n",
+    )
+    .unwrap();
+    let index = temp_path("rag-index.json");
+    let run = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root.to_str().unwrap(),
+            "--out",
+            index.to_str().unwrap(),
+            "--provider",
+            "hash",
+            "--dimensions",
+            "24",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let value = vantyx::ai::parse(run.stdout.trim()).expect("index JSON");
+    assert_eq!(value.get("chunks").and_then(|value| value.as_u64()), Some(2));
+    assert_eq!(
+        value.get("dimensions").and_then(|value| value.as_u64()),
+        Some(24)
+    );
+    assert_eq!(
+        value.get("mode").and_then(|value| value.as_str()),
+        Some("semantic")
+    );
+    assert!(index.is_file());
+
+    let search = vantyx(
+        &[
+            "ai",
+            "search",
+            "--index",
+            index.to_str().unwrap(),
+            "--query",
+            "memory safety",
+            "--mode",
+            "lexical",
+            "--top-k",
+            "2",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(search.status, 0, "{}", search.stderr);
+    let value = vantyx::ai::parse(search.stdout.trim()).expect("search JSON");
+    let hits = value
+        .get("hits")
+        .and_then(|value| value.as_array())
+        .expect("hits");
+    assert!(!hits.is_empty());
+    assert_eq!(
+        hits[0].get("source").and_then(|value| value.as_str()),
+        Some("rust.md")
+    );
+    assert_eq!(
+        hits[0].get("start_line").and_then(|value| value.as_u64()),
+        Some(1)
+    );
+    assert!(
+        hits[0]
+            .get("text")
+            .and_then(|value| value.as_str())
+            .expect("text")
+            .contains("memory safety")
+    );
+
+    let filtered = vantyx(
+        &[
+            "ai",
+            "search",
+            "--index",
+            index.to_str().unwrap(),
+            "--query",
+            "data science",
+            "--mode",
+            "lexical",
+            "--source-prefix",
+            "sub/",
+            "--top-k",
+            "2",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(filtered.status, 0, "{}", filtered.stderr);
+    let value = vantyx::ai::parse(filtered.stdout.trim()).expect("filtered search JSON");
+    let hits = value
+        .get("hits")
+        .and_then(|value| value.as_array())
+        .expect("filtered hits");
+    assert!(!hits.is_empty());
+    assert!(
+        hits.iter().all(|hit| hit
+            .get("source")
+            .and_then(|value| value.as_str())
+            .is_some_and(|source| source.starts_with("sub/")))
+    );
+
+    let fixture = temp_path("rag-eval.json");
+    fs::write(
+        &fixture,
+        r#"{"queries":[{"query":"memory safety","relevant":["rust.md"]}]}"#,
+    )
+    .unwrap();
+    let eval = vantyx(
+        &[
+            "ai",
+            "eval",
+            "--index",
+            index.to_str().unwrap(),
+            "--fixture",
+            fixture.to_str().unwrap(),
+            "--mode",
+            "lexical",
+            "--top-k",
+            "2",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(eval.status, 0, "{}", eval.stderr);
+    let value = vantyx::ai::parse(eval.stdout.trim()).expect("eval JSON");
+    assert_eq!(
+        value.get("recall_at_k").and_then(|value| value.as_f64()),
+        Some(1.0)
+    );
+    assert_eq!(
+        value.get("mrr").and_then(|value| value.as_f64()),
+        Some(1.0)
+    );
+    assert_eq!(
+        value.get("queries").and_then(|value| value.as_u64()),
+        Some(1)
+    );
+
+    let _ = fs::remove_dir_all(&root);
+    let _ = fs::remove_file(&index);
+    let _ = fs::remove_file(&fixture);
+}
+
+#[test]
+fn lexical_rag_index_rejects_semantic_search_and_bad_limits() {
+    let root = temp_path("rag-lexical-corpus");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("a.md"), "Alpha notes about memory safety.\n").unwrap();
+    let index = temp_path("rag-lexical-index.json");
+    let run = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root.to_str().unwrap(),
+            "--out",
+            index.to_str().unwrap(),
+            "--mode",
+            "lexical",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let value = vantyx::ai::parse(run.stdout.trim()).expect("index JSON");
+    assert_eq!(
+        value.get("provider").and_then(|value| value.as_str()),
+        Some("lexical")
+    );
+    assert_eq!(
+        value.get("dimensions").and_then(|value| value.as_u64()),
+        Some(0)
+    );
+
+    let search = vantyx(
+        &[
+            "ai",
+            "search",
+            "--index",
+            index.to_str().unwrap(),
+            "--query",
+            "memory",
+            "--mode",
+            "semantic",
+        ],
+        None,
+        &[],
+    );
+    assert_ne!(search.status, 0);
+    assert!(search.stderr.contains("no vectors"), "{}", search.stderr);
+
+    let bad = vantyx(
+        &[
+            "ai",
+            "search",
+            "--index",
+            index.to_str().unwrap(),
+            "--query",
+            "memory",
+            "--top-k",
+            "0",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(bad.status, 64);
+    assert!(bad.stderr.contains("--top-k"), "{}", bad.stderr);
+
+    let hybrid_build = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root.to_str().unwrap(),
+            "--out",
+            index.to_str().unwrap(),
+            "--mode",
+            "hybrid",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(hybrid_build.status, 64);
+    assert!(hybrid_build.stderr.contains("hybrid is a search mode"));
+
+    let _ = fs::remove_dir_all(&root);
+    let _ = fs::remove_file(&index);
 }

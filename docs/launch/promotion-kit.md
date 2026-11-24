@@ -75,10 +75,10 @@ What works: the language above, native lists/maps/structs/enums, checked
 arithmetic, bounds checks, UTF-8 string indexing, a benchmark baseline against
 C, Rust, and Python, and an offline AI host CLI with mock/echo providers, strict
 JSON, schema validation, tools, bounded agents, and an OpenAI-compatible
-non-streaming adapter.
+adapter with buffered and streamed text chat.
 
-What does not: modules, generics, closures, async, FFI, a standard library,
-native support for `Any`, language-level AI syntax, streaming AI output, model
+What does not: generics, closures, async, FFI, a standard library,
+native support for `Any`, language-level AI syntax, streaming tool calls, model
 downloads, or GPU/tensor support. Native allocations are intentionally leaked in
 v0.1, scalar map keys use a hash index while structural keys remain O(n), and
 there is no cycle collector or sandbox. The AI
@@ -111,8 +111,8 @@ payloads, exhaustive `match` with literal patterns and guards, lists, maps,
 strings, and a REPL. The native backend covers scalars, strings, lists, maps,
 structs, enums, and guarded `match`.
 
-It is deliberately small: no modules, generics, closures, async, FFI, or
-standard library yet. Native allocations are leaked in v0.1; scalar map keys
+It remains deliberately small: file-based modules exist, but there are no
+generics, closures, async, FFI, or standard library yet. Native allocations are leaked in v0.1; scalar map keys
 use a hash index, while structural keys remain O(n). A new offline AI host
 (`vantyx ai`) adds mock/echo chat, strict JSON,
 schema validation, tools, bounded agents, and an OpenAI-compatible adapter with
@@ -138,10 +138,10 @@ with `E0401`. That has forced the native subset to stay explicit and the tests
 to be differential rather than example-based.
 
 Current native support includes scalars, strings, `List[T]`, `Map[K,V]`,
-structs, closed enums, `match` with literal patterns and guards, checked
-arithmetic, and bounds checks. Missing: modules, generics, closures, async, FFI,
-native `Any`, fast native maps, and reclamation. Native allocations are
-intentionally leaked in v0.1.
+structs, closed enums, imported modules, `match` with literal patterns and
+guards, checked arithmetic, and bounds checks. Missing: generics, closures,
+async, FFI, native `Any`, and reclamation. Native allocations are intentionally
+leaked in v0.1.
 
 Code, specification, ADRs, and benchmark methodology:
 https://github.com/zeiad6/vantyx

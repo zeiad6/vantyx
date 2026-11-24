@@ -616,14 +616,165 @@ fn main():
 }
 
 #[test]
-fn nested_patterns_are_rejected_with_a_helpful_error() {
-    let run = check_file(
-        "match-nested-pattern",
-        "enum Nested:\n    Leaf(value: Int)\n    Node(inner: Nested)\n\n\
-         fn main():\n    match Node(Leaf(1)):\n\
-         \x20       Node(Leaf(value)):\n            print(value)\n\
-         \x20       _:\n            print(0)\n",
+fn or_patterns_match_alternatives_and_bind_payloads() {
+    let run = run_file(
+        "or-patterns",
+        "enum Shape:\n    Circle(radius: Int)\n    Square(side: Int)\n\n\
+         fn value(shape: Shape) -> Int:\n    match shape:\n\
+         \x20       Circle(size) | Square(size):\n            return size\n\n\
+         fn classify(shape: Shape) -> Str:\n    match shape:\n\
+         \x20       Circle(size) | Square(size) if size > 5:\n            return \"big\"\n\
+         \x20       Circle(size) | Square(size):\n            return \"small\"\n\n\
+         fn label(n: Int) -> Str:\n    return match n:\n\
+         \x20       1 | 2: \"small\"\n\
+         \x20       3 | 4 if n > 0: \"medium\"\n\
+         \x20       _: \"other\"\n\n\
+         fn flag(value: Bool) -> Str:\n    return match value:\n\
+         \x20       true | false: \"covered\"\n\n\
+         fn main():\n\
+         \x20   print(value(Circle(7)))\n\
+         \x20   print(value(Square(9)))\n\
+         \x20   print(classify(Circle(6)))\n\
+         \x20   print(classify(Square(2)))\n\
+         \x20   print(label(2))\n\
+         \x20   print(label(4))\n\
+         \x20   print(label(8))\n\
+         \x20   print(flag(false))\n",
     );
-    assert_eq!(run.code, 1);
-    assert!(run.stderr.contains("error[E0112]"), "{}", run.stderr);
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "7\n9\nbig\nsmall\nsmall\nmedium\nother\ncovered\n"
+    );
+}
+
+#[test]
+fn range_patterns_match_half_open_and_inclusive_bounds() {
+    let run = run_file(
+        "range-patterns",
+        "fn classify(n: Int) -> Str:\n    return match n:\n\
+         \x20       0..=9: \"digit\"\n\
+         \x20       10..100: \"small\"\n\
+         \x20       -10..0: \"negative\"\n\
+         \x20       100..=100: \"hundred\"\n\
+         \x20       _: \"other\"\n\n\
+         enum Code:\n    Small(n: Int)\n    Big(n: Int)\n\n\
+         fn label(code: Code) -> Str:\n    return match code:\n\
+         \x20       Small(0..=9): \"small-digit\"\n\
+         \x20       Small(n) if n < 0: \"small-negative\"\n\
+         \x20       Small(_): \"small\"\n\
+         \x20       Big(n) if n >= 1000: \"big\"\n\
+         \x20       Big(_): \"medium\"\n\n\
+         fn bucket(n: Int) -> Str:\n    return match n:\n\
+         \x20       1..=3 | 5..=7: \"low\"\n\
+         \x20       8..=9: \"high\"\n\
+         \x20       _: \"other\"\n\n\
+         fn main():\n\
+         \x20   print(classify(0))\n\
+         \x20   print(classify(9))\n\
+         \x20   print(classify(10))\n\
+         \x20   print(classify(99))\n\
+         \x20   print(classify(-10))\n\
+         \x20   print(classify(-1))\n\
+         \x20   print(classify(100))\n\
+         \x20   print(classify(101))\n\
+         \x20   print(label(Small(5)))\n\
+         \x20   print(label(Small(-3)))\n\
+         \x20   print(label(Small(50)))\n\
+         \x20   print(label(Big(1000)))\n\
+         \x20   print(label(Big(4)))\n\
+         \x20   print(bucket(2))\n\
+         \x20   print(bucket(6))\n\
+         \x20   print(bucket(8))\n\
+         \x20   print(bucket(4))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "digit\ndigit\nsmall\nsmall\nnegative\nnegative\nhundred\nother\n\
+         small-digit\nsmall-negative\nsmall\nbig\nmedium\nlow\nlow\nhigh\nother\n"
+    );
+}
+
+#[test]
+fn nested_patterns_bind_payloads_at_every_level() {
+    let run = run_file(
+        "nested-patterns",
+        "enum Tree:\n    Leaf(value: Int)\n    Node(left: Tree, right: Tree)\n\n\
+         fn sum(tree: Tree) -> Int:\n    match tree:\n\
+         \x20       Leaf(value):\n            return value\n\
+         \x20       Node(Leaf(left), Leaf(right)):\n            return left + right\n\
+         \x20       Node(Leaf(left), _):\n            return left\n\
+         \x20       Node(_, Leaf(right)):\n            return right\n\
+         \x20       Node(_, _):\n            return 0\n\n\
+         fn right_sum(tree: Tree) -> Int:\n    return match tree:\n\
+         \x20       Leaf(value): value\n\
+         \x20       Node(Leaf(value), right): value + right_sum(right)\n\
+         \x20       Node(_, _): 0\n\n\
+         enum Maybe:\n    Nothing\n    Just(value: Maybe)\n    Number(value: Int)\n\n\
+         fn describe(value: Maybe) -> Str:\n    return match value:\n\
+         \x20       Just(Nothing()): \"just nothing\"\n\
+         \x20       Just(Just(_)): \"double\"\n\
+         \x20       Just(Number(number)) if number > 0: \"positive\"\n\
+         \x20       Just(Number(_)): \"number\"\n\
+         \x20       Nothing(): \"nothing\"\n\
+         \x20       Number(_): \"raw\"\n\n\
+         fn main():\n\
+         \x20   print(sum(Leaf(7)))\n\
+         \x20   print(sum(Node(Leaf(2), Leaf(3))))\n\
+         \x20   print(sum(Node(Leaf(4), Node(Leaf(9), Leaf(9)))))\n\
+         \x20   print(sum(Node(Node(Leaf(9), Leaf(9)), Leaf(5))))\n\
+         \x20   print(sum(Node(Node(Leaf(9), Leaf(9)), Node(Leaf(9), Leaf(9)))))\n\
+         \x20   print(right_sum(Node(Leaf(1), Node(Leaf(2), Leaf(3)))))\n\
+         \x20   print(right_sum(Node(Node(Leaf(9), Leaf(9)), Leaf(4))))\n\
+         \x20   print(describe(Nothing()))\n\
+         \x20   print(describe(Just(Nothing())))\n\
+         \x20   print(describe(Just(Just(Nothing()))))\n\
+         \x20   print(describe(Just(Number(7))))\n\
+         \x20   print(describe(Just(Number(-1))))\n\
+         \x20   print(describe(Number(3)))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "7\n5\n4\n5\n0\n6\n0\nnothing\njust nothing\ndouble\npositive\nnumber\nraw\n"
+    );
+}
+
+#[test]
+fn modules_run_and_check_end_to_end() {
+    let directory = std::env::temp_dir().join(format!("vantyx-e2e-modules-{}", std::process::id()));
+    fs::create_dir_all(directory.join("lib")).expect("create module dir");
+    fs::write(
+        directory.join("lib/math.vtx"),
+        "fn double(x: Int) -> Int:\n    return x * 2\n",
+    )
+    .expect("write module");
+    let entry = directory.join("main.vtx");
+    fs::write(
+        &entry,
+        "from \"lib/math.vtx\" import double\n\nprint(double(21))\n",
+    )
+    .expect("write entry");
+
+    let run = vantyx(&["run", entry.to_str().expect("utf-8 path")], None);
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "42\n");
+
+    let check = vantyx(&["check", entry.to_str().expect("utf-8 path")], None);
+    assert_eq!(check.code, 0, "stderr: {}", check.stderr);
+    assert!(check.stdout.is_empty());
+
+    fs::write(
+        directory.join("lib/broken.vtx"),
+        "fn broken() -> Int:\n    return \"no\"\n",
+    )
+    .expect("write broken module");
+    let broken = directory.join("broken-main.vtx");
+    fs::write(&broken, "import \"lib/broken.vtx\"\n\nprint(broken())\n")
+        .expect("write broken entry");
+    let failed = vantyx(&["check", broken.to_str().expect("utf-8 path")], None);
+    assert_eq!(failed.code, 1);
+    assert!(failed.stderr.contains("lib/broken.vtx"), "{}", failed.stderr);
+    assert!(failed.stderr.contains("error[E0301]"), "{}", failed.stderr);
 }

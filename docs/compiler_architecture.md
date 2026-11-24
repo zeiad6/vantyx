@@ -10,12 +10,17 @@ Guarantees: always terminates, never panics on arbitrary UTF-8 input, emits `Ind
 ### Parser
 Input: tokens.
 Output: `ast::Program`.
-Guarantees: bounded expression/block/type depth, synchronizes at newlines after errors, reports expected/found tokens with spans. Enum declarations and both match forms (`match` statement with block arms, `match` expression with one-expression arms) are parsed into explicit AST nodes; patterns include wildcards, integer/string/boolean literals, and variant bindings, with an optional `if <expr>` guard; nested patterns are rejected with `E0112`.
+Guarantees: bounded expression/block/type depth, synchronizes at newlines after errors, reports expected/found tokens with spans. Enum declarations and both match forms (`match` statement with block arms, `match` expression with one-expression arms) are parsed into explicit AST nodes; patterns include wildcards, integer/string/boolean literals, variant bindings, recursively nested payload patterns (bounded at 64 levels), top-level `|` alternatives, and an optional `if <expr>` guard. Import declarations are parsed as `Item::Import`; relative paths are literal, `.vtx`-suffixed strings (`E0512`), and each selective name may appear once (`E0511`).
+
+### Module loader
+Input: entry path.
+Output: flattened `ast::Program`, `SourceRegistry`, diagnostics.
+Guarantees: every reachable file is canonicalized and parsed once; imports are relative to the importing file and confined to the entry file's directory (`E0502`); cycles (`E0503`), unreadable or missing targets (`E0501`), unknown selected names (`E0504`), executable statements in modules (`E0505`), non-entry `main` (`E0506`), and file/depth/byte limits (`E0507`–`E0509`) are diagnosed. Non-entry files contribute only imports and declarations. Per-file spans and globals are retained, and `ExprId`s are seeded by source file so cross-file expression-type maps cannot collide.
 
 ### Checker
 Input: AST.
 Output: `SemanticModel` (functions, structs, enums, expression types) or diagnostics.
-Guarantees: every variable use resolved; annotated types validated; `Any` permitted but explicit; no implicit numeric coercion; control-flow validity checked. Enum names and variant constructor names are globally unique, variant payload types are resolved, pattern bindings are scoped per arm, literal patterns are type-checked against the scrutinee, guards are checked as `Bool` after bindings enter scope (`E0301`), and closed-enum and `Bool` matches are checked for exhaustiveness (`E0316`) with guarded arms excluded from coverage.
+Guarantees: every variable use resolved; annotated types validated; `Any` permitted but explicit; no implicit numeric coercion; control-flow validity checked. Enum names and variant constructor names are globally unique, variant payload types are resolved, pattern bindings are scoped per arm, literal and integer range patterns are type-checked against the scrutinee (empty ranges are `E0318`), guards are checked as `Bool` after bindings enter scope (`E0301`), and closed-enum and `Bool` matches are checked for exhaustiveness (`E0316`) with guarded arms excluded from coverage.
 
 ### Runtime
 Input: AST + `SemanticModel`.
@@ -25,16 +30,16 @@ Guarantees: checked arithmetic, bounds checks, call-depth limit, type validation
 ### IR lowering
 Input: checked AST + `SemanticModel`.
 Output: `ir::IrProgram` or `IrError`.
-Guarantees: only statically representable constructs are lowered; `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, and unsupported operations fail with `E0401` and a help message. Types are explicit on every IR expression. `List[T]` and `Map[K, V]` are lowered for every statically known type argument, including nested collections and collections of structs. String indexing and iteration are lowered as `StrIndex`/`ForStr`; map iteration as `ForMap`; enum construction and `match` as `ConstructVariant`/`Match` with `IrPattern`; scalar literal patterns as `IrLiteral`; match guards as `IrMatchArm::guard`, validated to lower to `Bool`. No dynamic assumptions are inserted silently.
+Guarantees: only statically representable constructs are lowered; `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, and unsupported operations fail with `E0401` and a help message. Types are explicit on every IR expression. `List[T]` and `Map[K, V]` are lowered for every statically known type argument, including nested collections and collections of structs. String indexing and iteration are lowered as `StrIndex`/`ForStr`; map iteration as `ForMap`; enum construction and `match` as `ConstructVariant`/`Match` with `IrPattern`; scalar literal patterns as `IrLiteral`; integer range patterns as `IrPattern::Range`; nested payload patterns recursively as `IrPattern::Variant`/`IrPattern::Bind` with absolute `IrFieldPath` bindings; top-level alternatives as `IrPattern::Or` with a validated shared binding signature; match guards as `IrMatchArm::guard`, validated to lower to `Bool`. No dynamic assumptions are inserted silently.
 
 ### C backend
 Input: `IrProgram` + source name/source for positions.
 Output: a self-contained GNU C11 translation unit.
-Guarantees: left-to-right evaluation order, checked integer arithmetic, checked division/range operations, list/string bounds checks, missing-map-key errors, a 256-frame call-depth limit, and runtime errors matching interpreter codes. Lists use a stable header with a typed contiguous buffer and a generated element descriptor (ADR-0009). Maps use insertion-ordered parallel key/value buffers with generated key/value descriptors and an optional open-addressing index for scalar keys; structural keys keep linear search (ADR-0010, ADR-0016). Enums use a tagged struct with a union of per-variant payloads and generated display/equality callbacks (ADR-0012). Match guards combine the pattern condition with the lowered guard; payload-reading guards use a GNU C statement expression. Structural equality is cycle-safe. Uses only libc/libm. Allocation failures terminate with a runtime diagnostic.
+Guarantees: left-to-right evaluation order, checked integer arithmetic, checked division/range operations, list/string bounds checks, missing-map-key errors, a 256-frame call-depth limit, and runtime errors matching interpreter codes. Lists use a stable header with a typed contiguous buffer and a generated element descriptor (ADR-0009). Maps use insertion-ordered parallel key/value buffers with generated key/value descriptors and an optional open-addressing index for scalar keys; structural keys keep linear search (ADR-0010, ADR-0016). Enums use a tagged struct with a union of per-variant payloads and generated display/equality callbacks (ADR-0012). Nested patterns emit short-circuit tag and literal tests; bindings are declared from recorded payload paths, and guards that read bindings use a GNU C statement expression (ADR-0020). Integer ranges emit `>=` plus `<` or `<=` comparisons (ADR-0022). Or-patterns emit a short-circuit alternative condition and initialize one shared binding set from the matched alternative (ADR-0021). Structural equality is cycle-safe. Uses only libc/libm. Allocation failures terminate with a runtime diagnostic.
 
 ## Native subset boundary
 
-Implemented: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, nominal enums, globals, functions, `if`/`while`/`for range`/`for list`/`for str`/`for map key`, `match` statements and expressions over closed enums, string indexing, structural equality, and the builtins listed in `PROJECT_STATUS.md`.
+Implemented: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, nominal enums, globals, functions, `if`/`while`/`for range`/`for list`/`for str`/`for map key`, `match` statements and expressions over closed enums with nested payload patterns, top-level or-patterns, and guards, string indexing, structural equality, and the builtins listed in `PROJECT_STATUS.md`.
 
 Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported `for` iterables, and unannotated value-returning functions. String index assignment is rejected by the checker with `E0306`. Unsupported programs must run with `vantyx run`.
 
@@ -46,6 +51,7 @@ Codes are stable and grouped:
 - `E0xxx` lexical/syntactic
 - `E02xx` names/scopes
 - `E03xx` types/declarations
+- `E05xx` modules/imports (`E0501`–`E0512`)
 - `R0xxx` runtime
 
 Rendering includes file, line, column, source line, caret, and optional help. Multiple errors are collected where recovery is safe.
@@ -63,7 +69,7 @@ Rendering includes file, line, column, source line, caret, and optional help. Mu
 | End-to-end | `tests/e2e.rs` | compile + execute + stdout/error assertions, REPL persistence/echo/history |
 | Negative | `tests/e2e.rs` | malformed syntax, type errors, runtime errors |
 | Regression | same suites | every fixed bug gets a test |
-| Differential | `tests/native.rs` | interpreter vs native backend (67 cases) |
+| Differential | `tests/native.rs` | interpreter vs native backend (69 cases, including imported modules) |
 | Interactive smoke | manual pty via `script` | raw mode, Tab completion, history recall, Ctrl-C/Ctrl-D |
 
 ## Performance path

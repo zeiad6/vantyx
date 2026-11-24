@@ -13,18 +13,29 @@ pub struct LexOutput {
 }
 
 pub fn lex(source: &str) -> LexOutput {
-    Lexer::new(source, 0).run()
+    Lexer::new(source, 0, 0).run()
+}
+
+/// Lex one file in a multi-file compilation.
+pub fn lex_file(source: &str, file: u32) -> LexOutput {
+    Lexer::new(source, 0, file).run()
 }
 
 /// Lex a fragment (used for string interpolation) with spans offset by `base`.
 pub fn lex_fragment(source: &str, base: usize) -> LexOutput {
-    Lexer::new(source, base).run()
+    Lexer::new(source, base, 0).run()
+}
+
+/// Lex an interpolation fragment belonging to `file`.
+pub fn lex_fragment_in_file(source: &str, base: usize, file: u32) -> LexOutput {
+    Lexer::new(source, base, file).run()
 }
 
 struct Lexer<'a> {
     src: &'a str,
     pos: usize,
     base: usize,
+    file: u32,
     tokens: Vec<Token>,
     diagnostics: Diagnostics,
     indents: Vec<usize>,
@@ -41,11 +52,12 @@ enum LineStart {
 }
 
 impl<'a> Lexer<'a> {
-    fn new(src: &'a str, base: usize) -> Self {
+    fn new(src: &'a str, base: usize, file: u32) -> Self {
         Self {
             src,
             pos: 0,
             base,
+            file,
             tokens: Vec::new(),
             diagnostics: Diagnostics::new(),
             indents: vec![0],
@@ -96,7 +108,19 @@ impl<'a> Lexer<'a> {
                 ')' | ']' | '}' => self.lex_close(ch),
                 ',' => self.single(TokenKind::Comma),
                 ':' => self.single(TokenKind::Colon),
-                '.' => self.single(TokenKind::Dot),
+                '.' => {
+                    let start = self.pos;
+                    self.bump();
+                    if self.eat('.') {
+                        if self.eat('=') {
+                            self.push(TokenKind::DotDotEq, start, self.pos);
+                        } else {
+                            self.push(TokenKind::DotDot, start, self.pos);
+                        }
+                    } else {
+                        self.push(TokenKind::Dot, start, self.pos);
+                    }
+                }
                 '+' => {
                     let start = self.pos;
                     self.bump();
@@ -235,15 +259,7 @@ impl<'a> Lexer<'a> {
                             .with_help("use `or`"),
                         );
                     } else {
-                        let span = self.span(start, self.pos);
-                        self.diagnostics.push(
-                            crate::diagnostic::Diagnostic::error(
-                                "E0001",
-                                "unexpected character `|`",
-                                span,
-                            )
-                            .with_help("bitwise operators are not implemented yet"),
-                        );
+                        self.push(TokenKind::Pipe, start, self.pos);
                     }
                 }
                 '\'' => {
@@ -412,6 +428,8 @@ impl<'a> Lexer<'a> {
             "continue" => TokenKind::Continue,
             "struct" => TokenKind::Struct,
             "enum" => TokenKind::Enum,
+            "import" => TokenKind::Import,
+            "from" => TokenKind::From,
             "match" => TokenKind::Match,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
@@ -730,7 +748,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn span(&self, start: usize, end: usize) -> Span {
-        Span::new(self.base + start, self.base + end)
+        Span::in_file(self.file, self.base + start, self.base + end)
     }
 
     fn push(&mut self, kind: TokenKind, start: usize, end: usize) {

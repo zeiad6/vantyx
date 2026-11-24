@@ -1,6 +1,8 @@
 # Roadmap
 
-Status: Phase 0–1 complete; Phases 2–5 complete for the v0.1 language; Phase 6 in progress (typed IR + C11 backend for a statically typed subset including enums, guarded `match`, and scalar literal patterns); AI-0 and AI-1 complete, AI-2 in progress (offline and compatible-endpoint foundation verified; live provider evidence pending). Phases are ordered to avoid architectural debt; items can move when evidence justifies it.
+Status: Phase 0–1 complete; Phases 2–5 complete for the v0.1 language; Phase 6 in progress (typed IR + C11 backend for a statically typed subset including enums, guarded `match`, scalar literal patterns, nested payload patterns, top-level or-patterns, integer range patterns, and file-based modules); AI-0 through AI-4 host-side work complete offline (providers, streamed text chat, embeddings, RAG retrieval and evaluation); AI-2 live provider evidence and later AI phases remain open. Phases are ordered to avoid architectural debt; items can move when evidence justifies it.
+
+High-level summary and current sequencing: [`ROADMAP.md`](../ROADMAP.md). This file retains the detailed phase checklist.
 
 ## Phase 0 — Baseline and research ✅
 Repository inspection, environment setup, prior-art review, risk register.
@@ -48,7 +50,7 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 - [x] Typed IR and lowering for the static subset
 - [x] C11 backend via system clang (ADR-0008)
 - [x] `vantyx build`, linking, `-o`
-- [x] Differential interpreter/native test suite (68 tests)
+- [x] Differential interpreter/native test suite (73 tests)
 - [x] Native `List[T]` for statically typed elements (T-024, ADR-0009)
 - [x] Native UTF-8 string indexing/iteration (T-025)
 - [x] Native `Map[K,V]` with insertion order and structural keys (T-027, ADR-0010)
@@ -56,6 +58,10 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 - [x] Native enums and `match` with tagged layout (T-030, ADR-0012)
 - [x] Native scalar literal `match` for `Int`/`Str`/`Bool` (T-032)
 - [x] Native match guards, including payload-reading guards (T-033)
+- [x] Native nested payload patterns with path-based bindings (T-049, ADR-0020)
+- [x] Native top-level or-patterns with shared bindings (T-050, ADR-0021)
+- [x] Native integer range patterns with comparison lowering (T-051, ADR-0022)
+- [x] File-based modules and imports in the interpreter and native backend (T-013)
 - [x] Cycle-safe structural equality for lists, maps, structs, and enums
 - [ ] Debug info and optimization pipeline
 - [ ] Cranelift/LLVM evaluation with benchmarks
@@ -93,17 +99,20 @@ Detailed plan and exit gates: `docs/ai/AI_ROADMAP.md`.
       tools, bounded agents, metrics, SSE, and `vantyx ai` CLI.
 - [ ] AI-2 — live local/cloud providers, model manager, keyring (compatible
       endpoint path and `models`/`doctor` already work).
-- [ ] AI-3 — streaming output, typed extraction, constrained decoding
-      (validated extraction and bounded repair complete; streaming and
-      constrained decoding open).
-- [ ] AI-4 — embedding providers and batch cache complete; persistence, hybrid
-      retrieval, ingestion, citations, and evaluation remain open.
+- [ ] AI-3 — streamed text output, typed extraction, constrained decoding
+      (validated extraction, bounded repair, and streamed OpenAI-compatible
+      text chat complete; streaming tool calls, cancellation, and constrained
+      decoding open).
+- [x] AI-4 — embeddings, persistent local indexes, text/Markdown/code
+      ingestion, cited chunks, hybrid retrieval, and retrieval evaluation.
+      Grounded generation, reranking, and incremental updates remain open.
 - [ ] AI-5 — write/shell/network tools with approvals, persistent agents.
 - [ ] AI-6 — multimodal audio/video and size validation.
 - [ ] AI-7 — tensor and numerical foundations after an ADR.
 - [ ] AI-8 — GPU, distributed, and multi-agent only with verified hardware and
       measured value.
-- [ ] Language-level AI syntax after modules (T-013) and async (T-017).
+- [ ] Language-level AI syntax after async (T-017); modules (T-013) are
+      complete.
 
 ## Phase 11 — AI and systems
 - [ ] Tensors, numerical libraries (research only; see AI-7)

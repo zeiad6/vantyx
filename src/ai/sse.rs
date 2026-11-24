@@ -40,6 +40,7 @@ impl std::error::Error for SseError {}
 
 pub struct SseParser {
     buffer: String,
+    byte_carry: Vec<u8>,
     max_event_bytes: usize,
     event: Option<String>,
     id: Option<String>,
@@ -58,6 +59,7 @@ impl SseParser {
     pub fn new(max_event_bytes: usize) -> Self {
         Self {
             buffer: String::new(),
+            byte_carry: Vec::new(),
             max_event_bytes,
             event: None,
             id: None,
@@ -91,8 +93,49 @@ impl SseParser {
         Ok(events)
     }
 
+    /// Feeds raw bytes and returns every event completed by them. UTF-8
+    /// sequences may be split across chunks; incomplete trailing bytes are
+    /// retained until the next call.
+    pub fn push_bytes(&mut self, bytes: &[u8]) -> Result<Vec<SseEvent>, SseError> {
+        self.byte_carry.extend_from_slice(bytes);
+        let mut events = Vec::new();
+        loop {
+            match std::str::from_utf8(&self.byte_carry) {
+                Ok(text) => {
+                    if !text.is_empty() {
+                        let text = text.to_string();
+                        self.byte_carry.clear();
+                        events.extend(self.push(&text)?);
+                    }
+                    break;
+                }
+                Err(error) => {
+                    let valid = error.valid_up_to();
+                    if valid > 0 {
+                        let text = std::str::from_utf8(&self.byte_carry[..valid])
+                            .expect("valid UTF-8 prefix")
+                            .to_string();
+                        self.byte_carry.drain(..valid);
+                        events.extend(self.push(&text)?);
+                        continue;
+                    }
+                    if error.error_len().is_some() {
+                        return Err(SseError::new("SSE stream is not valid UTF-8"));
+                    }
+                    break;
+                }
+            }
+        }
+        Ok(events)
+    }
+
     /// Flushes a final unterminated line and dispatches any pending event.
     pub fn finish(&mut self) -> Result<Vec<SseEvent>, SseError> {
+        if !self.byte_carry.is_empty() {
+            return Err(SseError::new(
+                "SSE stream ended in the middle of a UTF-8 sequence",
+            ));
+        }
         let mut events = Vec::new();
         if !self.buffer.is_empty() {
             let mut line = std::mem::take(&mut self.buffer);
@@ -229,5 +272,42 @@ mod tests {
         assert!(parser.push(first).unwrap().is_empty());
         let events = parser.push(second).unwrap();
         assert_eq!(events[0].data, "héllo 😀");
+    }
+
+    #[test]
+    fn parses_raw_bytes_split_inside_utf8() {
+        let mut parser = SseParser::default();
+        let encoded = "data: héllo 😀\n\n".as_bytes();
+        // Split inside the two-byte `é` sequence.
+        let mut events = parser.push_bytes(&encoded[..8]).unwrap();
+        assert!(events.is_empty());
+        events.extend(parser.push_bytes(&encoded[8..]).unwrap());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "héllo 😀");
+    }
+
+    #[test]
+    fn parses_raw_bytes_split_inside_every_codepoint() {
+        let mut parser = SseParser::default();
+        let encoded = "data: aé😀\n\n".as_bytes();
+        let mut events = Vec::new();
+        for byte in encoded {
+            events.extend(parser.push_bytes(&[*byte]).unwrap());
+        }
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "aé😀");
+    }
+
+    #[test]
+    fn rejects_invalid_utf8_bytes() {
+        let mut parser = SseParser::default();
+        assert!(parser.push_bytes(b"data: \xff\n\n").is_err());
+    }
+
+    #[test]
+    fn finish_rejects_a_dangling_utf8_prefix() {
+        let mut parser = SseParser::default();
+        assert!(parser.push_bytes(&"data: é".as_bytes()[..7]).unwrap().is_empty());
+        assert!(parser.finish().is_err());
     }
 }

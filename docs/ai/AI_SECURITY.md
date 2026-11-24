@@ -1,6 +1,6 @@
 # AI Security Model
 
-Status: AI-1 controls are implemented; embedding request/cache controls are implemented; later-phase controls are design only
+Status: AI-1 controls, embedding request/cache controls, and local RAG ingestion/index controls are implemented; later-phase controls are design only
 Date: 2026-11-24
 Related: `SECURITY.md`, `AI_ARCHITECTURE.md`, `docs/security-audit-2026-11-22.md`
 
@@ -29,6 +29,21 @@ privilege, and honest documentation of residual risk.
   `clear()` when appropriate. The hash provider is lexical, not a privacy or
   semantic guarantee.
 - No embedding model is bundled or downloaded automatically.
+- RAG ingestion stays under one canonical root, rejects symlinks and hidden,
+  VCS, and build paths, and enforces file-count, per-file, total-source,
+  chunk-count, chunk-size, overlap, query, and top-k limits.
+- Lexical RAG search never calls an embedding provider. Semantic and hybrid
+  search require an explicitly selected provider and still pass through the
+  network policy, timeouts, and response-size limits.
+- RAG indexes are strict JSON with a format version, validated for duplicate
+  ids, malformed or mixed vectors, non-finite values, invalid line spans, and
+  size/dimension mismatches before search state is rebuilt. Saves use an atomic
+  rename and mode 0600 on Unix. Index files contain full chunk text and vectors,
+  so they are sensitive local data and are **not encrypted** by this layer.
+- The optional search source-prefix filter only narrows ranked chunks after the
+  index is loaded; it is not a filesystem or authorization boundary.
+- Every retrieval hit carries a source path and line range. No answer is
+  generated, so no grounding claim is made; retrieved text is untrusted input.
 - JSON and JSON Schema validation enforce depth, size, duplicate-key, and
   schema-shape limits; invalid model output is rejected with a path.
 - Tool capabilities are explicit and deny by default; path tools canonicalize
@@ -46,7 +61,10 @@ privilege, and honest documentation of residual risk.
 - A concurrency limiter and backpressure.
 - OS/process sandboxing for tools.
 - Model download checksums, signatures, and license gates.
-- A dedicated prompt-injection fixture corpus and retrieval trust labels.
+- A dedicated prompt-injection fixture corpus and retrieval trust labels for
+  retrieved content.
+- Encryption or access-control policy for persisted RAG indexes beyond file
+  mode 0600.
 - Audio/video content limits.
 
 ## Threat model
@@ -69,6 +87,10 @@ privilege, and honest documentation of residual risk.
 | T-AI-14 | Unsafe generated code | Model writes code that is executed | Never auto-execute generated text; require validation/approval; sandbox future | Approved code can be malicious |
 | T-AI-15 | Denial of service via schema | Pathological JSON Schema or regex | Schema size/depth limits; no unbounded regex; validation time budget | Complex schemas can be slow |
 | T-AI-16 | Dependency compromise | A new AI crate pulls a malicious transitive dependency | Zero-dependency core; ADR for any addition; lockfile and review | Optional features expand the surface |
+| T-AI-17 | Malicious document ingestion | A document path escapes the root or a symlink points at secrets | Canonical root confinement, symlink rejection, extension allowlist, hidden/VCS skipping | A file inside the approved root can still be sensitive |
+| T-AI-18 | Tampered retrieval index | An attacker edits vectors, ids, or line spans | Strict schema/version/range/finite checks; atomic save; 0600 mode | Local writers with the same user can still alter files |
+| T-AI-19 | Citation spoofing / grounding overclaim | A chunk is presented as proof of an answer it does not support | Hits expose source and line ranges; no generation or grounding claim is made | Future grounded generation will need citation verification |
+| T-AI-20 | Ingestion denial of service | A huge tree, pathological line, or enormous query exhausts memory | File/count/byte/chunk/query limits; pathological-line splitting; bounded top-k | Large permitted corpora still consume proportional time and memory |
 
 ## Capability model
 

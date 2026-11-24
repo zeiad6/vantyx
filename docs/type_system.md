@@ -25,6 +25,9 @@ Struct(Name), Enum(Name)
 - Struct constructor arguments are checked against field types.
 - Variant constructors return their owning enum type; payload arguments are checked positionally against field types. Variant constructor names are globally unique.
 - A match on a closed enum is exhaustive or must include `_` (`E0316`). Pattern bindings receive the payload field types. A match on `Any` warns (`W0004`) and is checked at runtime.
+- Every alternative of a top-level or-pattern must bind the same names with the same types (`E0317`). The arm receives one binding set, and unguarded alternatives contribute coverage independently.
+- Integer range patterns require an `Int` or `Any` scrutinee (`E0301`); an empty range is `E0318`. Ranges are refutable and never contribute exhaustiveness, so `Int` matches still require `_`. See [ADR-0022](decisions/ADR-0022-range-patterns.md).
+- Nested payload patterns are checked recursively against their field types. Bindings from every nesting level join the arm scope, and duplicate names are `E0202`. Exhaustiveness uses a pattern matrix over finite constructors: every variant and every nested payload shape must be covered, or a `_` arm must be present. See [ADR-0019](decisions/ADR-0019-nested-patterns.md).
 - Match-expression arms must agree on one type; otherwise `E0301`.
 - Indexing: `List[T] → T`, `Str → Str`, `Map[K,V] → V`.
 - Field access requires a struct type; on `Any` it is dynamic. Enum values have no fields; use `match`.
@@ -43,7 +46,7 @@ Static types are trusted. At every boundary where an `Any` value enters a typed 
 
 ## Native subset
 
-The native backend only accepts statically known types it can represent: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]`, `Map[K, V]`, nominal structs, and nominal enums. `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, and unannotated value-returning functions are rejected with `E0401` rather than dynamically checked. List/string indexing, map indexing, key iteration, and `match` over closed enums and scalar literals with optional guards are supported for the static subset. Gradual programs that need `Any` must run under the interpreter.
+The native backend only accepts statically known types it can represent: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]`, `Map[K, V]`, nominal structs, and nominal enums. `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, and unannotated value-returning functions are rejected with `E0401` rather than dynamically checked. List/string indexing, map indexing, key iteration, and `match` over closed enums and scalar literals or integer ranges with nested payload patterns, top-level or-patterns, and optional guards are supported for the static subset. Gradual programs that need `Any` must run under the interpreter. See [ADR-0020](decisions/ADR-0020-native-nested-patterns.md) and [ADR-0021](decisions/ADR-0021-native-or-patterns.md).
 
 ## Planned
 
@@ -52,5 +55,7 @@ The native backend only accepts statically known types it can represent: `Unit`,
 - Traits/constraints.
 - Effect annotations.
 - Ownership/borrow types as an opt-in advanced layer.
-- Nested/or-patterns and generic enums. Scalar literal patterns for `Int`,
-  `Str`, and `Bool` (T-032) and `Bool`-checked guards (T-033) are supported.
+- Generic enums. Nested payload patterns (T-048/T-049) and top-level
+  or-patterns (T-047/T-050) are supported in the interpreter and native
+  backend. Scalar literal patterns for `Int`, `Str`, and `Bool` (T-032) and
+  `Bool`-checked guards (T-033) are supported.

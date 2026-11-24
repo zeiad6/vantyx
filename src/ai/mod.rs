@@ -26,6 +26,7 @@ pub mod metrics;
 pub mod mock;
 pub mod openai;
 pub mod provider;
+pub mod rag;
 pub mod redact;
 pub mod schema;
 pub mod sse;
@@ -42,11 +43,19 @@ pub use embedding_provider::{
     EmbeddingCacheStats, HashEmbeddingProvider,
 };
 pub use extract::{Extraction, MAX_REPAIR_ATTEMPTS, extract};
-pub use http::{HttpResponse, HttpTransport, NetworkPolicy, Transport};
+pub use http::{
+    ChunkCallback, HttpResponse, HttpTransport, NetworkPolicy, StartCallback, StreamHandlers,
+    Transport,
+};
 pub use json::{Json, JsonNumber, parse};
 pub use metrics::{MetricEvent, MetricsSink};
 pub use mock::{EchoProvider, MockProvider};
 pub use openai::OpenAiProvider;
+pub use rag::{
+    Chunk, ChunkOptions, Document, EvalQuery, EvalReport, IngestOptions, RagIndex, RetrievalHit,
+    SearchMode, chunk_document, collect_documents, embed_chunks, embed_query, evaluate,
+    parse_eval_queries,
+};
 pub use provider::{
     AiError, ChatRequest, ChatResponse, ContentPart, EmbeddingRequest, EmbeddingResponse,
     EmbeddingUsage, FinishReason, MAX_EMBEDDING_DIMENSIONS, MAX_EMBEDDING_INPUTS,

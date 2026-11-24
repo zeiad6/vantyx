@@ -1,249 +1,349 @@
-# Vantyx
+<p align="center">
+  <img src="docs/assets/vantyx-banner.svg" alt="Vantyx — Script like Python. Ship native. Build AI-native." width="100%">
+</p>
 
-**Script like Python. Ship native. Build AI-native.**
+<p align="center">
+  <a href="https://github.com/zeiad6/vantyx/actions/workflows/ci.yml"><img src="https://github.com/zeiad6/vantyx/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="https://github.com/zeiad6/vantyx/releases"><img src="https://img.shields.io/github/v/release/zeiad6/vantyx?include_prereleases&label=release&style=flat-square" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3DA639?style=flat-square" alt="MIT license"></a>
+  <a href="Cargo.toml"><img src="https://img.shields.io/badge/rust-2024%20edition-000000?style=flat-square&logo=rust" alt="Rust 2024"></a>
+  <img src="https://img.shields.io/badge/dependencies-0-5EEAD4?style=flat-square" alt="Zero third-party dependencies">
+  <img src="https://img.shields.io/badge/status-pre--1.0-F59E0B?style=flat-square" alt="Pre-1.0">
+</p>
 
-Vantyx is a pre-1.0 programming language with Python-like indentation, optional
-type annotations, a tree-walking interpreter, a native GNU C11 backend for the
-statically typed subset, and a dependency-free AI host toolkit.
+<p align="center">
+  <a href="#language">Language</a> ·
+  <a href="#ai-host">AI host</a> ·
+  <a href="#benchmarks">Benchmarks</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="#creator">Creator</a>
+</p>
 
-![status](https://img.shields.io/badge/status-pre--1.0-orange)
-![license](https://img.shields.io/badge/license-MIT-blue)
-[![CI](https://github.com/zeiad6/vantyx/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/zeiad6/vantyx/actions/workflows/ci.yml)
-[![release](https://img.shields.io/github/v/release/zeiad6/vantyx?include_prereleases&label=release)](https://github.com/zeiad6/vantyx/releases)
+Vantyx is a pre-1.0 programming language that starts like a script and scales to
+native code. It combines Python-like indentation, optional static types, a
+tree-walking interpreter that serves as the semantic oracle, and a GNU C11
+backend for the statically typed subset. A dependency-free AI host adds
+offline-first chat, embeddings, retrieval, and tool plumbing without putting a
+model runtime inside the compiler.
+
+> [!WARNING]
+> Vantyx is a functional prototype, not production-ready. Native allocations are
+> intentionally leaked in v0.1, there is no cycle collector or sandbox, and the
+> native backend supports only a statically typed subset. Unsupported constructs
+> are rejected with `E0401` rather than silently miscompiled. See
+> [PROJECT_STATUS.md](PROJECT_STATUS.md) for the verified baseline and exact
+> limits.
+
+## Design goals
+
+| Goal | Approach |
+| --- | --- |
+| **Simple by default** | Indentation blocks, `let`/`var`, optional annotations, no required `main` |
+| **Checked by default** | Checked integer arithmetic, bounds checks, no null, no uninitialized values |
+| **Gradual typing** | Prototype without annotations, then add types and compile the typed subset |
+| **One semantics** | The interpreter is the oracle; native behavior is proven by differential tests |
+| **Small and auditable** | Zero third-party Rust crates; generated C links only libc and libm |
+| **AI at the boundary** | `vantyx ai` uses an explicit HTTP/provider boundary; no bundled or auto-downloaded models |
+
+## Language
 
 ```vantyx
+enum Shape:
+    Circle(radius: Float)
+    Rect(width: Float, height: Float)
+    Point
+
+fn area(shape: Shape) -> Float:
+    match shape:
+        Circle(radius):
+            return 3.14159 * radius * radius
+        Rect(width, height):
+            return width * height
+        Point:
+            return 0.0
+
 fn main():
-    let name = "World"
-    print("Hello, {name}!")
+    print(area(Circle(1.0)))
+    print(area(Rect(2.0, 3.0)))
 ```
 
-> **Status: functional prototype.** Vantyx is not production-ready. The native
-> backend supports a subset, native allocations are intentionally leaked in
-> v0.1, scalar map keys use a hash index while struct/enum/list keys remain
-> O(n), and there is no cycle collector or sandbox. See
-> [PROJECT_STATUS.md](PROJECT_STATUS.md) for the verified state and exact limits.
+```text
+3.14159
+6.0
+```
 
-## Why Vantyx
+The v0.1 language includes functions, recursion, `if`/`elif`/`else`, `while`,
+`for` over lists, strings, and maps, structs with reference semantics, closed
+enums with payloads, exhaustive `match` with literals and guards, `List[T]`,
+`Map[K,V]`, string interpolation, and file-based modules. Top-level or-patterns
+such as `Circle(size) | Square(size)` share one binding set across alternatives,
+nested payload patterns such as `Node(Leaf(value), _)` are checked by a
+recursive pattern matrix and lowered natively with short-circuit tag tests, and
+integer range patterns (`0..10`, `90..=100`) match in statements, expressions,
+nested payload positions, and or-pattern alternatives. Native builds lower
+top-level or-patterns with one shared binding set and ranges as comparison
+chains.
 
-1. **Simple by default** — indentation blocks, `let`/`var`, optional type
-   annotations, no required `main`.
-2. **Safe by default** — checked arithmetic, bounds checks, no null, no
-   uninitialized values, no user-visible `unsafe`.
-3. **Gradual typing** — prototype without annotations; add them for
-   compile-time guarantees and a native build.
-4. **One semantics** — the interpreter is the oracle; native behavior is
-   checked by differential tests. Unsupported constructs fail with `E0401`,
-   never silently miscompile.
-5. **Small and auditable** — the Rust compiler and AI host have zero
-   third-party crates, and the generated C links only libc/libm.
-6. **AI at the boundary, not in the core** — `vantyx ai` speaks an
-   OpenAI-compatible protocol over HTTP; no model is bundled or downloaded, and
-   remote network access is opt-in.
+```vantyx
+import "lib/math.vtx"
+from "lib/math.vtx" import add, Point
+```
+
+Imports are declaration-only, confined to the entry file's directory, checked
+for cycles and limits, and work in both the interpreter and the native backend.
+See the [language specification](docs/language_specification.md).
 
 ## Status
 
-Vantyx is a **functional prototype**. The lexer, parser, gradual type checker,
-tree-walking interpreter, typed IR, and native C11 backend are implemented and
-tested. Closed enums with payloads, exhaustive `match`, scalar literal patterns
-for `Int`/`Str`/`Bool`, and `Bool`-checked match guards work in both engines.
-Native lists, insertion-ordered maps with a scalar-key hash index, structs,
-enums, and UTF-8-aware string indexing/iteration are supported for statically
-typed code. The REPL persists
-bindings and declarations and provides line editing, history, Tab completion,
-and expression echo. The AI host foundation is offline and tested: strict JSON,
-JSON Schema validation, validated structured extraction with bounded repair,
-provider abstraction, token budgets, embedding providers with a bounded cache,
-BM25, typed tools, bounded agents, redacted metrics, and an OpenAI-compatible
-HTTP adapter. Language-level AI syntax is not implemented yet; `vantyx ai` is the
-supported surface.
-
-| Need | Vantyx today |
+| Area | Today |
 | --- | --- |
-| A quick script with no type annotations | Yes, through the interpreter |
-| Optional static types and clear diagnostics | Yes |
-| A native executable | Yes, for the statically typed subset |
-| Offline AI chat with a mock provider | Yes, through `vantyx ai` |
-| OpenAI-compatible local or cloud chat | Yes, via an explicit endpoint and `--allow-network` for remote HTTPS |
-| Validated structured extraction | Yes, `vantyx ai extract` with a JSON Schema and bounded repair |
-| Offline embeddings | Yes, `vantyx ai embed --provider hash`; lexical, not semantic |
-| OpenAI-compatible embeddings | Yes, `/v1/embeddings`; actual server/model support varies |
-| Language-level `from ai import Client` | Not yet (needs modules and async) |
-| Bundled model, tokenizer, tensors, GPU | No |
-| Modules, generics, closures, async, FFI | Not yet |
-| Production reliability or a stable ABI | No |
-| Fast scalar-key native maps | Yes, through an insertion-ordered hash index; struct/enum/list keys remain O(n) |
-| Automatic memory reclamation | No |
-
-A reproducible benchmark baseline guides optimization. Memory reclamation,
-immutable string concatenation, pattern-matching extensions, and broader
-optimization are the next major gaps.
+| Interpreter | Complete for the v0.1 language; the semantic oracle |
+| Native backend | Statically typed subset; typed IR, GNU C11 output, libc/libm only |
+| Native support | Scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key hash index, structs, enums, nested payload patterns, top-level or-patterns, integer range patterns, guarded `match`, imported declarations |
+| Native boundaries | `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads, and `match` on `Any` are rejected with `E0401` |
+| Pattern matching | Variant, wildcard, integer, string, and boolean patterns; nested payload patterns with recursive exhaustiveness; top-level or-patterns with consistent bindings; integer ranges with half-open and inclusive bounds; `Bool`-checked guards |
+| Modules | `import` and `from ... import`; flat namespace, entry-directory confinement |
+| REPL | Persistent declarations, line editing, single-line history, top-level Tab completion, expression echo |
+| AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, citations, retrieval evaluation, tools, bounded agents |
+| Memory | Interpreter is reference-counted; native allocations are leaked by design; no cycle collector |
+| Tooling | Fuzz smoke, benchmarks, docs; no formatter, linter, LSP, package manager, or debug info |
+| Production readiness | No stable ABI, no LTS, not recommended for production |
 
 ## Quick start
 
+Requirements: a stable Rust toolchain and, for native builds, `clang` or another
+C11 compiler via `VANTYX_CC`.
+
 ```sh
-cargo build
-./target/debug/vantyx run examples/hello.vtx
-./target/debug/vantyx check examples/hello.vtx
-./target/debug/vantyx build examples/hello.vtx -o /tmp/hello
-/tmp/hello
-./target/debug/vantyx repl
-./target/debug/vantyx ai providers
-./target/debug/vantyx ai chat --provider mock "hello"
-./target/debug/vantyx ai tokens "hello world"
+git clone https://github.com/zeiad6/vantyx.git
+cd vantyx
+
+cargo build --release
+./target/release/vantyx run examples/hello.vtx
+./target/release/vantyx check examples/enums.vtx
+
+./target/release/vantyx build examples/enums.vtx -o /tmp/enums
+/tmp/enums
+
+./target/release/vantyx repl
+./target/release/vantyx ai providers
+./target/release/vantyx ai chat --provider mock "hello"
 ```
 
-Native builds require `clang` (override with `VANTYX_CC`). Programs using `Any`,
-`List[Any]`, maps whose key/value types cannot be inferred statically, `Any`
-enum payloads, or `match` on `Any` must currently run with `vantyx run`. A match
-expression must be the final element of its statement or arm; bind it to a
-variable before using it inside a call or literal.
+`vantyx run` uses the reference interpreter. `vantyx build` generates C, invokes
+the system compiler with `-O2`, and produces a standalone executable. Programs
+that use `Any`, dynamic `match`, or other interpreter-only features must run
+with `vantyx run`; the native compiler reports `E0401` instead of guessing.
 
-## AI host tools
+## AI host
 
-`vantyx ai` is a host-level CLI for local and cloud models. It is offline by
-default and never bundles or downloads a model.
+`vantyx ai` is an offline-first host CLI. It never bundles, downloads, or
+executes a model, and remote HTTPS requires explicit opt-in.
 
 ```sh
-# No network, no model, deterministic output
-./target/debug/vantyx ai providers
-./target/debug/vantyx ai doctor --provider mock
-./target/debug/vantyx ai chat --provider mock "hello"
-./target/debug/vantyx ai chat --provider echo "hello"
-./target/debug/vantyx ai chat --provider mock --json "hello"
+# Deterministic offline providers
+./target/release/vantyx ai providers
+./target/release/vantyx ai doctor --provider mock
+./target/release/vantyx ai chat --provider echo "hello"
 
-# Validated JSON extraction with a bounded repair loop (offline fixture)
-./target/debug/vantyx ai extract --provider mock --model demo \
+# Validated JSON extraction with a bounded repair loop
+./target/release/vantyx ai extract --provider mock --model demo \
   --schema examples/ai/person.schema.json \
   --response '{"name":"Ada","role":"engineer"}' \
   "Extract the person"
 
-# Deterministic offline embeddings (lexical hash baseline, not semantic)
-./target/debug/vantyx ai embed --provider hash --model demo \
+# Deterministic lexical embeddings (not a trained semantic model)
+./target/release/vantyx ai embed --provider hash --model demo \
   --dimensions 8 --json "compiler" "native backend"
-printf 'alpha\nbeta\n' | ./target/debug/vantyx ai embed \
-  --provider hash --dimensions 4 --json -
 
-# A local OpenAI-compatible server (Ollama, llama.cpp, LM Studio, ...)
-./target/debug/vantyx ai models --endpoint http://127.0.0.1:11434/v1
-./target/debug/vantyx ai chat --provider openai --model qwen2.5:7b \
+# Local retrieval with line citations and optional source filtering
+./target/release/vantyx ai index --root docs --out /tmp/vtx-index.json \
+  --provider hash --dimensions 32
+./target/release/vantyx ai search --index /tmp/vtx-index.json \
+  --query "native map hash index" --top-k 5
+./target/release/vantyx ai search --index /tmp/vtx-index.json \
+  --query "hybrid retrieval" --source-prefix ai/ --top-k 5
+./target/release/vantyx ai eval --index /tmp/vtx-index.json \
+  --fixture examples/ai/retrieval-eval.json --mode lexical --top-k 5 --json
+
+# Any local OpenAI-compatible server (Ollama, llama.cpp, LM Studio, ...)
+./target/release/vantyx ai models --endpoint http://127.0.0.1:11434/v1
+./target/release/vantyx ai chat --provider openai --model qwen2.5:7b \
   --endpoint http://127.0.0.1:11434/v1 "Explain this error"
-./target/debug/vantyx ai embed --provider openai --model nomic-embed-text \
-  --endpoint http://127.0.0.1:11434/v1 --json "Explain this error"
 
-# Remote HTTPS requires an explicit opt-in and a key in an environment variable
-export VANTYX_AI_API_KEY_ENV=MY_API_KEY
-export MY_API_KEY=...
-./target/debug/vantyx ai chat --provider openai --model gpt-4.1-mini \
-  --endpoint https://api.example.com/v1 --allow-network "hello"
+# Stream text deltas as they arrive (OpenAI-compatible providers only)
+./target/release/vantyx ai chat --provider openai --model qwen2.5:7b \
+  --endpoint http://127.0.0.1:11434/v1 --stream "Explain this error"
 ```
 
-- Loopback HTTP is treated as local. Remote HTTPS requires `--allow-network` or
+- Loopback HTTP is local; remote HTTPS needs `--allow-network` or
   `VANTYX_AI_ALLOW_NETWORK=1`.
-- API keys are read only from the named environment variable; they are never
+- API keys are read only from the configured environment variable and are never
   written to project files, metrics, or errors.
-- `--metrics <path>` appends redacted JSONL (provider, model, latency, usage,
-  status) with no prompts, responses, or tool arguments.
-- Token counts from `vantyx ai tokens` are labelled estimates, not a model
-  tokenizer.
-- `vantyx ai extract` validates strict JSON against the documented schema
-  subset, repairs invalid output at most three times, and never returns
-  unvalidated model text. Server-side constrained decoding is not claimed.
-- `vantyx ai embed` returns L2-normalized vectors from `mock`/`hash` (offline,
-  deterministic lexical feature hashing, **not** a semantic model) or an
-  OpenAI-compatible `/v1/embeddings` endpoint. Requests are capped at 128
-  inputs, 8 KiB per input, 32 KiB total, and 4096 dimensions; the library cache
-  is bounded and process-local.
-- Streaming, model download/removal, keyring storage, vector persistence,
-  hybrid retrieval, RAG evaluation, and live provider tests are not
-  implemented. See [docs/ai/](docs/ai/),
-  [ADR-0015](docs/decisions/ADR-0015-ai-host-foundation.md), and
-  [ADR-0017](docs/decisions/ADR-0017-embedding-provider-and-cache.md).
+- `--metrics` appends redacted JSONL with provider, model, latency, usage, and
+  status, but no prompts, responses, or tool arguments.
+- Retrieval indexes are strict, versioned JSON with atomic owner-only
+  persistence. Search is linear over stored vectors; this is not a vector
+  database.
+- Retrieval returns cited chunks, not synthesized answers. Grounded generation
+  is not claimed.
+- Streaming chat prints text deltas only; streaming tool calls, interactive
+  cancellation, and server-side constrained decoding are not implemented.
+- Model downloads/removal, keyring storage, PDF/HTML/Office ingestion,
+  incremental re-indexing, reranking, and live model evidence remain open. See
+  [AI architecture](docs/ai/AI_ARCHITECTURE.md),
+  [AI research](docs/ai/AI_RESEARCH.md), [AI security](docs/ai/AI_SECURITY.md),
+  [ADR-0018](docs/decisions/ADR-0018-local-rag-index.md), and
+  [ADR-0023](docs/decisions/ADR-0023-streaming-chat.md).
 
-## REPL
+Language-level AI syntax such as `from ai import Client` or `await` is not
+implemented; it depends on async support. The supported AI surface is the host
+CLI and its library modules.
 
-```sh
-./target/debug/vantyx repl
+## Architecture
+
+```mermaid
+flowchart LR
+    SRC["Vantyx source"] --> LEX["Lexer"]
+    LEX --> PAR["Parser"]
+    PAR --> CHK["Gradual checker"]
+    CHK --> INT["Tree-walking interpreter<br/>semantic oracle"]
+    CHK --> IR["Typed IR"]
+    IR --> C["GNU C11 backend"]
+    C --> NAT["Native binary<br/>libc + libm"]
+    CHK -. E0401 boundary .-> ERR["Unsupported native subset<br/>explicit diagnostic"]
+    CLI["vantyx ai"] --> POL["Provider boundary"]
+    POL --> MOCK["mock / echo"]
+    POL --> OAI["OpenAI-compatible HTTP"]
+    POL --> RAG["Local RAG index"]
 ```
 
-The REPL keeps bindings, functions, structs, enums, and mutable globals across
-entries. End a multi-line block with a blank line. Expression statements print
-their value once; `print` output is not duplicated.
-
-- **Tab** completes keywords, builtins, and names declared at the top level.
-- **Up/Down** recall history; **Ctrl-A/E**, **Ctrl-U/K/W**, and **Ctrl-L** edit.
-- **Ctrl-C** cancels the current entry; **Ctrl-D** exits.
-- **`:help`**, **`:history`**, **`:names`**, and **`:quit`** are REPL commands.
-
-History is stored in `~/.vtx_history` with mode 0600 on Unix. Set
-`VANTYX_HISTORY` to another path, or to `off` to disable persistence. Multi-line
-blocks are kept for the session but are not recalled. Piped input and systems
-without `stty` fall back to canonical line input. See
-[ADR-0013](docs/decisions/ADR-0013-repl-line-editing.md).
+The interpreter is the reference semantics. Every native feature must either
+match it under differential tests or fail with `E0401` and a concrete help
+message. The AI host is outside the compiler and has no third-party Rust
+dependencies.
 
 ## Benchmarks
+
+Measured on 2026-11-24 on one machine; identical output was verified before
+timing, one warm-up was discarded, and medians are over five runs.
+
+| Workload | Vantyx native | C `-O2` | Rust `-O` |
+| --- | ---: | ---: | ---: |
+| `arith_loop` | 5.910 ms | 4.944 ms | 6.430 ms |
+| `fib` | 3.376 ms | 3.483 ms | 3.518 ms |
+| `list_ops` | 5.540 ms | 6.013 ms | 5.764 ms |
+| `map_ops` | 3.597 ms | 2.884 ms | 4.495 ms |
+| `struct_ops` | 9.730 ms | 11.663 ms | 13.344 ms |
+| `string_ops` | 8.318 ms | 2.764 ms | 3.611 ms |
+
+`string_ops` is the clearest measured gap because Vantyx strings are immutable
+and concatenation allocates a fresh exact-size buffer. These are single-machine
+baseline numbers, not a competitive claim. The interpreter is intentionally the
+slow reference. Methodology, peak RSS, build time, binary size, and raw results:
+[docs/benchmarks.md](docs/benchmarks.md) and
+[`benchmarks/results/`](benchmarks/results/).
 
 ```sh
 cargo build --release
 python3 benchmarks/run.py --reps 5
+python3 benchmarks/rag.py --reps 5 --docs 200 --dimensions 64
 ```
 
-The runner checks that all implementations print identical output, then times
-Vantyx (interpreter and native), Python, C, and Rust on six equivalent workloads.
-On the 2026-11-24 single-machine baseline, the native backend was in the same
-performance band as C/Rust on all six workloads. The scalar-key map hash index
-cut `map_ops` from 64.2 ms to 3.6 ms (C: 2.9 ms); immutable string concatenation
-remains the largest measured gap at 8.3 ms versus C's 2.8 ms. See
-[docs/benchmarks.md](docs/benchmarks.md) for methodology, caveats, and raw
-results under `benchmarks/results/`. These are baseline measurements, not a
-general performance claim.
+## Verification
+
+The gate used for the current tree:
+
+```sh
+cargo build
+cargo build --release
+cargo clippy --all-targets -- -D warnings
+cargo test
+python3 tools/fuzz_smoke.py --binary target/debug/vantyx
+```
+
+Current local result (2026-11-24): **457 tests passed** (297 library unit +
+13 CLI unit + 30 AI integration + 44 end-to-end + 73 differential native),
+Clippy clean, debug and release builds succeed, all five examples match between
+the interpreter and native binaries, and fuzz smoke reports controlled
+diagnostics. The latest public CI run on commit `458c08d` passed; T-047–T-052
+pattern and streaming work is local and not yet CI-verified. Test counts
+and evidence are tracked in [PROJECT_STATUS.md](PROJECT_STATUS.md) and
+[TASKS.md](TASKS.md); do not cite a count without checking them.
 
 ## Documentation
 
-- [Language specification](docs/language_specification.md)
-- [Architecture](docs/architecture.md)
-- [Compiler architecture](docs/compiler_architecture.md)
-- [Type system](docs/type_system.md)
-- [Memory model](docs/memory_model.md)
-- [Benchmarks](docs/benchmarks.md)
-- [Roadmap](docs/roadmap.md)
-- [AI architecture](docs/ai/AI_ARCHITECTURE.md)
-- [AI research](docs/ai/AI_RESEARCH.md)
-- [AI security](docs/ai/AI_SECURITY.md)
-- [AI roadmap](docs/ai/AI_ROADMAP.md)
-- [ADR-0015: AI host foundation](docs/decisions/ADR-0015-ai-host-foundation.md)
-- [ADR-0017: Embedding provider and bounded cache](docs/decisions/ADR-0017-embedding-provider-and-cache.md)
-- [Historical requirements audit](RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md)
-- [Tasks](TASKS.md)
-- [Project status](PROJECT_STATUS.md)
-- [Release v0.1.0](https://github.com/zeiad6/vantyx/releases/tag/v0.1.0)
-- [Launch and AI-discovery kit](docs/launch/)
-- [`llms.txt`](llms.txt) — compact facts for AI assistants
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
+| Start here | Purpose |
+| --- | --- |
+| [Language specification](docs/language_specification.md) | Syntax, semantics, diagnostics |
+| [Compiler architecture](docs/compiler_architecture.md) | Stage contracts and boundaries |
+| [Type system](docs/type_system.md) | Gradual typing and `Any` rules |
+| [Memory model](docs/memory_model.md) | Interpreter and native allocation behavior |
+| [Roadmap](ROADMAP.md) | Track A/Track B priorities |
+| [Project status](PROJECT_STATUS.md) | Verified baseline, limits, blockers |
+| [Tasks](TASKS.md) | Acceptance criteria and verification records |
+| [AI architecture](docs/ai/AI_ARCHITECTURE.md) | Provider, retrieval, and tool boundaries |
+| [AI research](docs/ai/AI_RESEARCH.md) | Verified ecosystem survey and decisions |
+| [AI security](docs/ai/AI_SECURITY.md) | Threat model and capability rules |
+| [AI roadmap](docs/ai/AI_ROADMAP.md) | AI-0 through AI-8 exit gates |
+| [Historical audit](RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md) | Recovered requirements and gaps |
+| [ADRs](docs/decisions/) | Architecture decisions and trade-offs |
+| [Benchmarks](docs/benchmarks.md) | Methodology and raw results |
+| [`llms.txt`](llms.txt) | Compact facts for AI assistants |
+| [Contributing](CONTRIBUTING.md) | Build, test, and review rules |
+| [Security policy](SECURITY.md) | Reporting and known limits |
 
 ## Repository map
 
-| Path | Purpose |
+| Path | Responsibility |
 | --- | --- |
-| `src/lexer.rs` | Indentation-aware lexer |
-| `src/parser.rs` | Recursive-descent / Pratt parser |
-| `src/checker.rs` | Name resolution and gradual type checking |
+| `src/lexer.rs`, `src/parser.rs` | Indentation-aware lexing, recursive-descent/Pratt parsing |
+| `src/checker.rs` | Name resolution, gradual types, exhaustiveness |
 | `src/interp.rs` | Reference tree-walking runtime |
-| `src/ir.rs` | Typed, backend-neutral IR |
-| `src/codegen_c.rs` | GNU C11 native backend |
-| `src/repl.rs` | Zero-dependency REPL editor, history, and completion |
-| `src/ai/` | Dependency-free AI host: JSON, providers, schema, extraction, tools, agents, retrieval, HTTP |
+| `src/ir.rs`, `src/codegen_c.rs` | Typed IR and GNU C11 backend |
+| `src/module.rs` | File-based module loader and confinement |
+| `src/repl.rs` | Zero-dependency REPL editor, history, completion |
+| `src/ai/` | JSON, providers, schema, extraction, embeddings, BM25/vector retrieval, RAG, tools, agents, HTTP |
 | `src/ai_cli.rs` | `vantyx ai` commands |
-| `src/diagnostic.rs` | Source spans and rendered diagnostics |
-| `tests/e2e.rs` | End-to-end language tests |
-| `tests/native.rs` | Differential interpreter vs native tests |
-| `tests/ai.rs` | Offline AI CLI and loopback HTTP integration tests |
-| `examples/` | Runnable programs, including enums and structs |
-| `tools/fuzz_smoke.py` | Reproducible malformed-input and depth-limit fuzzing |
-| `benchmarks/` | Equivalent Vantyx/Python/C/Rust workloads and the measurement runner |
-| `docs/` | Specification, architecture, ADRs, research, AI docs, launch kit |
+| `tests/e2e.rs`, `tests/native.rs`, `tests/ai.rs` | Language, differential native, and AI integration tests |
+| `examples/` | Runnable Vantyx programs and AI fixtures |
+| `benchmarks/` | Equivalent workloads and measurement runners |
+| `docs/` | Specification, architecture, ADRs, research, launch kit |
 | `.opencode/agents/` | Specialized engineering subagents |
+
+## Known limits
+
+- No generics, traits, closures, iterators, `Result`/`?`, async, concurrency,
+  FFI, or package manager.
+- No tuple patterns. Nested payload patterns, top-level or-patterns, and
+  integer range patterns (`low..high`, `low..=high`) run in both the
+  interpreter and native builds.
+- Native allocations are never reclaimed in v0.1; there is no cycle collector.
+- Struct, enum, list, and map keys use linear structural search in native maps;
+  scalar keys use a hash index with a fixed seed.
+- No formatter, linter, LSP, debug information, or stable ABI.
+- The AI host has no live local/cloud model evidence, tokenizer integration,
+  tensors, SIMD, GPU, MCP, or multimodal input.
+- There is no sandbox. Untrusted model output and untrusted tools require
+  application-level controls.
+
+## Creator
+
+<table>
+  <tr>
+    <td width="88" valign="top"><img src="https://github.com/zeiad6.png" width="72" height="72" alt="Zeidex"></td>
+    <td>
+      <strong>Zeidex</strong> · <a href="https://github.com/zeiad6">@zeiad6</a><br>
+      Creator and maintainer of Vantyx.<br>
+      <a href="https://zeidexlink.zeidexsoft.com/zeidex">zeidexlink.zeidexsoft.com/zeidex</a> ·
+      <a href="https://github.com/zeiad6/vantyx">github.com/zeiad6/vantyx</a>
+    </td>
+  </tr>
+</table>
+
+Contributions are welcome under [CONTRIBUTING.md](CONTRIBUTING.md). Report
+security issues according to [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Citation metadata is in [CITATION.cff](CITATION.cff).

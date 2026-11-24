@@ -40,6 +40,9 @@ jobs:
           VANTYX_CC: clang
         run: cargo test --locked
 
+      - name: Streaming smoke
+        run: python3 tools/streaming_smoke.py --binary target/debug/vantyx
+
       - name: Lint
         run: cargo clippy --all-targets --locked -- -D warnings
 

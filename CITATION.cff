@@ -1,11 +1,13 @@
 cff-version: 1.2.0
 message: "If you use Vantyx in research, teaching, or a language survey, cite this repository."
-title: "Vantyx: a gradual-typing language with an interpreter and a native C11 backend"
+title: "Vantyx: a gradual-typing language with an interpreter, a native C11 backend, and a dependency-free AI host"
 type: software
 authors:
-  - name: "Vantyx contributors"
+  - family-names: "Zeidex"
+    alias: "zeiad6"
+    website: "https://zeidexlink.zeidexsoft.com/zeidex"
 version: 0.1.0
-date-released: 2026-11-23
+date-released: 2026-11-24
 license: MIT
 repository-code: "https://github.com/zeiad6/vantyx"
 abstract: >-
@@ -13,7 +15,8 @@ abstract: >-
   type annotations, a tree-walking reference interpreter, a native GNU C11
   backend for a statically typed subset, and a dependency-free AI host toolkit.
   The interpreter is the semantic oracle; native behavior is checked by
-  differential tests.
+  differential tests. The AI host covers providers, structured extraction,
+  embeddings, local retrieval with citations, tools, and bounded agents.
 keywords:
   - programming language
   - gradual typing

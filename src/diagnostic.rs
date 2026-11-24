@@ -1,6 +1,6 @@
 //! Diagnostics and source rendering.
 
-use crate::span::{SourceMap, Span, expand_tabs};
+use crate::span::{SourceMap, SourceRegistry, Span, expand_tabs};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -146,6 +146,25 @@ impl Diagnostics {
         let mut out = String::new();
         for diagnostic in &self.items {
             out.push_str(&diagnostic.render(source_name, source));
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Renders every diagnostic against the source file named by its span.
+    pub fn render_all(&self, sources: &SourceRegistry) -> String {
+        let mut out = String::new();
+        for diagnostic in &self.items {
+            let file = sources
+                .get(diagnostic.span.file)
+                .or_else(|| sources.iter().next());
+            match file {
+                Some(file) => out.push_str(&diagnostic.render(&file.name, &file.source)),
+                None => out.push_str(&format!(
+                    "{}[{}]: {}\n",
+                    diagnostic.severity, diagnostic.code, diagnostic.message
+                )),
+            }
             out.push('\n');
         }
         out
