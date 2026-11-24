@@ -4,6 +4,7 @@
 This is a plumbing benchmark, not a model-quality benchmark. It measures:
   * index build time (ingestion, chunking, hash embeddings, JSON save),
   * one-shot search time (index load, query embedding, hybrid ranking),
+  * no-op and one-changed-chunk incremental updates (vector reuse),
   * index size, document/chunk counts, and top-k hits.
 
 The corpus is generated deterministically, so the benchmark is reproducible
@@ -182,6 +183,59 @@ def main() -> int:
             f"error: expected {expected_hits} hits per query, observed {hit_counts}"
         )
 
+    # Incremental updates run against the final full-build index. The corpus is
+    # still walked and chunked; only embedding calls for unchanged chunks are
+    # avoided. These phases are measured after the full-build numbers.
+    incremental_command = index_command[:-1] + ["--incremental", "--json"]
+    noop_info, _ = run_json(incremental_command, timeout=300.0)
+    if noop_info.get("embedded_chunks") != 0:
+        raise SystemExit(
+            "error: a no-op incremental update embedded chunks: "
+            f"{noop_info.get('embedded_chunks')}"
+        )
+    if noop_info.get("reused_chunks") != chunks:
+        raise SystemExit(
+            "error: a no-op incremental update did not reuse every chunk: "
+            f"{noop_info.get('reused_chunks')} of {chunks}"
+        )
+    noop_times: list[float] = []
+    noop_reused: list[int] = []
+    for _ in range(args.reps):
+        noop_info, elapsed = run_json(incremental_command, timeout=300.0)
+        noop_times.append(elapsed)
+        noop_reused.append(noop_info.get("reused_chunks", 0))
+    if any(count != chunks for count in noop_reused):
+        raise SystemExit(
+            f"error: no-op reuse counts were inconsistent: {noop_reused}"
+        )
+
+    def append_marker(path: Path, marker: str) -> None:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"Incremental marker {marker}.\n")
+
+    append_marker(corpus / "doc-0000.md", "warmup")
+    warm_info, _ = run_json(incremental_command, timeout=300.0)
+    if warm_info.get("embedded_chunks", 0) < 1:
+        raise SystemExit("error: a one-chunk update embedded nothing")
+    one_times: list[float] = []
+    one_embedded: list[int] = []
+    one_reused: list[int] = []
+    for rep in range(args.reps):
+        doc = corpus / f"doc-{(rep + 1) % args.docs:04d}.md"
+        append_marker(doc, f"rep-{rep}")
+        info, elapsed = run_json(incremental_command, timeout=300.0)
+        embedded = info.get("embedded_chunks", 0)
+        if embedded < 1:
+            raise SystemExit("error: a one-chunk update embedded nothing")
+        if embedded > 3:
+            raise SystemExit(
+                "error: appending one line re-embedded too many chunks: "
+                f"{embedded}"
+            )
+        one_times.append(elapsed)
+        one_embedded.append(embedded)
+        one_reused.append(info.get("reused_chunks", 0))
+
     generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
     report = {
         "generated": generated,
@@ -189,7 +243,8 @@ def main() -> int:
         "caveat": (
             "Offline hash embeddings and flat linear search. This measures "
             "plumbing, not semantic quality, model latency, or vector-database "
-            "performance."
+            "performance. Incremental updates still scan and chunk the corpus; "
+            "they only avoid re-embedding unchanged chunks."
         ),
         "environment": {
             "platform": platform.platform(),
@@ -210,6 +265,18 @@ def main() -> int:
         },
         "index": stats(index_times),
         "search": stats(search_times),
+        "incremental": {
+            "noop": {
+                **stats(noop_times),
+                "reused_chunks": int(statistics.median(noop_reused)),
+                "embedded_chunks": 0,
+            },
+            "one_chunk": {
+                **stats(one_times),
+                "reused_chunks": int(statistics.median(one_reused)),
+                "embedded_chunks": int(statistics.median(one_embedded)),
+            },
+        },
         "hits": {
             "count": hit_counts[0],
             "first_source": search_info["hits"][0]["source"] if search_info["hits"] else None,
@@ -247,13 +314,24 @@ def main() -> int:
                 f"{report['index']['min_ms']} | {report['index']['max_ms']} |",
                 f"| Search (load + query embed + rank) | {report['search']['median_ms']} | "
                 f"{report['search']['min_ms']} | {report['search']['max_ms']} |",
+                f"| Incremental, no changes (reuse {report['incremental']['noop']['reused_chunks']}) | "
+                f"{report['incremental']['noop']['median_ms']} | "
+                f"{report['incremental']['noop']['min_ms']} | "
+                f"{report['incremental']['noop']['max_ms']} |",
+                f"| Incremental, one changed chunk (embed {report['incremental']['one_chunk']['embedded_chunks']}) | "
+                f"{report['incremental']['one_chunk']['median_ms']} | "
+                f"{report['incremental']['one_chunk']['min_ms']} | "
+                f"{report['incremental']['one_chunk']['max_ms']} |",
                 "",
                 f"Every measured search returned {report['hits']['count']} cited hits; "
                 f"the first was `{report['hits']['first_source']}:{report['hits']['first_line']}`.",
                 "",
                 "One warm-up pair was discarded. Index and search are separate "
-                "processes, so search time includes JSON index loading. This is a "
-                "single-machine plumbing measurement, not a quality claim.",
+                "processes, so search time includes JSON index loading. Incremental "
+                "updates still walk and chunk the corpus and include process startup, "
+                "JSON load, and atomic save; the measured saving is embedding calls "
+                "for unchanged chunks. This is a single-machine plumbing measurement, "
+                "not a quality or model-latency claim.",
                 "",
             ]
         )

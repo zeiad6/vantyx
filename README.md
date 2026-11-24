@@ -104,7 +104,7 @@ See the [language specification](docs/language_specification.md).
 | Pattern matching | Variant, wildcard, integer, string, and boolean patterns; nested payload patterns with recursive exhaustiveness; top-level or-patterns with consistent bindings; integer ranges with half-open and inclusive bounds; `Bool`-checked guards |
 | Modules | `import` and `from ... import`; flat namespace, entry-directory confinement |
 | REPL | Persistent declarations, line editing, single-line history, top-level Tab completion, expression echo |
-| AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, citations, retrieval evaluation, tools, bounded agents |
+| AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, incremental vector reuse, citations, retrieval evaluation, tools, bounded agents |
 | Memory | Interpreter is reference-counted; native allocations are leaked by design; no cycle collector |
 | Tooling | Fuzz smoke, benchmarks, docs; no formatter, linter, LSP, package manager, or debug info |
 | Production readiness | No stable ABI, no LTS, not recommended for production |
@@ -159,6 +159,9 @@ executes a model, and remote HTTPS requires explicit opt-in.
 # Local retrieval with line citations and optional source filtering
 ./target/release/vantyx ai index --root docs --out /tmp/vtx-index.json \
   --provider hash --dimensions 32
+# Re-embed only new or changed chunks; prune deleted documents
+./target/release/vantyx ai index --root docs --out /tmp/vtx-index.json \
+  --incremental --json
 ./target/release/vantyx ai search --index /tmp/vtx-index.json \
   --query "native map hash index" --top-k 5
 ./target/release/vantyx ai search --index /tmp/vtx-index.json \
@@ -185,16 +188,21 @@ executes a model, and remote HTTPS requires explicit opt-in.
 - Retrieval indexes are strict, versioned JSON with atomic owner-only
   persistence. Search is linear over stored vectors; this is not a vector
   database.
+- Incremental indexing reuses vectors for unchanged chunks and prunes deleted
+  documents, but still walks and chunks the whole corpus. There is no
+  file-manifest shortcut or partial-prefix merge.
 - Retrieval returns cited chunks, not synthesized answers. Grounded generation
   is not claimed.
 - Streaming chat prints text deltas only; streaming tool calls, interactive
   cancellation, and server-side constrained decoding are not implemented.
 - Model downloads/removal, keyring storage, PDF/HTML/Office ingestion,
-  incremental re-indexing, reranking, and live model evidence remain open. See
+  arbitrary metadata filters, cross-source deduplication, reranking, and live
+  model evidence remain open. See
   [AI architecture](docs/ai/AI_ARCHITECTURE.md),
   [AI research](docs/ai/AI_RESEARCH.md), [AI security](docs/ai/AI_SECURITY.md),
-  [ADR-0018](docs/decisions/ADR-0018-local-rag-index.md), and
-  [ADR-0023](docs/decisions/ADR-0023-streaming-chat.md).
+  [ADR-0018](docs/decisions/ADR-0018-local-rag-index.md),
+  [ADR-0023](docs/decisions/ADR-0023-streaming-chat.md), and
+  [ADR-0024](docs/decisions/ADR-0024-incremental-rag-index.md).
 
 Language-level AI syntax such as `from ai import Client` or `await` is not
 implemented; it depends on async support. The supported AI surface is the host
@@ -304,7 +312,7 @@ count without checking them.
 | `src/ir.rs`, `src/codegen_c.rs` | Typed IR and GNU C11 backend |
 | `src/module.rs` | File-based module loader and confinement |
 | `src/repl.rs` | Zero-dependency REPL editor, history, completion |
-| `src/ai/` | JSON, providers, schema, extraction, embeddings, BM25/vector retrieval, RAG, tools, agents, HTTP |
+| `src/ai/` | JSON, providers, schema, extraction, embeddings, BM25/vector retrieval, RAG with incremental indexing, tools, agents, HTTP |
 | `src/ai_cli.rs` | `vantyx ai` commands |
 | `tests/e2e.rs`, `tests/native.rs`, `tests/ai.rs` | Language, differential native, and AI integration tests |
 | `examples/` | Runnable Vantyx programs and AI fixtures |

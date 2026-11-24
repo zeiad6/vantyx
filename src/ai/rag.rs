@@ -25,7 +25,7 @@ use super::provider::{
     Provider,
 };
 use super::budget::Budget;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write as _;
 use std::path::Path;
@@ -561,6 +561,89 @@ struct IndexedChunk {
     vector: Option<Vector>,
 }
 
+/// Chunk-level accounting for an incremental re-index.
+///
+/// `pending_chunks` counts chunks that are new or changed and therefore need an
+/// embedding call. `removed_chunks` counts chunks present in the previous index
+/// but absent from the current corpus; they are pruned. Source counts are path
+/// sets, so an edited document counts as retained rather than added.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ReuseStats {
+    pub previous_chunks: usize,
+    pub reused_chunks: usize,
+    pub pending_chunks: usize,
+    pub removed_chunks: usize,
+    pub previous_sources: usize,
+    pub current_sources: usize,
+    pub removed_sources: usize,
+    pub added_sources: usize,
+}
+
+/// A validated plan for updating an existing vector index without re-embedding
+/// unchanged chunks.
+///
+/// The plan reuses vectors by stable chunk id. Callers embed only
+/// [`IncrementalPlan::pending_chunks`] and finish with [`IncrementalPlan::finish`].
+#[derive(Clone, Debug)]
+pub struct IncrementalPlan {
+    provider: String,
+    model: String,
+    dimensions: usize,
+    chunks: Vec<Chunk>,
+    vectors: Vec<Option<Vector>>,
+    stats: ReuseStats,
+}
+
+impl IncrementalPlan {
+    pub fn stats(&self) -> &ReuseStats {
+        &self.stats
+    }
+
+    pub fn chunks(&self) -> &[Chunk] {
+        &self.chunks
+    }
+
+    /// Chunks that have no reusable vector and must be embedded, in index order.
+    pub fn pending_chunks(&self) -> impl Iterator<Item = &Chunk> + '_ {
+        self.chunks
+            .iter()
+            .zip(self.vectors.iter())
+            .filter_map(|(chunk, vector)| vector.is_none().then_some(chunk))
+    }
+
+    pub fn pending_chunks_owned(&self) -> Vec<Chunk> {
+        self.pending_chunks().cloned().collect()
+    }
+
+    /// Completes the plan with vectors for `pending_chunks`, in the same order.
+    pub fn finish(self, embedded: Vec<Vector>) -> Result<RagIndex, AiError> {
+        if embedded.len() != self.stats.pending_chunks {
+            return Err(invalid(format!(
+                "incremental plan expected {} embedded vectors but received {}",
+                self.stats.pending_chunks,
+                embedded.len()
+            )));
+        }
+        let mut embedded = embedded.into_iter();
+        let mut vectors = Vec::with_capacity(self.chunks.len());
+        for vector in self.vectors {
+            match vector {
+                Some(vector) => vectors.push(vector),
+                None => vectors.push(embedded.next().ok_or_else(|| {
+                    invalid("incremental plan is missing an embedded vector")
+                })?),
+            }
+        }
+        RagIndex::new(
+            self.provider,
+            self.model,
+            self.dimensions,
+            self.chunks,
+            vectors,
+        )
+    }
+}
+
 /// A persisted retrieval index. Search is linear in the number of chunks and is
 /// honest about that cost; it is not a production vector database.
 #[derive(Clone, Debug)]
@@ -732,6 +815,96 @@ impl RagIndex {
             && self.chunks.iter().all(|chunk| chunk.vector.is_some())
     }
 
+    /// Plans an incremental update from this index to a new chunk set.
+    ///
+    /// Vectors are reused only when the provider, model, dimensions, and stable
+    /// chunk id all match. A matching id commits the same source, line range, and
+    /// text, so reusing its vector is equivalent to re-embedding it. Removed
+    /// chunks are pruned from the new index.
+    pub fn plan_incremental(
+        &self,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+        dimensions: usize,
+        chunks: Vec<Chunk>,
+    ) -> Result<IncrementalPlan, AiError> {
+        let provider = provider.into();
+        let model = model.into();
+        validate_names(&provider, &model)?;
+        if self.dimensions == 0 {
+            return Err(invalid(
+                "incremental re-indexing requires a semantic index with stored vectors; rebuild with --mode semantic",
+            ));
+        }
+        if provider != self.provider || model != self.model || dimensions != self.dimensions {
+            return Err(invalid(format!(
+                "incremental re-indexing requires the same provider, model, and dimensions as the existing index (provider `{}`, model `{}`, {} dimensions); rebuild without --incremental to change them",
+                self.provider, self.model, self.dimensions
+            )));
+        }
+        validate_chunk_set(&chunks)?;
+
+        let mut previous: HashMap<&str, &Vector> = HashMap::with_capacity(self.chunks.len());
+        let mut previous_sources: HashSet<&str> = HashSet::new();
+        for indexed in &self.chunks {
+            previous_sources.insert(indexed.chunk.source.as_str());
+            if let Some(vector) = indexed.vector.as_ref() {
+                previous.insert(indexed.chunk.id.as_str(), vector);
+            }
+        }
+
+        let mut current_ids: HashSet<&str> = HashSet::with_capacity(chunks.len());
+        let mut current_sources: HashSet<&str> = HashSet::new();
+        let mut vectors = Vec::with_capacity(chunks.len());
+        let mut reused_chunks = 0usize;
+        let mut pending_chunks = 0usize;
+        for chunk in &chunks {
+            current_ids.insert(chunk.id.as_str());
+            current_sources.insert(chunk.source.as_str());
+            match previous.get(chunk.id.as_str()) {
+                Some(vector) => {
+                    vectors.push(Some((*vector).clone()));
+                    reused_chunks += 1;
+                }
+                None => {
+                    vectors.push(None);
+                    pending_chunks += 1;
+                }
+            }
+        }
+        let removed_chunks = self
+            .chunks
+            .iter()
+            .filter(|indexed| !current_ids.contains(indexed.chunk.id.as_str()))
+            .count();
+        let removed_sources = previous_sources
+            .iter()
+            .filter(|source| !current_sources.contains(*source))
+            .count();
+        let added_sources = current_sources
+            .iter()
+            .filter(|source| !previous_sources.contains(*source))
+            .count();
+        let stats = ReuseStats {
+            previous_chunks: self.chunks.len(),
+            reused_chunks,
+            pending_chunks,
+            removed_chunks,
+            previous_sources: previous_sources.len(),
+            current_sources: current_sources.len(),
+            removed_sources,
+            added_sources,
+        };
+        Ok(IncrementalPlan {
+            provider,
+            model,
+            dimensions,
+            chunks,
+            vectors,
+            stats,
+        })
+    }
+
     pub fn chunks(&self) -> impl Iterator<Item = &Chunk> {
         self.chunks.iter().map(|indexed| &indexed.chunk)
     }
@@ -794,6 +967,9 @@ impl RagIndex {
                     format!("source prefix exceeds the {MAX_SOURCE_BYTES} byte limit"),
                 ));
             }
+        }
+        if self.is_empty() {
+            return Ok(Vec::new());
         }
         if mode != SearchMode::Lexical && !self.has_vectors() {
             return Err(AiError::new(
@@ -1102,16 +1278,21 @@ impl RagIndex {
         }
 
         if vector_count == 0 {
-            if dimensions != 0 {
+            if dimensions == 0 {
+                return Self::lexical(
+                    provider,
+                    model,
+                    chunks.into_iter().map(|(chunk, _)| chunk).collect(),
+                );
+            }
+            if !chunks.is_empty() {
                 return Err(invalid(
-                    "a lexical-only index must declare `dimensions` as 0",
+                    "a vector index contains chunks without vectors; rebuild it",
                 ));
             }
-            return Self::lexical(
-                provider,
-                model,
-                chunks.into_iter().map(|(chunk, _)| chunk).collect(),
-            );
+            // An empty semantic index is valid: it records the provider, model,
+            // and dimensions after every document was removed.
+            return Self::new(provider, model, dimensions, Vec::new(), Vec::new());
         }
         if vector_count != chunks.len() {
             return Err(invalid(
@@ -1273,6 +1454,30 @@ fn validate_chunk(chunk: &Chunk) -> Result<(), AiError> {
                 chunk.text.len()
             ),
         ));
+    }
+    Ok(())
+}
+
+fn validate_chunk_set(chunks: &[Chunk]) -> Result<(), AiError> {
+    if chunks.len() > MAX_CHUNKS {
+        return Err(invalid(format!(
+            "index has {} chunks; the limit is {MAX_CHUNKS}",
+            chunks.len()
+        )));
+    }
+    let mut ids: HashSet<&str> = HashSet::with_capacity(chunks.len());
+    let mut total_bytes = 0usize;
+    for chunk in chunks {
+        validate_chunk(chunk)?;
+        if !ids.insert(chunk.id.as_str()) {
+            return Err(invalid(format!("duplicate chunk id `{}`", chunk.id)));
+        }
+        total_bytes = total_bytes.saturating_add(chunk.text.len());
+        if total_bytes > MAX_TOTAL_CHUNK_BYTES {
+            return Err(invalid(format!(
+                "index text exceeds the {MAX_TOTAL_CHUNK_BYTES} byte limit"
+            )));
+        }
     }
     Ok(())
 }
@@ -1998,5 +2203,130 @@ mod tests {
         assert_eq!(SearchMode::parse("semantic").unwrap(), SearchMode::Semantic);
         assert_eq!(SearchMode::parse("hybrid").unwrap(), SearchMode::Hybrid);
         assert!(SearchMode::parse("fuzzy").is_err());
+    }
+
+    fn chunk(source: &str, start: usize, end: usize, text: &str) -> Chunk {
+        Chunk {
+            id: stable_chunk_id(source, start, end, text),
+            source: source.into(),
+            start_line: start,
+            end_line: end,
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn incremental_plan_reuses_unchanged_chunks_and_prunes_removed() {
+        let previous = vector_index();
+        let unchanged = sample_chunks()[0].clone();
+        let changed = chunk("b.md", 1, 2, "Python is popular for numerical computing.");
+        let added = chunk("d.md", 1, 1, "Go compiles quickly.");
+        let chunks = vec![unchanged.clone(), changed.clone(), added.clone()];
+        let plan = previous
+            .plan_incremental("hash", "hash-embedding-32", 32, chunks)
+            .unwrap();
+        let stats = plan.stats();
+        assert_eq!(stats.previous_chunks, 3);
+        assert_eq!(stats.reused_chunks, 1);
+        assert_eq!(stats.pending_chunks, 2);
+        assert_eq!(stats.removed_chunks, 2);
+        assert_eq!(stats.previous_sources, 3);
+        assert_eq!(stats.current_sources, 3);
+        assert_eq!(stats.removed_sources, 1);
+        assert_eq!(stats.added_sources, 1);
+        let pending = plan.pending_chunks_owned();
+        assert_eq!(pending.len(), 2);
+        assert_eq!(pending[0].id, changed.id);
+        assert_eq!(pending[1].id, added.id);
+
+        let provider = HashEmbeddingProvider::new(32).unwrap();
+        let mut budget = Budget::default();
+        let (vectors, _) = embed_chunks(
+            &provider,
+            "hash-embedding-32",
+            &pending,
+            Some(32),
+            &mut budget,
+        )
+        .unwrap();
+        let index = plan.finish(vectors).unwrap();
+        assert_eq!(index.len(), 3);
+        assert!(index.has_vectors());
+        assert_eq!(index.provider(), "hash");
+        assert_eq!(index.dimensions(), 32);
+        let hits = index
+            .search("numerical computing", None, SearchMode::Lexical, 1)
+            .unwrap();
+        assert_eq!(hits[0].source, "b.md");
+    }
+
+    #[test]
+    fn incremental_plan_rejects_configuration_and_chunk_mismatches() {
+        let previous = vector_index();
+        let chunks = sample_chunks();
+        assert!(
+            previous
+                .plan_incremental("other", "hash-embedding-32", 32, chunks.clone())
+                .is_err()
+        );
+        assert!(
+            previous
+                .plan_incremental("hash", "hash-embedding-64", 32, chunks.clone())
+                .is_err()
+        );
+        assert!(
+            previous
+                .plan_incremental("hash", "hash-embedding-32", 64, chunks.clone())
+                .is_err()
+        );
+        let duplicate = chunks[0].clone();
+        assert!(
+            previous
+                .plan_incremental(
+                    "hash",
+                    "hash-embedding-32",
+                    32,
+                    vec![duplicate.clone(), duplicate]
+                )
+                .is_err()
+        );
+        let lexical = RagIndex::lexical("hash", "lexical", chunks).unwrap();
+        assert!(
+            lexical
+                .plan_incremental("hash", "lexical", 32, Vec::new())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn incremental_plan_can_remove_every_chunk_and_round_trip() {
+        let previous = vector_index();
+        let plan = previous
+            .plan_incremental("hash", "hash-embedding-32", 32, Vec::new())
+            .unwrap();
+        assert_eq!(plan.stats().pending_chunks, 0);
+        assert_eq!(plan.stats().removed_chunks, 3);
+        let index = plan.finish(Vec::new()).unwrap();
+        assert_eq!(index.len(), 0);
+        assert_eq!(index.dimensions(), 32);
+        assert!(index
+            .search("anything", None, SearchMode::Semantic, 1)
+            .unwrap()
+            .is_empty());
+        let restored = RagIndex::from_json(&index.to_json()).unwrap();
+        assert_eq!(restored.len(), 0);
+        assert_eq!(restored.dimensions(), 32);
+        assert_eq!(restored.provider(), "hash");
+    }
+
+    #[test]
+    fn incremental_finish_requires_one_vector_per_pending_chunk() {
+        let previous = vector_index();
+        let new_chunk = chunk("new.md", 1, 1, "A new document.");
+        let plan = previous
+            .plan_incremental("hash", "hash-embedding-32", 32, vec![new_chunk])
+            .unwrap();
+        assert_eq!(plan.stats().pending_chunks, 1);
+        assert!(plan.finish(Vec::new()).is_err());
     }
 }

@@ -24,7 +24,7 @@ This avoids two failure modes:
 | Track | Scope | Current state |
 | --- | --- | --- |
 | A — Core Vantyx | Lexer, parser, checker, interpreter, native backend, memory, modules, tooling | v0.1 subset verified; modules implemented; async/generics missing |
-| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, streamed text chat, embedding providers/cache, and local retrieval/evaluation implemented; live providers and grounded generation pending |
+| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, streamed text chat, embedding providers/cache, local retrieval/evaluation, and incremental vector reuse implemented; live providers, streaming tool calls, and grounded generation pending |
 
 Track B must not wait for the entire Track A roadmap. It may use the host CLI and
 Rust API while language-level integration remains blocked.
@@ -67,7 +67,7 @@ Rust API while language-level integration remains blocked.
 | `ai/extract.rs` | Strict JSON extraction, schema validation, bounded repair, usage accounting | Return unvalidated model output or exceed the repair limit |
 | `ai/embedding.rs` | Vector math, normalization, in-memory index | Hide O(n) search cost |
 | `ai/bm25.rs` | Deterministic lexical retrieval | Claim semantic retrieval |
-| `ai/rag.rs` | Bounded ingestion, stable line-cited chunks, persistent index, lexical/semantic/hybrid search, reciprocal-rank fusion, retrieval evaluation | Claim answer grounding without retrieved sources or exceed ingestion limits |
+| `ai/rag.rs` | Bounded ingestion, stable line-cited chunks, persistent index, incremental vector reuse/pruning, lexical/semantic/hybrid search, reciprocal-rank fusion, retrieval evaluation | Claim answer grounding without retrieved sources or exceed ingestion limits |
 | `ai/tools.rs` | Tool registry, JSON schemas, capabilities, allowlists | Auto-grant host permissions |
 | `ai/agent.rs` | Bounded plan/act loop, cancellation, state | Run without step/token/time limits |
 | `ai/budget.rs` | Deterministic limits and errors | Silently truncate or overspend |
@@ -244,6 +244,12 @@ query     → embed → cosine + BM25 → reciprocal-rank fusion → cited top-k
   hit carries `source`, `start_line`, and `end_line`.
 - Indexes are strict JSON (format version 1), validated before lexical state is
   rebuilt, saved by atomic rename, and written with mode 0600 on Unix.
+- Incremental updates (`vantyx ai index --incremental`, ADR-0024) reuse stored
+  vectors when the stable chunk id, provider, model, and dimensions match,
+  embed only new or changed chunks, and prune chunks absent from the current
+  corpus. A no-op update constructs no provider and makes no embedding call.
+  Every update still walks and chunks the complete corpus; there is no
+  file-manifest shortcut, partial-prefix merge, or sub-chunk diffing.
 - `Provider::embed` accepts batches of up to 128 inputs (8 KiB each, 32 KiB per
   request) and 1–4096 requested dimensions. Invalid requests fail before
   transport.

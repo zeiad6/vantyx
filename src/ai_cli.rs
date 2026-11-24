@@ -63,6 +63,8 @@ Options:
   --chunk-chars <n>       Maximum characters per chunk (default 900)
   --overlap-chars <n>     Chunk overlap in characters (default 120)
   --ext <ext>             Indexed extension; repeat or comma-separate
+  --incremental           Update an existing semantic index, reusing vectors
+                          for unchanged chunks and pruning deleted chunks
   --stream                Print OpenAI-compatible text deltas as they arrive
                           (not compatible with --json)
   --json                  Print the response as JSON
@@ -107,6 +109,7 @@ struct Options {
     chunk_chars: Option<usize>,
     overlap_chars: Option<usize>,
     extensions: Vec<String>,
+    incremental: bool,
     stream: bool,
     json: bool,
     prompt_stdin: bool,
@@ -769,6 +772,13 @@ fn rag_index(args: &[String]) -> i32 {
     });
 
     if build_mode == ai::SearchMode::Lexical {
+        if options.incremental {
+            eprintln!("error: --incremental requires a semantic index with stored vectors");
+            eprintln!(
+                "help: rebuild with --mode semantic, or omit --incremental for a lexical rebuild"
+            );
+            return 64;
+        }
         let index = match ai::RagIndex::lexical("lexical", "none", chunks) {
             Ok(index) => index,
             Err(error) => return report_error(&error),
@@ -805,6 +815,195 @@ fn rag_index(args: &[String]) -> i32 {
             println!("chunks: {}", index.len());
             println!("bytes: {bytes}");
             println!("note: lexical indexes cannot serve semantic or hybrid search");
+        }
+        return 0;
+    }
+
+    if options.incremental {
+        if !out.is_file() {
+            eprintln!(
+                "error: --incremental requires an existing index at `{}`",
+                out.display()
+            );
+            eprintln!("help: build the index once without --incremental, then update it");
+            return 64;
+        }
+        let previous = match ai::RagIndex::load(out) {
+            Ok(index) => index,
+            Err(error) => return report_error(&error),
+        };
+        if previous.dimensions() == 0 {
+            eprintln!("error: --incremental requires a semantic index with stored vectors");
+            eprintln!(
+                "help: rebuild with --mode semantic, or omit --incremental for a lexical rebuild"
+            );
+            return 64;
+        }
+        if let Some(requested) = options.provider.as_deref()
+            && requested != previous.provider()
+        {
+            eprintln!(
+                "error: --incremental cannot change the provider from `{}` to `{requested}`",
+                previous.provider()
+            );
+            eprintln!("help: rebuild without --incremental to change the provider");
+            return 64;
+        }
+        if let Some(requested) = options.model.as_deref()
+            && requested != previous.model()
+        {
+            eprintln!(
+                "error: --incremental cannot change the model from `{}` to `{requested}`",
+                previous.model()
+            );
+            eprintln!("help: rebuild without --incremental to change the model");
+            return 64;
+        }
+        if let Some(requested) = options.dimensions
+            && requested != previous.dimensions()
+        {
+            eprintln!(
+                "error: --incremental cannot change dimensions from {} to {requested}",
+                previous.dimensions()
+            );
+            eprintln!("help: rebuild without --incremental to change dimensions");
+            return 64;
+        }
+        let provider_name = previous.provider().to_string();
+        let model = previous.model().to_string();
+        let dimensions = previous.dimensions();
+        let plan = match previous.plan_incremental(
+            provider_name.clone(),
+            model.clone(),
+            dimensions,
+            chunks,
+        ) {
+            Ok(plan) => plan,
+            Err(error) => return report_error(&error),
+        };
+        let stats = plan.stats().clone();
+        let (index, usage) = if stats.pending_chunks == 0 {
+            match plan.finish(Vec::new()) {
+                Ok(index) => (index, None),
+                Err(error) => return report_error(&error),
+            }
+        } else {
+            let pending = plan.pending_chunks_owned();
+            let provider = match build_embedding_provider(
+                &config,
+                &provider_name,
+                &model,
+                dimensions,
+            ) {
+                Ok(provider) => provider,
+                Err(error) => return report_error(&error),
+            };
+            let mut budget = Budget::default();
+            let (vectors, usage) = match ai::embed_chunks(
+                provider.as_ref(),
+                &model,
+                &pending,
+                Some(dimensions),
+                &mut budget,
+            ) {
+                Ok(result) => result,
+                Err(error) => return report_error(&error),
+            };
+            match plan.finish(vectors) {
+                Ok(index) => (index, Some(usage)),
+                Err(error) => return report_error(&error),
+            }
+        };
+        if let Err(error) = index.save(out) {
+            return report_error(&error);
+        }
+        let bytes = std::fs::metadata(out).map(|metadata| metadata.len()).unwrap_or(0);
+        let prompt_tokens = usage.as_ref().map_or(0, |usage| usage.prompt_tokens);
+        let total_tokens = usage.as_ref().map_or(0, |usage| usage.total_tokens);
+        if options.json {
+            println!(
+                "{}",
+                ai::Json::object([
+                    ("index", ai::Json::from(out.to_string_lossy().to_string())),
+                    ("mode", ai::Json::from("semantic")),
+                    ("incremental", ai::Json::from(true)),
+                    ("provider", ai::Json::from(index.provider().to_string())),
+                    ("model", ai::Json::from(index.model().to_string())),
+                    (
+                        "dimensions",
+                        ai::Json::from(u64::try_from(index.dimensions()).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "documents",
+                        ai::Json::from(u64::try_from(documents.len()).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "chunks",
+                        ai::Json::from(u64::try_from(index.len()).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "vectors",
+                        ai::Json::from(u64::try_from(index.len()).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "previous_chunks",
+                        ai::Json::from(u64::try_from(stats.previous_chunks).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "reused_chunks",
+                        ai::Json::from(u64::try_from(stats.reused_chunks).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "embedded_chunks",
+                        ai::Json::from(u64::try_from(stats.pending_chunks).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "removed_chunks",
+                        ai::Json::from(u64::try_from(stats.removed_chunks).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "removed_sources",
+                        ai::Json::from(u64::try_from(stats.removed_sources).unwrap_or(u64::MAX)),
+                    ),
+                    (
+                        "added_sources",
+                        ai::Json::from(u64::try_from(stats.added_sources).unwrap_or(u64::MAX)),
+                    ),
+                    ("bytes", ai::Json::from(bytes)),
+                    (
+                        "usage",
+                        ai::Json::object([
+                            ("prompt_tokens", ai::Json::from(prompt_tokens)),
+                            ("total_tokens", ai::Json::from(total_tokens)),
+                        ]),
+                    ),
+                ])
+            );
+        } else {
+            println!("index: {}", out.display());
+            println!("mode: semantic (stored vectors enable semantic and hybrid search)");
+            println!("update: incremental");
+            println!("provider: {}", index.provider());
+            println!("model: {}", index.model());
+            println!("dimensions: {}", index.dimensions());
+            println!("documents: {}", documents.len());
+            println!("chunks: {}", index.len());
+            println!("vectors: {}", index.len());
+            println!(
+                "reused: {} chunks; embedded: {} chunks; removed: {} chunks",
+                stats.reused_chunks, stats.pending_chunks, stats.removed_chunks
+            );
+            println!(
+                "sources: {} current, {} removed, {} added",
+                stats.current_sources, stats.removed_sources, stats.added_sources
+            );
+            println!("bytes: {bytes}");
+            println!("usage: prompt_tokens={prompt_tokens} total_tokens={total_tokens}");
+            if provider_name == "hash" {
+                println!(
+                    "note: the hash provider is a deterministic lexical feature baseline, not a semantic model"
+                );
+            }
         }
         return 0;
     }
@@ -850,6 +1049,7 @@ fn rag_index(args: &[String]) -> i32 {
             ai::Json::object([
                 ("index", ai::Json::from(out.to_string_lossy().to_string())),
                 ("mode", ai::Json::from("semantic")),
+                ("incremental", ai::Json::from(false)),
                 ("provider", ai::Json::from(index.provider().to_string())),
                 ("model", ai::Json::from(index.model().to_string())),
                 (
@@ -1529,6 +1729,12 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
                 }
                 options.json = true;
             }
+            "--incremental" => {
+                if inline.is_some() {
+                    return Err("--incremental does not take a value".into());
+                }
+                options.incremental = true;
+            }
             "--stream" => {
                 if inline.is_some() {
                     return Err("--stream does not take a value".into());
@@ -1755,6 +1961,22 @@ mod tests {
         assert!(options.stream);
         assert_eq!(options.positional, vec!["hello"]);
         assert!(parse_options(&args(&["--stream=true"])).is_err());
+    }
+
+    #[test]
+    fn parses_the_incremental_index_flag() {
+        let options = parse_options(&args(&[
+            "index",
+            "--root",
+            "docs",
+            "--out",
+            "index.json",
+            "--incremental",
+        ]))
+        .unwrap();
+        assert!(options.incremental);
+        assert!(!options.json);
+        assert!(parse_options(&args(&["--incremental=true"])).is_err());
     }
 
     #[test]

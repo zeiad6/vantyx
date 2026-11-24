@@ -110,8 +110,9 @@ model evidence remain open.
 - [x] Citations on every hit; no answer-grounding claim.
 - [x] Retrieval evaluation: recall@k, precision@k, MRR, and per-query hits.
 - [x] Relative source-prefix metadata filtering before top-k.
-- [ ] Arbitrary metadata fields, incremental updates, deduplication, deletion,
-      and reranking.
+- [x] Incremental semantic re-indexing with stable-chunk vector reuse,
+      deletion pruning, and an explicit empty-index representation (ADR-0024).
+- [ ] Arbitrary metadata fields, cross-source deduplication, and reranking.
 - [ ] Licensed multi-document corpus; latency and memory measurements.
 - [ ] Grounded generation after retrieval evaluation.
 
@@ -201,8 +202,8 @@ The host API is not blocked by these; language-level syntax is.
 2. **P1:** AI-2 live local/cloud evidence, streaming tool calls/cancellation,
    structured output, embeddings, retrieval quality, bounded agents.
 3. **P1 core:** native reclamation, async design, tuple patterns.
-4. **P2:** model manager, retrieval metadata/incremental updates, observability,
-   cross-platform CI.
+4. **P2:** model manager, retrieval metadata/deduplication/reranking,
+   observability, cross-platform CI.
 5. **P3+:** multimodal, MCP, ONNX/GGUF embedding, tensors.
 6. **P4:** GPU, autodiff, multi-agent orchestration — only with hardware and
    evidence.

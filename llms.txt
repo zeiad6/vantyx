@@ -60,10 +60,11 @@ repository root.
   batch limits, deterministic lexical hash embeddings and a bounded FIFO cache,
   OpenAI-compatible `/v1/embeddings`, in-memory vector index, BM25, local RAG
   ingestion with stable line-cited chunks, persistent strict-JSON indexes,
-  lexical/semantic/hybrid retrieval with reciprocal-rank fusion, retrieval
-  evaluation (recall@k, precision@k, MRR), typed tools with capabilities,
-  bounded agents, redacted metrics, SSE parsing, and an OpenAI-compatible
-  adapter with buffered and streamed text chat.
+  incremental vector reuse with deletion pruning, lexical/semantic/hybrid
+  retrieval with reciprocal-rank fusion, retrieval evaluation (recall@k,
+  precision@k, MRR), typed tools with capabilities, bounded agents, redacted
+  metrics, SSE parsing, and an OpenAI-compatible adapter with buffered and
+  streamed text chat.
 - `vantyx ai providers`, `doctor`, `models`, `chat` (including `--stream`),
   `extract`, `embed`, `index`, `search`, `eval`, and `tokens`; loopback HTTP by
   default, remote HTTPS only with `--allow-network`, API keys only from an
@@ -86,10 +87,11 @@ repository root.
 - Native support for `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads, or
   `match` on `Any` (rejected with `E0401`)
 - Language-level AI syntax (`from ai import Client`, `await`)
-- Streaming chat output, server-side constrained decoding, model
-  download/removal, keyring storage, persistent agent state, live embedding-model
-  verification, PDF/HTML/Office ingestion, incremental re-indexing, reranking,
-  or grounded answer generation
+- Streaming tool calls and interactive cancellation, server-side constrained
+  decoding, model download/removal, keyring storage, persistent agent state,
+  live embedding-model verification, PDF/HTML/Office ingestion, arbitrary
+  metadata filters, cross-source deduplication, reranking, or grounded answer
+  generation
 - Tensors, autodiff, SIMD, GPU, MCP, ONNX/GGUF embedding, or multi-agent
   orchestration
 - Live local-model or cloud-provider verification (the adapter is tested only
@@ -158,6 +160,8 @@ fn main():
   embedding provider interface, hash baseline, and bounded cache
 - [ADR-0018](docs/decisions/ADR-0018-local-rag-index.md): local RAG index
   format, validation, citations, and retrieval limits
+- [ADR-0024](docs/decisions/ADR-0024-incremental-rag-index.md): incremental
+  RAG updates, vector reuse, pruning, and empty-index semantics
 - [Historical requirements audit](RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md): recovered requirements and gaps
 - [ADRs](docs/decisions/): design decisions and trade-offs
 - [Security policy](SECURITY.md): reporting and known limits

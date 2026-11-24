@@ -1,6 +1,6 @@
 # Historical Requirements Audit
 
-Date: 2026-11-23; reconciled 2026-11-24 after T-013 and T-046
+Date: 2026-11-23; reconciled 2026-11-24 after T-054, T-013, and T-046
 Repository: RustZ (public name `vantyx`; renamed from `auren`)
 Auditor: autonomous engineering session
 Scope: every requirement recoverable from `TASKS.md`, `PROJECT_STATUS.md`,
@@ -40,7 +40,7 @@ because a document says so; the table cites code or an observed command.
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | **457 passed**: 297 library unit, 13 CLI unit, 30 AI integration, 44 e2e, 73 native (2026-11-24, after T-052); earlier 437-, 430-, 429-, 422-, 413-, 383-, 358-, 357-, and 340-test runs also passed |
+| `cargo test` | **463 passed**: 301 library unit, 14 CLI unit, 31 AI integration, 44 e2e, 73 native (2026-11-24, after T-054); earlier 457-, 437-, 430-, 429-, 422-, 413-, 383-, 358-, 357-, and 340-test runs also passed |
 | Map benchmark | `map_ops` native 3.597 ms, interpreter 121.728 ms, C 2.884 ms, Rust 4.495 ms (2026-11-24; `benchmarks/results/2026-11-24.*`) |
 | `cargo build` / `--release` | both succeeded after the AI foundation and rename |
 | `cargo clippy --all-targets -- -D warnings` | clean, zero warnings |
@@ -49,7 +49,7 @@ because a document says so; the table cites code or an observed command.
 | AI host | `src/ai/` foundation and `vantyx ai` CLI implemented; offline and loopback tests pass; streamed text chat is covered by loopback HTTP and HTTPS smoke tests |
 | Embeddings | deterministic hash provider, batch limits, bounded cache, OpenAI-compatible `/v1/embeddings`, and `vantyx ai embed` implemented; offline/loopback tests pass |
 | Modules (T-013) | file imports, path confinement, cycles, declaration-only modules, interpreter/native differential test, and `E0501`–`E0512` |
-| RAG (T-046) | bounded ingestion, stable cited chunks, strict versioned JSON index, BM25/cosine/hybrid RRF search, source-prefix filtering, and recall/precision/MRR evaluation; 14 unit + 2 CLI tests and a manual 3-document run |
+| RAG (T-046, T-054) | bounded ingestion, stable cited chunks, strict versioned JSON index, BM25/cosine/hybrid RRF search, source-prefix filtering, recall/precision/MRR evaluation, and incremental vector reuse with deletion pruning; 18 unit + 3 CLI tests and manual 3-document runs |
 | Or-patterns (T-047/T-050) | top-level `|` alternatives, shared binding-set checking (`E0317`), exhaustiveness integration, ordered interpreter matching, and native short-circuit lowering with conditional binding initialization; parser/checker/e2e/native tests; ADR-0021 |
 | Nested patterns (T-048/T-049) | recursive payload patterns, multi-level bindings, matrix exhaustiveness, guard exclusion, and native short-circuit lowering with path-based bindings; parser/checker/e2e/native tests; ADR-0019/ADR-0020 |
 | AI live evidence | none; no local server, embedding model, or cloud credentials available |
@@ -120,7 +120,7 @@ the AI matrix rather than duplicated here; T-044–T-050 are included above.
 | T-035 | Public repository and launch kit | Public repo, CI, release, issue, `llms.txt`; Vantyx rename verified by GitHub and clean-clone CI | COMPLETE | Keep discovery material current | P1 | Maintain |
 | T-044 | Native scalar-key map hash index | `src/codegen_c.rs`; `large_scalar_maps_match`; 2026-11-24 benchmark | COMPLETE | Structural-key hashing; adversarial seed | P1 | Keep |
 | T-045 | Embedding provider interface, batch embeddings, cache, and CLI | `src/ai/provider.rs`, `src/ai/embedding_provider.rs`, `src/ai/openai.rs`, `src/ai_cli.rs`; 413-test run; loopback `/v1/embeddings`; ADR-0017 | COMPLETE (offline/loopback) | Live embedding-model evidence; TTL/persistent cache | P1 | Extend |
-| T-046 | Local RAG ingestion, hybrid retrieval, citations, persistence, source filtering, and evaluation | `src/ai/rag.rs` (14 unit tests), `src/ai_cli.rs` (`index`/`search`/`eval`), `tests/ai.rs` (2 integration tests), `examples/ai/retrieval-eval.json`; ADR-0018 | COMPLETE (offline/loopback) | PDF/HTML/Office ingestion, arbitrary metadata fields, incremental updates, deletion/dedup, reranking, grounded generation, live corpus evaluation | P1 | Extend |
+| T-046 | Local RAG ingestion, hybrid retrieval, citations, persistence, source filtering, and evaluation | `src/ai/rag.rs` (14 unit tests), `src/ai_cli.rs` (`index`/`search`/`eval`), `tests/ai.rs` (2 integration tests), `examples/ai/retrieval-eval.json`; ADR-0018 | COMPLETE (offline/loopback) | PDF/HTML/Office ingestion, arbitrary metadata fields, cross-source dedup, reranking, grounded generation, live corpus evaluation | P1 | Extend |
 | T-047 | Top-level or-patterns with shared bindings and exhaustiveness | `src/ast.rs` (`Pattern::Or`), `src/parser.rs`, `src/checker.rs` (`E0317`), `src/interp.rs`; parser + 5 checker + e2e tests | COMPLETE (interpreter; native lowering added by T-050) | Or-patterns over `Any` natively | P1 | Extend |
 | T-048 | Nested payload patterns with multi-level bindings and matrix exhaustiveness | `src/ast.rs` (`PatternArg::Nested`), `src/parser.rs`, `src/checker.rs` (`CoverPattern`, `matrix_exhaustive`), `src/interp.rs`; parser + 4 checker + e2e tests; ADR-0019 | COMPLETE (interpreter; native lowering added by T-049) | Tuple patterns; nested unreachable analysis | P1 | Extend |
 | T-049 | Native nested-pattern lowering with path-based bindings and single-evaluation guards | `src/ir.rs` (recursive `IrPattern`, `IrFieldPath`), `src/codegen_c.rs` (recursive conditions, binding declarations), `tests/native.rs::nested_patterns_match`, extended e2e; ADR-0020 | COMPLETE (interpreter/native differential) | Tuple patterns; nested unreachable analysis | P1 | Extend |
@@ -128,6 +128,7 @@ the AI matrix rather than duplicated here; T-044–T-050 are included above.
 | T-051 | Integer range patterns with half-open and inclusive bounds | `src/token.rs`/`src/lexer.rs` (`DotDot`/`DotDotEq`), `src/ast.rs` (`Pattern::Range`), `src/parser.rs` (`finish_range_pattern`), `src/checker.rs` (`E0318`), `src/interp.rs`, `src/ir.rs` (`IrPattern::Range`), `src/codegen_c.rs`; parser + 3 checker + e2e + native differential tests; ADR-0022 | COMPLETE (interpreter/native differential) | Range expressions; float/character/computed bounds; interval usefulness analysis | P1 | Extend |
 | T-052 | Streamed OpenAI-compatible text chat through the provider, HTTP transport, and CLI | `src/ai/provider.rs` (`chat_stream`, `streaming` capability), `src/ai/sse.rs` (`push_bytes` UTF-8 carry), `src/ai/http.rs` (`Transport::stream`, content-length/chunked/close-delimited, `curl --include --no-buffer`), `src/ai/openai.rs` (`ChatStreamState`, streaming request JSON), `src/ai_cli.rs` (`--stream`), `tools/streaming_smoke.py`; unit, loopback CLI, and HTTP/HTTPS smoke tests; ADR-0023 | COMPLETE (offline/loopback; live provider blocked) | Streaming tool calls, interactive cancellation, live first-token/tokens-per-second evidence | P1 | Extend |
 | T-053 | Remove the unrelated `auren` account from contributor attribution | `git filter-branch` over branches and tags, force-with-lease push of `main` and `v0.1.0`, `.mailmap`; contributor API and commit-identity checks | COMPLETE (history rewritten with explicit authorization) | None; old hashes are historical | P1 | Keep |
+| T-054 | Incremental RAG re-indexing with stable-chunk vector reuse, deletion pruning, and empty-index semantics | `src/ai/rag.rs` (`IncrementalPlan`, `ReuseStats`, `plan_incremental`, `validate_chunk_set`, 4 unit tests), `src/ai_cli.rs` (`--incremental`, compatibility checks, lazy provider, reuse reporting, parser test), `tests/ai.rs` (1 CLI integration test), `benchmarks/rag.py` incremental phases; ADR-0024 | COMPLETE (offline/loopback) | File-manifest shortcut, partial-prefix merge, sub-chunk diffing, trained-model evidence | P1 | Extend |
 
 ### Core partials that must not be described as finished
 
@@ -316,6 +317,21 @@ with `stream: true` and `Accept: text/event-stream`; HTTPS used a self-signed
 certificate and the system `curl`. No live model was available, so this is
 protocol evidence, not model-behavior evidence.
 
+Re-verification after T-054 on 2026-11-24: `cargo test` — 463 passed
+(301 library unit + 14 CLI unit + 31 AI integration + 44 end-to-end + 73 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched. Incremental tests cover reuse/prune
+planning, provider/model/dimension mismatch rejection, delete-all round-trip,
+one-vector-per-chunk validation, `--incremental` parsing, and an offline CLI run
+that edits one document, deletes another, and checks post-update search. A
+manual 3-chunk reproduction reported `reused_chunks:1`, `embedded_chunks:2`,
+`removed_chunks:2`, and `removed_sources:1`. The extended RAG plumbing benchmark
+recorded a no-op update at 47.377 ms (600 reused, 0 embedded) and a
+one-changed-chunk update at 48.049 ms (599 reused, 1 embedded), versus a
+42.746 ms full build; because the hash provider is nearly free and every update
+still scans and chunks the corpus, the gain is avoided embedding calls rather
+than wall time.
+
 Re-verification after T-051 on 2026-11-24: `cargo test` — 437 passed
 (281 library unit + 12 CLI unit + 27 AI integration + 44 end-to-end + 73 native);
 `cargo clippy --all-targets -- -D warnings` clean; debug and release builds
@@ -372,14 +388,15 @@ commit `52dd1ae`.
 2. Streaming tool calls and interactive cancellation (T-052 follow-ups); live first-token and throughput evidence remains part of T-040.
 3. Native memory reclamation design.
 4. Async design for language-level AI (T-017).
-5. Retrieval arbitrary metadata fields, incremental re-indexing, and a
-   licensed corpus evaluation (T-046 follow-ups; source-prefix filtering ships).
+5. Retrieval arbitrary metadata fields, cross-source deduplication, reranking,
+   and a licensed corpus evaluation (T-046/T-054 follow-ups; source-prefix
+   filtering and incremental vector reuse ship).
 
 ### P2 — Ecosystem
 
-1. Retrieval arbitrary metadata fields, incremental updates, and
-   grounded-generation design without overclaiming (source-prefix filtering
-   ships).
+1. Retrieval arbitrary metadata fields, cross-source deduplication, reranking,
+   and grounded-generation design without overclaiming (source-prefix filtering
+   and incremental vector reuse ship).
 2. Model manager with integrity checks.
 3. Observability and budgets.
 4. Cross-platform CI.
@@ -396,12 +413,13 @@ The previous engineering directives are **not** complete. The core language
 reaches a verified v0.1 subset with file-based modules; the Vantyx rename is
 complete in code, documentation, GitHub, and clean-clone CI; and the offline AI
 host foundation now includes embeddings, local RAG retrieval, citations, and
-retrieval evaluation with tests; nested payload patterns and top-level
+retrieval evaluation with tests, plus incremental vector reuse and deletion
+pruning; nested payload patterns and top-level
 or-patterns are implemented in the interpreter and native backend. The
 following previously requested items remain open: generics, traits, closures, iterators, `Result`/`?`, async, concurrency,
 FFI, formatter, linter, package manager, standard library, native reclamation,
 cycle handling, structural-key map hashing, REPL multi-line history, REPL field
 completion, enum benchmarks, cross-platform CI, debug info, compiler
 optimization, language-level AI syntax, live local/cloud AI and embedding-model
-evidence, PDF/HTML/Office ingestion, incremental re-indexing, reranking, and
+evidence, PDF/HTML/Office ingestion, reranking, and
 grounded generation. This audit is the baseline for closing them honestly.

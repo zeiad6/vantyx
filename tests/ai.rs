@@ -979,6 +979,245 @@ fn rag_index_search_and_eval_are_offline_and_cited() {
 }
 
 #[test]
+fn rag_incremental_index_reuses_vectors_and_prunes_deleted_documents() {
+    let root = temp_path("rag-incremental-corpus");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("a.md"),
+        "# A\nRust enforces memory safety.\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("b.md"),
+        "# B\nPython is used for data science.\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("keep.md"),
+        "# Keep\nWebAssembly runs in browsers.\n",
+    )
+    .unwrap();
+    let index = temp_path("rag-incremental-index.json");
+    let root_arg = root.to_str().unwrap();
+    let index_arg = index.to_str().unwrap();
+
+    let first = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root_arg,
+            "--out",
+            index_arg,
+            "--provider",
+            "hash",
+            "--dimensions",
+            "24",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(first.status, 0, "{}", first.stderr);
+    let value = vantyx::ai::parse(first.stdout.trim()).expect("initial index JSON");
+    assert_eq!(
+        value.get("incremental").and_then(|value| value.as_bool()),
+        Some(false)
+    );
+    let previous_chunks = value
+        .get("chunks")
+        .and_then(|value| value.as_u64())
+        .expect("initial chunk count");
+    assert_eq!(previous_chunks, 3);
+
+    fs::write(
+        root.join("a.md"),
+        "# A\nRust enforces memory safety without a garbage collector.\n",
+    )
+    .unwrap();
+    fs::write(root.join("c.md"), "# C\nGo compiles quickly.\n").unwrap();
+    fs::remove_file(root.join("b.md")).unwrap();
+
+    let second = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root_arg,
+            "--out",
+            index_arg,
+            "--incremental",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(second.status, 0, "{}", second.stderr);
+    let value = vantyx::ai::parse(second.stdout.trim()).expect("incremental index JSON");
+    assert_eq!(
+        value.get("incremental").and_then(|value| value.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        value.get("previous_chunks").and_then(|value| value.as_u64()),
+        Some(previous_chunks)
+    );
+    assert_eq!(
+        value.get("reused_chunks").and_then(|value| value.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        value.get("embedded_chunks").and_then(|value| value.as_u64()),
+        Some(2)
+    );
+    // The edited `a.md` chunk and the deleted `b.md` chunk are both removed.
+    assert_eq!(
+        value.get("removed_chunks").and_then(|value| value.as_u64()),
+        Some(2)
+    );
+    assert_eq!(
+        value.get("removed_sources").and_then(|value| value.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        value.get("added_sources").and_then(|value| value.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        value.get("chunks").and_then(|value| value.as_u64()),
+        Some(3)
+    );
+
+    // A second update with no corpus changes must not need an embedding call.
+    let third = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root_arg,
+            "--out",
+            index_arg,
+            "--incremental",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(third.status, 0, "{}", third.stderr);
+    let value = vantyx::ai::parse(third.stdout.trim()).expect("no-op incremental JSON");
+    assert_eq!(
+        value.get("reused_chunks").and_then(|value| value.as_u64()),
+        Some(3)
+    );
+    assert_eq!(
+        value.get("embedded_chunks").and_then(|value| value.as_u64()),
+        Some(0)
+    );
+
+    let search = vantyx(
+        &[
+            "ai",
+            "search",
+            "--index",
+            index_arg,
+            "--query",
+            "Go compiles quickly",
+            "--mode",
+            "lexical",
+            "--top-k",
+            "5",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(search.status, 0, "{}", search.stderr);
+    let value = vantyx::ai::parse(search.stdout.trim()).expect("search JSON");
+    let hits = value
+        .get("hits")
+        .and_then(|value| value.as_array())
+        .expect("hits");
+    assert!(
+        hits.iter()
+            .any(|hit| hit.get("source").and_then(|value| value.as_str()) == Some("c.md"))
+    );
+    assert!(
+        !hits
+            .iter()
+            .any(|hit| hit.get("source").and_then(|value| value.as_str()) == Some("b.md"))
+    );
+
+    let missing = temp_path("rag-incremental-missing.json");
+    let rejected = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root_arg,
+            "--out",
+            missing.to_str().unwrap(),
+            "--incremental",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(rejected.status, 64);
+    assert!(
+        rejected.stderr.contains("requires an existing index"),
+        "{}",
+        rejected.stderr
+    );
+
+    let changed = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root_arg,
+            "--out",
+            index_arg,
+            "--incremental",
+            "--dimensions",
+            "16",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(changed.status, 64);
+    assert!(
+        changed.stderr.contains("cannot change dimensions"),
+        "{}",
+        changed.stderr
+    );
+
+    let lexical = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root_arg,
+            "--out",
+            index_arg,
+            "--incremental",
+            "--mode",
+            "lexical",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(lexical.status, 64);
+    assert!(
+        lexical.stderr.contains("requires a semantic index"),
+        "{}",
+        lexical.stderr
+    );
+
+    let _ = fs::remove_dir_all(&root);
+    let _ = fs::remove_file(&index);
+    let _ = fs::remove_file(&missing);
+}
+
+#[test]
 fn lexical_rag_index_rejects_semantic_search_and_bad_limits() {
     let root = temp_path("rag-lexical-corpus");
     fs::create_dir_all(&root).unwrap();

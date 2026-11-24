@@ -80,6 +80,8 @@ Research evidence: [`docs/ai/AI_RESEARCH.md`](docs/ai/AI_RESEARCH.md).
 - Local RAG: bounded text/Markdown/code ingestion, stable line-cited chunks,
   strict versioned JSON index with atomic 0600 persistence, BM25/cosine/hybrid
   reciprocal-rank search, and recall/precision/MRR evaluation (ADR-0018).
+- Incremental RAG updates: stable-chunk vector reuse, deletion pruning, no-op
+  provider bypass, and empty semantic indexes (ADR-0024).
 - Typed tools with deny-by-default capabilities, bounded agents with
   cancellation, redacted metrics, and SSE parsing.
 - `vantyx ai providers`, `doctor`, `models`, `chat`, `extract`, `embed`,
@@ -92,9 +94,10 @@ Research evidence: [`docs/ai/AI_RESEARCH.md`](docs/ai/AI_RESEARCH.md).
    `BLOCKED` by unavailable servers/credentials.
 2. **Streaming follow-ups:** streaming tool calls and interactive cancellation
    on top of the verified text-delta path.
-3. **Retrieval quality:** arbitrary metadata filters (source-prefix filtering ships), incremental re-indexing,
-   deduplication/deletion, reranking, a licensed multi-document corpus, and
-   latency/memory measurements.
+3. **Retrieval quality:** arbitrary metadata filters (source-prefix filtering
+   ships), cross-source deduplication, reranking, a licensed multi-document
+   corpus, and latency/memory measurements. Incremental re-indexing and
+   deletion pruning now ship (ADR-0024).
 4. **Grounded generation:** only after retrieval evaluation; cite retrieved
    chunks and explicitly mark ungrounded answers. Do not claim grounding yet.
 5. **Model manager:** `info`/`pull`/`remove` with checksums, size, license,
