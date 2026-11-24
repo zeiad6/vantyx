@@ -55,8 +55,9 @@ python3 benchmarks/run.py --reps 5
 | `src/lexer.rs` | Indentation-aware lexer; spans; non-panicking recovery |
 | `src/parser.rs` | Recursive-descent/Pratt parser; import syntax; depth guards |
 | `src/module.rs` | File-based module loader, path confinement, cycles, declaration flattening |
-| `src/checker.rs` | Scopes, gradual typing, enums, exhaustiveness |
+| `src/checker.rs` | Scopes, gradual typing, enums, exhaustiveness, reachability-aware return checking |
 | `src/interp.rs` | Reference tree-walking runtime |
+| `src/lint.rs` | Read-only static lints over the checked AST (`L0001`–`L0003`, ADR-0037) |
 | `src/copy_tree.rs` | Recursive directory copy, source containment, entry/depth caps (ADR-0034) |
 | `src/glob.rs` | Lexical glob parser, matcher, and bounded walk (ADR-0033) |
 | `src/ir.rs` | Typed, backend-neutral IR; `E0401` boundary |
@@ -80,8 +81,8 @@ python3 benchmarks/run.py --reps 5
   `0491c63` also passed run 45489360135). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 584 passed (326 library unit + 15 CLI unit + 32 AI integration +
-  90 e2e + 121 native).
+- `cargo test`: 613 passed (348 library unit + 15 CLI unit + 32 AI integration +
+  96 e2e + 122 native).
 - Clippy clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
 - Native condition and short-circuit lowering match the interpreter:
@@ -89,6 +90,11 @@ python3 benchmarks/run.py --reps 5
   right operand when the left decides the result (T-070/T-071, ADR-0036).
   `tools/differential_fuzz.py` found both defects and is part of the gate
   (T-072).
+- Tooling: `vantyx lint` reports `L0001` unused binding, `L0002` `var` never
+  reassigned, and `L0003` unreachable statement, with compile errors still
+  exiting `1` and lint-only findings exiting `0` (T-073, ADR-0037). The
+  checker no longer reports a false `E0309` for dead code after a reachable
+  `return` (T-074, ADR-0037).
 - Native support: scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key
   hash index, structs, enums, `match` with nested payload patterns, top-level
   or-patterns, integer range patterns and guards, calls and short-circuit
@@ -119,7 +125,9 @@ python3 benchmarks/run.py --reps 5
   so cloud access can change and is not guaranteed. Evidence:
   `docs/ai/LIVE_VERIFICATION.md`.
 - Known gaps: no reclamation, O(n) structural-key native maps and a fixed hash
-  seed for scalar keys, no generics/closures/async/FFI, basic whole-file I/O,
+  seed for scalar keys, no generics/closures/async/FFI, no formatter or LSP,
+  the linter has only three conservative rules with no suppression or fixes,
+  basic whole-file I/O,
   single-level and recursive directory operations, lexical glob expansion,
   rename/copy, recursive directory copy, metadata probes, text builtins, and
   lexical POSIX-style path helpers only (no escaping/braces/case folding in

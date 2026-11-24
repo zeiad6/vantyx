@@ -308,7 +308,7 @@ so `.bashrc` has no extension. See
 | REPL | Persistent declarations, line editing, single-line history, top-level Tab completion, expression echo |
 | AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, incremental vector reuse, MMR diversity reranking, citations, retrieval evaluation, tools, bounded agents; live cloud verification on 2026-11-24 and a 21/21 re-verification at 20:59Z (local model still missing; cloud access not guaranteed) |
 | Memory | Interpreter is reference-counted; native allocations are leaked by design; no cycle collector |
-| Tooling | Fuzz smoke, benchmarks, docs; no formatter, linter, LSP, package manager, or debug info |
+| Tooling | `vantyx lint` (three conservative rules), fuzz smoke, differential fuzzer, benchmarks, docs; no formatter, LSP, package manager, or debug info |
 | Production readiness | No stable ABI, no LTS, not recommended for production |
 
 ## Quick start
@@ -323,6 +323,7 @@ cd vantyx
 cargo build --release
 ./target/release/vantyx run examples/hello.vtx
 ./target/release/vantyx check examples/enums.vtx
+./target/release/vantyx lint examples/enums.vtx
 
 ./target/release/vantyx build examples/enums.vtx -o /tmp/enums
 /tmp/enums
@@ -582,7 +583,9 @@ or CI result without checking the recorded evidence there and in
   Unicode normalization, locale handling, or grapheme-cluster segmentation.
   `split`, `join`, and `replace` can allocate proportional to their inputs and
   outputs; there is no streaming text API or output-size cap.
-- No formatter, linter, LSP, debug information, or stable ABI.
+- The linter has three conservative rules, no suppression or configuration, and
+  no automatic fixes. There is no formatter, LSP, debug information, or stable
+  ABI.
 - The AI host has no live local-model evidence; a cloud OpenAI-compatible run
   was verified on 2026-11-24 and re-verified at 20:59Z with 21/21 checks, but
   access is not guaranteed. There is no

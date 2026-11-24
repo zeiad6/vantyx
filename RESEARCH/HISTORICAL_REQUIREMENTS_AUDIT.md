@@ -41,7 +41,7 @@ because a document says so; the table cites code or an observed command.
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | **581 passed**: 326 library unit, 15 CLI unit, 32 AI integration, 90 e2e, 118 native (2026-11-24, after T-069); earlier 573-, 571-, 550-, 526-, 517-, 516-, 507-, 501-, 491-, 485-, 478-, 469-, 463-, 457-, 437-, 430-, 429-, 422-, 413-, 383-, 358-, 357-, and 340-test runs also passed |
+| `cargo test` | **613 passed**: 348 library unit, 15 CLI unit, 32 AI integration, 96 e2e, 122 native (2026-11-24, after T-074); earlier 584-, 581-, 573-, 571-, 550-, 526-, 517-, 516-, 507-, 501-, 491-, 485-, 478-, 469-, 463-, 457-, 437-, 430-, 429-, 422-, 413-, 383-, 358-, 357-, and 340-test runs also passed |
 | Map benchmark | `map_ops` native 3.597 ms, interpreter 121.728 ms, C 2.884 ms, Rust 4.495 ms (2026-11-24; `benchmarks/results/2026-11-24.*`) |
 | `cargo build` / `--release` | both succeeded after the AI foundation and rename |
 | `cargo clippy --all-targets -- -D warnings` | clean, zero warnings |
@@ -103,7 +103,7 @@ the AI matrix rather than duplicated here; T-044–T-064 are included above.
 | T-016 | `Result` / `?` | None | MISSING | Types, propagation, native lowering | P2 | Defer |
 | T-017 | Async and concurrency | None | MISSING | Design, runtime, cancellation, tests | P3 | Defer |
 | T-018 | Traits and generics | None | MISSING | Type-system design and implementation | P3 | Defer |
-| T-019 | Formatter and linter | None | MISSING | Both tools and tests | P3 | Defer |
+| T-019 | Formatter and linter | `vantyx lint` with `L0001`–`L0003`, 19 unit tests, four e2e tests, `docs/linting.md`, ADR-0037 (T-073) | PARTIAL | Comment-preserving formatter; lint suppression/configuration and broader reachability | P2 | Formatter next |
 | T-020 | Package manager | None | MISSING | Manifest, resolver, registry, lockfile | P3 | Defer |
 | T-021 | C ABI FFI | None | MISSING | ABI, unsafe boundary, native linking | P3 | Defer |
 | T-022 | Benchmarks vs Python/Rust/C | `benchmarks/`, 6 workloads, raw JSON/MD | COMPLETE | Enum and AI benchmarks | P2 | Extend |
@@ -144,6 +144,8 @@ the AI matrix rather than duplicated here; T-044–T-064 are included above.
 | T-065 | Lexical glob expansion | `glob` in both engines; `/` components, Unicode `*`/`?`/classes, whole-component `**` without symlink traversal, explicit-dot hidden rules, byte-sorted deduplicated lexical results, `lstat` literal probes, `R0016` malformed patterns/component cap, `R0015` I/O/depth/result caps/non-UTF-8 names, `E0301`/`R0005`/`E0401` boundaries; library, e2e, differential native, and Unix symlink tests; ADR-0033 | COMPLETE (interpreter/native differential) | Escaping/braces/extglobs, case-insensitive mode, normalization or `..` confinement, streaming/cancellation, result-count tuning, Windows evidence | P1 | Extend |
 | T-066 | Recursive directory copy | `copy_dir_all` in both engines; existing source directory and new target requirement, parent resolution, resolved-self containment, raw-name and byte copying, root-link following with inner-link and special-file rejection, no metadata preservation or rollback, 100,000-entry and 128-depth caps, `E0301`/`R0005`/`E0401` boundaries; library, e2e, differential native, and Unix link/non-UTF-8 tests; ADR-0034 | COMPLETE (interpreter/native differential) | Recursive move, metadata preservation, overwrite/merge modes, rollback or atomic staging, byte/entry-count tuning, sandbox, Windows evidence | P1 | Extend |
 | T-069 | Refuse destructive recursive-removal roots | `remove_dir_all` refuses `.`, `./`, `..`, `../`, every root whose final component is `.` or `..` (including `link/.` and `link/..`), and `/`/`//`/`///` with `R0015` before any filesystem access in both engines; ordinary roots such as `tree`, `tree/`, `./tree`, `/tmp/tree`, and `foo/.hidden` remain accepted; empty paths keep the ordinary missing-path failure; five `src/fs_safety.rs` unit tests, two e2e tests, and two differential native tests; the prior test that locked the destructive `.` behavior was replaced; ADR-0035 amends ADR-0031 | COMPLETE (interpreter/native differential) | Lexical only: no link resolution or intermediate normalization, `link/sub` still traverses, check-then-act races remain, and there is no confirmation, trash, dry run, rollback, depth/entry cap, `Result` recovery, or sandbox; Windows native evidence missing | P1 | Keep |
+| T-073 | Static linter and `vantyx lint` | Read-only AST pass with `L0001` unused binding, `L0002` `var` never reassigned, and `L0003` unreachable statement after a direct `return`/`break`/`continue`; underscore names, parameters, loop variables, and match bindings ignored; lint-only findings exit `0`, compile errors exit `1`; 19 unit tests and four e2e tests; `docs/linting.md`, specification §14, ADR-0037 | COMPLETE (tooling, conservative) | Suppression/configuration, unused parameters/loop variables, all-terminating `if`/`match` reachability, deny mode, machine-readable output, fixes | P2 | Extend |
+| T-074 | Reachability-aware return checking | `block_returns` walks reachable statements and stops at the first `return`/`break`/`continue`; a fully returning `if` with `else` or `match` terminates the block; dead code after `return` no longer causes a false `E0309`; three checker unit tests, two e2e tests, and one differential native test; ADR-0037 | COMPLETE (checker correctness) | No full control-flow graph or loop-termination proof; `if` without `else` does not terminate | P1 | Keep |
 
 ### Core partials that must not be described as finished
 
@@ -153,7 +155,7 @@ the AI matrix rather than duplicated here; T-044–T-064 are included above.
 | Pattern matching | Enum, wildcard, scalar literal, nested payloads, top-level or-patterns, integer ranges, guards | Tuple patterns, floats, interpolated strings, generic enums |
 | REPL | Line editing, single-line history, top-level completion | Multi-line recall, field completion, local completion |
 | Memory | Interpreter `Rc` with cycles; native intentional leaks | Cycle collector or ownership/escape analysis; sandbox |
-| Tooling | `run/check/build/repl` | Formatter, linter, test runner, package manager, LSP, debugger |
+| Tooling | `run/check/lint/build/repl/ai` | Formatter, test runner, package manager, LSP, debugger |
 | Platforms | Linux x86_64 CI only | macOS/Windows CI and native-backend checks |
 
 ## Roadmap inventory beyond `TASKS.md`
@@ -169,7 +171,7 @@ the AI matrix rather than duplicated here; T-044–T-064 are included above.
 | SIMD/vectorization | MISSING | None | P3 | Research |
 | Async/concurrency design | MISSING | T-017 | P3 | Defer |
 | Standard library | MISSING | Builtins only; file/directory I/O, recursive directories, rename/copy, lexical paths, and basic text exist | P1 | Plan |
-| Formatter/linter/test runner | MISSING | T-019 | P3 | Defer |
+| Formatter/linter/test runner | PARTIAL | Linter delivered (T-073, ADR-0037); formatter blocked on comment preservation; no test runner | P2 | Formatter design |
 | Package manager/registry | MISSING | T-020 | P3 | Defer |
 | LSP/editor support | MISSING | None | P3 | Defer |
 | Tensors/numerical | MISSING | Roadmap Phase 11 only | P2 | AI track |
@@ -178,7 +180,7 @@ the AI matrix rather than duplicated here; T-044–T-064 are included above.
 | Independent external audit | MISSING | None | P3 | Before 1.0 |
 | Stability policy / release process | PARTIAL | SemVer implied; v0.1.0 pre-release | P2 | Document |
 | Cross-platform CI | MISSING | Ubuntu-only workflow | P2 | Add matrix |
-| Regression/stress suites | PARTIAL | 581 tests; fuzz smoke is manual | P2 | CI fuzz job |
+| Regression/stress suites | PARTIAL | 613 tests; deterministic differential fuzzer runs in CI (T-072); fuzz smoke is manual | P2 | Expand fuzzer grammars |
 | Native map hash index | COMPLETE for scalar keys (T-044, ADR-0016) | ADR-0010 revisit criterion | P1 | Keep; consider structural keys |
 | Enum allocation benchmark | MISSING | T-030 scope limit | P3 | Benchmark |
 | Nested patterns | COMPLETE for interpreter and native payload nesting (T-048/T-049) | Matrix exhaustiveness; path-based native lowering | P1 | Keep |
@@ -347,10 +349,15 @@ one-changed-chunk update at 48.049 ms (599 reused, 1 embedded), versus a
 still scans and chunks the corpus, the gain is avoided embedding calls rather
 than wall time.
 
-Re-verification after T-069 on 2026-11-24: `cargo test` — 581 passed
-(326 library unit + 15 CLI unit + 32 AI integration + 90 end-to-end + 118 native);
+Re-verification after T-074 on 2026-11-24: `cargo test` — 613 passed
+(348 library unit + 15 CLI unit + 32 AI integration + 96 end-to-end + 122 native);
 `cargo clippy --all-targets -- -D warnings` clean; debug and release builds
-succeeded. T-069 added five `src/fs_safety.rs` unit tests, two e2e tests, and
+succeeded. T-073 added `vantyx lint` with `L0001` unused binding, `L0002` `var`
+never reassigned, and `L0003` unreachable statement, plus 19 unit tests and
+four e2e tests. T-074 fixed `block_returns` so dead code after a reachable
+`return` no longer causes a false `E0309`, with three checker unit tests, two
+e2e tests, and one differential native test. Earlier, T-069 added five
+`src/fs_safety.rs` unit tests, two e2e tests, and
 two differential native tests covering `.`, `..`, final `.`/`..` components,
 and the filesystem root, and replaced the prior differential test that locked
 the destructive `remove_dir_all(".")` behavior. The HTTPS curl timeout mapping
@@ -524,7 +531,7 @@ commit `52dd1ae`.
 2. Model manager with integrity checks.
 3. Observability and budgets.
 4. Cross-platform CI.
-5. Standard library and formatter.
+5. Standard library and formatter (the linter half of T-019 is delivered).
 
 ### P3+ — Research-only until evidence exists
 
@@ -544,7 +551,7 @@ and file/directory I/O, recursive directory creation/removal, rename/copy,
 lexical paths, and basic UTF-8 text builtins work in both engines with
 differential tests. The
 following previously requested items remain open: generics, traits, closures, iterators, `Result`/`?`, async, concurrency,
-FFI, formatter, linter, package manager, standard library, native reclamation,
+FFI, formatter, package manager, standard library, native reclamation,
 cycle handling, structural-key map hashing, REPL multi-line history, REPL field
 completion, enum benchmarks, cross-platform CI, debug info, compiler
 optimization, language-level AI syntax, live local-model evidence (the cloud

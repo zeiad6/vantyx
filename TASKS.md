@@ -131,7 +131,8 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-019 — Formatter and linter
 - Priority: P3
-- Status: BACKLOG
+- Status: IN_PROGRESS (linter delivered as T-073; formatter remains backlog)
+- Description: The linter half is implemented as `vantyx lint` with `L0001`–`L0003` (T-073). The formatter remains future work because the current lexer discards comments; it needs a lossless syntax representation before it can preserve user source.
 
 ### T-020 — Package manager
 - Priority: P3
@@ -668,3 +669,25 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Tests: the tool itself found T-070 and T-071 before the fixes; after the fixes, 100/100 cases agreed on seed 1 and 200/200 on seed 500, with 0 programs rejected by both engines.
 - Verification: 2026-11-24 — `python3 tools/differential_fuzz.py --iterations 100 --seed 1` reported 100/100; `python3 tools/differential_fuzz.py --iterations 200 --seed 500` reported 200/200; `python3 -m py_compile tools/differential_fuzz.py` succeeded.
 - Scope limits: Three program shapes are not a proof of correctness. There is no property-based shrinking, no sanitizer integration, and no coverage measurement. Native cases skip when no C compiler is installed.
+
+### T-073 — Static linter and `vantyx lint`
+- Priority: P2
+- Status: VERIFIED (tooling)
+- Description: Add a dependency-free, read-only AST lint pass with `L0001` unused binding, `L0002` mutable binding never reassigned, and `L0003` unreachable statement after a direct `return`/`break`/`continue`; expose it as `vantyx lint <file>` without changing `run`, `check`, or `build`.
+- Acceptance: each rule reports the expected warning with source span and help; clean programs are silent; names starting with `_`, parameters, loop variables, and match bindings are ignored; a plain assignment is a write and a compound assignment reads and writes; imported modules are linted; lint findings exit `0`, compile errors exit `1`, and standard input works; no lint warning is emitted by `run`, `check`, or `build`.
+- Dependencies: T-003, T-005, T-007, T-019, ADR-0037.
+- Implementation: `src/lint.rs` (scope stack, binding read/write tracking, conservative block termination, stable diagnostic codes); `src/lib.rs` module registration; `src/main.rs` usage line, `lint` dispatch, and `lint_file`; `docs/linting.md`; specification section 14; ADR-0037.
+- Tests: 19 `src/lint.rs` unit tests (unused local/global, plain versus compound assignment, `var` never reassigned, shadowing, initializer scope, unreachable after `return`/`break`, match arm blocks, underscore names, parameters, loop variables, clean programs); `tests/e2e.rs` (`lint_reports_unused_and_unreachable_warnings`, `lint_is_silent_on_a_clean_program`, `lint_reports_compile_errors_and_exits_one`, `lint_reads_source_from_standard_input`).
+- Verification: 2026-11-24 — `cargo test --lib lint::tests` passed 19; `cargo test --test e2e lint_` passed 4; full `cargo test` passed 348 library unit + 15 CLI unit + 32 AI integration + 96 end-to-end + 122 native = 613 tests; `cargo clippy --all-targets -- -D warnings` clean; debug and release builds succeeded; `python3 tools/differential_fuzz.py --iterations 100 --seed 1` agreed 100/100; all five examples matched native output; `tools/fuzz_smoke.py` produced 9 depth/limit and 400 random/mutated controlled diagnostics.
+- Scope limits: No suppression attributes, configuration files, severity levels, machine-readable output, or automatic fixes. `L0003` does not analyze all-terminating `if`/`match` or loops, and there is no data-flow or interprocedural analysis. The formatter remains unimplemented.
+
+### T-074 — Reachability-aware return checking
+- Priority: P1
+- Status: VERIFIED (checker correctness)
+- Description: Fix `block_returns` so dead code after a terminating statement no longer makes a value-returning function fail with `E0309`. The old analysis inspected only the last statement of a block, so `return 1` followed by an unreachable statement looked like a missing return.
+- Acceptance: a direct `return` followed by dead code is accepted; an `if`/`else` or `match` whose every branch returns followed by dead code is accepted; a `break`/`continue` stops the reachable walk and a later `return` does not count; interpreter and native output still agree; `vantyx lint` reports the dead code as `L0003`.
+- Dependencies: T-005, T-073, ADR-0037.
+- Implementation: `src/checker.rs::block_returns` walks statements in order, returns `true` at a reachable `return`, returns `false` at a reachable `break`/`continue`, and recognizes a fully returning `if` with `else` or `match`.
+- Tests: `src/checker.rs` (`dead_code_after_return_still_counts_as_returning`, `dead_code_after_a_terminating_if_still_counts_as_returning`, `break_before_a_return_does_not_count_as_returning`); `tests/e2e.rs` (`check_accepts_dead_code_after_return`, `run_does_not_execute_dead_code_after_return`); `tests/native.rs::dead_code_after_return_matches`.
+- Verification: 2026-11-24 — `cargo test --lib checker::tests::dead_code` passed 2; `cargo test --lib checker::tests::break_before` passed 1; `cargo test --test e2e dead_code` passed 2; `cargo test --test native dead_code_after_return_matches` passed 1; full `cargo test` passed 613 tests; `cargo clippy --all-targets -- -D warnings` clean; all five examples matched native output.
+- Scope limits: The analysis is not a full control-flow graph. It does not prove termination of loops, does not treat `while true` as returning, and does not reason about conditions. An `if` without `else` never terminates a block for this check. Unreachable code after an all-terminating construct is still lowered and never executed, but only direct trailing statements are linted.

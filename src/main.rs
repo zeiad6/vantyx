@@ -21,6 +21,7 @@ Vantyx 0.1.0 - a safe, gradually typed language
 Usage:
   vantyx run <file.vtx>      Compile and execute a program
   vantyx check <file.vtx>    Compile without executing
+  vantyx lint <file.vtx>     Compile and report non-fatal lints
   vantyx build <file.vtx>    Compile to a native executable with a C compiler
   vantyx build <file> -o <out> Choose the executable path
   vantyx repl                  Start an interactive session
@@ -53,6 +54,7 @@ fn run_cli() -> i32 {
         }
         [command, file] if command == "run" => run_file(file),
         [command, file] if command == "check" => check_file(file),
+        [command, file] if command == "lint" => lint_file(file),
         [command, file] if command == "build" => build_file(file, None),
         [command, file, flag, output] if command == "build" && flag == "-o" => {
             build_file(file, Some(output))
@@ -188,6 +190,18 @@ fn check_file(path: &str) -> i32 {
         Ok(_) => 0,
         Err(code) => code,
     }
+}
+
+fn lint_file(path: &str) -> i32 {
+    let compiled = match compile_entry(path) {
+        Ok(compiled) => compiled,
+        Err(code) => return code,
+    };
+    let diagnostics = vantyx::lint::lint(&compiled.program);
+    if !diagnostics.is_empty() {
+        eprint!("{}", diagnostics.render_all(&compiled.sources));
+    }
+    0
 }
 
 fn build_file(path: &str, output: Option<&str>) -> i32 {

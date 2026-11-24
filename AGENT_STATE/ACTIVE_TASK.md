@@ -1,8 +1,54 @@
 # Active Task
 
-## T-070/T-071/T-072 — Native condition and short-circuit fixes plus differential fuzzer
+## T-073/T-074 — Static linter plus reachability-aware return checking
 
 - Status: VERIFIED locally; commit and CI pending
+- Priority: P2 (T-073), P1 (T-074)
+- Dependencies: T-003, T-005, T-007, T-019, ADR-0037
+
+### Implemented
+
+- `src/lint.rs`: read-only AST pass with scope stacks and read/write tracking.
+  `L0001` reports an unread local or global binding; `L0002` reports a `var`
+  read but never written after declaration; `L0003` reports the first statement
+  after a direct `return`, `break`, or `continue` in a block. Names starting
+  with `_`, parameters, loop variables, and match bindings are ignored.
+- `src/main.rs`: `vantyx lint <file>` compiles first and then prints lint
+  diagnostics; lint-only findings exit `0`, compile errors exit `1`.
+- `src/lib.rs`: registers the `lint` module.
+- `src/checker.rs::block_returns`: walks reachable statements instead of
+  inspecting only the last statement, so dead code after `return` no longer
+  causes a false `E0309`.
+- `tests/e2e.rs`: four lint tests plus dead-code check/run tests.
+- `tests/native.rs::dead_code_after_return_matches`: interpreter/native
+  agreement on dead code after a returning `if`/`else`.
+- `docs/linting.md`, specification §14, and ADR-0037.
+
+### Evidence
+
+- `cargo test --lib lint::tests` — 19 passed.
+- `cargo test --test e2e lint_` — 4 passed.
+- `cargo test --lib checker::tests::dead_code` — 2 passed.
+- `cargo test --lib checker::tests::break_before` — 1 passed.
+- `cargo test --test e2e dead_code` — 2 passed.
+- `cargo test --test native dead_code_after_return_matches` — 1 passed.
+- Full gate: 613 tests (348 library + 15 CLI + 32 AI + 96 e2e + 122 native),
+  clippy clean, debug and release builds succeed.
+- `python3 tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100.
+- All five examples matched interpreter/native output; fuzz smoke produced
+  controlled diagnostics.
+
+### Remaining
+
+- Commit, push, and record the CI run.
+- No suppression attributes, configuration, machine-readable output, or
+  automatic fixes; `L0003` does not analyze all-terminating `if`/`match`.
+- The formatter remains open (the lexer discards comments).
+
+## T-070/T-071/T-072 — Native condition and short-circuit fixes plus differential fuzzer
+
+- Status: VERIFIED, committed in `a4fe86b`, pushed, and CI-green (run
+  45493833079)
 - Priority: P0 (T-070, T-071), P2 (T-072)
 - Dependencies: T-010, T-033, ADR-0008, ADR-0036
 

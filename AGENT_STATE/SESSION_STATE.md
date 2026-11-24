@@ -4,25 +4,37 @@
 - Updated: 2026-11-24
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `dfaad9b` (CI verification for the status update); the
-  T-070–T-072 change set is pending commit
-- Remote: `origin/main` at `dfaad9b`
+- Last commit: `a4fe86b` (native condition and short-circuit fixes plus the
+  differential fuzzer); CI run 45493833079 passed on it
+- Remote: `origin/main` at `a4fe86b`
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
 
+T-073 — Static linter and `vantyx lint`. T-074 — Reachability-aware return
+checking. Status: VERIFIED locally; the change set is pending commit and CI.
+The linter is a read-only AST pass with `L0001` unused binding, `L0002` `var`
+never reassigned, and `L0003` unreachable statement; `vantyx lint` compiles
+first, prints warnings, exits `0` for lint-only findings, and exits `1` for
+compile errors. While adding it, the checker's `E0309` analysis was found to
+inspect only the last statement of a block, so dead code after `return`
+produced a false "not all paths return" error. `block_returns` now walks
+reachable statements and stops at the first terminator. ADR-0037 records both
+decisions.
+
 T-070 — Parenthesize statement-expression conditions in the native backend.
 T-071 — Preserve short-circuit evaluation for `and`/`or` in the native
-backend. T-072 — Deterministic differential fuzzer. Status: VERIFIED locally;
-the change set is pending commit and CI. Both P0 defects were found by the new
-fuzzer: any call or effectful expression used directly as an `if`/`elif`/
-`while` condition produced invalid C (`if ({ ... })`), and `and`/`or` hoisted
-both operands so the skipped operand was evaluated. The fixes add one pair of
-parentheses only for statement expressions and lower effectful short-circuit
-operands through a lazy conditional. Three differential native tests cover
-calls in conditions, short-circuit call counts, and non-short-circuit
-left-to-right order. ADR-0036 records the contract. The fuzzer passes 100/100
-on seed 1 and 200/200 on seed 500; CI runs 50 iterations on seed 1.
+backend. T-072 — Deterministic differential fuzzer. Status: VERIFIED,
+committed in `a4fe86b`, pushed, and CI-green (run 45493833079). Both P0 defects
+were found by the new fuzzer: any call or effectful expression used directly as
+an `if`/`elif`/`while` condition produced invalid C (`if ({ ... })`), and
+`and`/`or` hoisted both operands so the skipped operand was evaluated. The
+fixes add one pair of parentheses only for statement expressions and lower
+effectful short-circuit operands through a lazy conditional. Three differential
+native tests cover calls in conditions, short-circuit call counts, and
+non-short-circuit left-to-right order. ADR-0036 records the contract. The
+fuzzer passes 100/100 on seed 1 and 200/200 on seed 500; CI runs 50 iterations
+on seed 1.
 
 T-069 — Refuse destructive recursive-removal roots. Status: VERIFIED,
 committed in `e6ec597`, pushed, and CI-green (run 45488725812 on `4982ab3`).
@@ -96,37 +108,33 @@ T-058 — Basic UTF-8 file I/O builtins. Status: VERIFIED locally; committed, pu
 
 ## Working tree
 
-Modified `src/codegen_c.rs`, `tests/native.rs`, `docs/language_specification.md`,
-`README.md`, `PROJECT_STATUS.md`, `AGENTS.md`, `TASKS.md`,
-`docs/PROJECT_BASELINE.md`, `.github/workflows/ci.yml`, and `AGENT_STATE/`;
-untracked `docs/decisions/ADR-0036-native-condition-parentheses-and-short-circuit.md`
-and `tools/differential_fuzz.py`. No generated binaries or credentials are
-tracked. The T-058–T-069 change sets were committed in `e6ec597`; `4982ab3`
-fixed the glob result-cap test portability for ext4's per-inode hard-link
-limit; `dfaad9b` recorded the last CI verification.
+Modified `src/checker.rs`, `src/lib.rs`, `src/main.rs`, `src/lint.rs` (new),
+`tests/e2e.rs`, `tests/native.rs`, `README.md`, `PROJECT_STATUS.md`,
+`AGENTS.md`, `TASKS.md`, `docs/language_specification.md`,
+`docs/PROJECT_BASELINE.md`, and `AGENT_STATE/`; untracked `docs/linting.md`,
+`docs/decisions/ADR-0037-static-lints.md`, and
+`AGENT_STATE/CHECKPOINTS/2026-11-24-t073-t074.md`. No generated binaries or
+credentials are tracked. The T-070–T-072 change set was committed in `a4fe86b`;
+`dfaad9b` recorded the prior CI verification.
 
 ## Verified commands (2026-11-24)
 
 - `cargo build` — success
 - `cargo build --release` — success
 - `cargo clippy --all-targets -- -D warnings` — clean
-- `cargo test` — 326 library unit + 15 CLI unit + 32 AI integration + 90 e2e +
-  121 native = 584 passed
-- `cargo test --test native conditions_with_calls_match` — 1 passed
-- `cargo test --test native short_circuit_operands_match` — 1 passed
-- `cargo test --test native effectful_binary_operands_keep_left_to_right_order`
-  — 1 passed
+- `cargo test` — 348 library unit + 15 CLI unit + 32 AI integration + 96 e2e +
+  122 native = 613 passed
+- `cargo test --lib lint::tests` — 19 passed
+- `cargo test --test e2e lint_` — 4 passed
+- `cargo test --lib checker::tests::dead_code` — 2 passed
+- `cargo test --lib checker::tests::break_before` — 1 passed
+- `cargo test --test e2e dead_code` — 2 passed
+- `cargo test --test native dead_code_after_return_matches` — 1 passed
 - `python3 tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100
   agree, 0 rejected by both engines
-- `python3 tools/differential_fuzz.py --iterations 200 --seed 500` — 200/200
-  agree, 0 rejected by both engines
 - `python3 -m py_compile tools/differential_fuzz.py` — success
-- `cargo test curl_` — 2 passed
-- `cargo test fs_safety` — 5 passed
-- `cargo test --test e2e recursive_removal` — 2 passed
-- `cargo test --test native recursive_removal` — 2 passed
-- `cargo test --test native glob_result_cap_matches_in_both_engines` — 1
-  passed after spreading hard links across four anchors
+- CI run 45493833079 — success on `a4fe86b` with 584 tests and the
+  differential fuzz step
 - CI run 45488725812 — success on `4982ab3` with 581 tests; run 45488152955
   failed only the glob result-cap test because ext4 caps hard links per inode;
   the status documentation commit `0491c63` also passed run 45489360135
@@ -146,16 +154,14 @@ limit; `dfaad9b` recorded the last CI verification.
 
 ## Next steps
 
-1. Commit the T-070–T-072 change set, push it, watch CI, and record the run ID
+1. Commit the T-073–T-074 change set, push it, watch CI, and record the run ID
    in `PROJECT_STATUS.md`, `AGENTS.md`, `AGENT_STATE/RECOVERY.md`, and the
    checkpoint.
-2. Implement `vantyx lint` as the first half of T-019: `L0001` unused local
-   binding, `L0002` mutable binding never reassigned, and `L0003` unreachable
-   statement after `return`/`break`/`continue`; unit, CLI, and e2e tests;
-   `docs/linting.md`; then split the remaining formatter work into its own
-   tracked task.
-3. Retry the independent `qa-verifier` check for T-062–T-066 when subagent
-   capacity returns.
+2. Expand the differential fuzzer with more typed program shapes (functions
+   with parameters and returns, strings/interpolation, nested collections,
+   match expressions) and run multiple seeds; fix any mismatch it finds.
+3. Retry the independent `qa-verifier` check for T-062–T-066 and
+   T-073–T-074 when subagent capacity returns.
 4. T-040 remains blocked on a local inference server/model; do not claim local
    evidence. The cloud path was re-verified at 20:59Z with 21/21 checks using
    `MY_API_KEY`, but access is not guaranteed; keep evidence sanitized.

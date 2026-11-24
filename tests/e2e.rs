@@ -78,6 +78,11 @@ fn check_file(name: &str, source: &str) -> Run {
     vantyx(&["check", path.to_str().expect("utf-8 path")], None)
 }
 
+fn lint_file(name: &str, source: &str) -> Run {
+    let path = temp_source(name, source);
+    vantyx(&["lint", path.to_str().expect("utf-8 path")], None)
+}
+
 #[test]
 fn hello_world_runs() {
     let run = run_file("hello", "print(\"hello\")\n");
@@ -167,6 +172,67 @@ fn check_failure_reports_errors() {
     let run = check_file("check_bad", "let x: Int = \"no\"\n");
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+}
+
+#[test]
+fn lint_reports_unused_and_unreachable_warnings() {
+    let run = lint_file(
+        "lint_findings",
+        "fn main():\n    let unused = 1\n    var label = \"x\"\n    print(label)\n    return\n    print(\"dead\")\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert!(run.stdout.is_empty());
+    assert!(run.stderr.contains("warning[L0001]"), "{}", run.stderr);
+    assert!(run.stderr.contains("warning[L0002]"), "{}", run.stderr);
+    assert!(run.stderr.contains("warning[L0003]"), "{}", run.stderr);
+    assert!(!run.stderr.contains("error["), "{}", run.stderr);
+}
+
+#[test]
+fn lint_is_silent_on_a_clean_program() {
+    let run = lint_file(
+        "lint_clean",
+        "fn main():\n    let used = 1\n    print(used)\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert!(run.stdout.is_empty());
+    assert!(run.stderr.is_empty(), "{}", run.stderr);
+}
+
+#[test]
+fn lint_reports_compile_errors_and_exits_one() {
+    let run = lint_file("lint_bad", "fn main():\n    print(missing)\n");
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0201]"), "{}", run.stderr);
+}
+
+#[test]
+fn lint_reads_source_from_standard_input() {
+    let run = vantyx(
+        &["lint", "-"],
+        Some("fn main():\n    let unused = 1\n    print(\"ok\")\n"),
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("warning[L0001]"), "{}", run.stderr);
+}
+
+#[test]
+fn check_accepts_dead_code_after_return() {
+    let run = check_file(
+        "dead_after_return",
+        "fn f() -> Int:\n    return 1\n    print(\"dead\")\n\nfn main():\n    print(f())\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+}
+
+#[test]
+fn run_does_not_execute_dead_code_after_return() {
+    let run = run_file(
+        "dead_after_return_run",
+        "fn f() -> Int:\n    return 1\n    print(\"dead\")\n\nfn main():\n    print(f())\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "1\n");
 }
 
 #[test]

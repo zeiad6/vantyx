@@ -3,11 +3,23 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
-CI run 45488725812 passed on `4982ab3` with 581 tests. The preceding run
-45488152955 failed only the glob result-cap test because ext4 caps hard links
-per inode; `4982ab3` spreads the links across four anchors. The status
+CI run 45493833079 passed on `a4fe86b` with 584 tests and the differential
+fuzz step. CI run 45488725812 passed on `4982ab3` with 581 tests. The preceding
+run 45488152955 failed only the glob result-cap test because ext4 caps hard
+links per inode; `4982ab3` spreads the links across four anchors. The status
 documentation commit `0491c63` also passed run 45489360135.
 
+- T-074 — Reachability-aware return checking (2026-11-24; 613-test gate;
+  `block_returns` walks reachable statements and stops at the first
+  `return`/`break`/`continue`, so dead code after a reachable `return` no
+  longer causes a false `E0309`; a fully returning `if`/`else` or `match`
+  terminates the block; three checker unit tests, two e2e tests, and
+  `dead_code_after_return_matches`; ADR-0037).
+- T-073 — Static linter and `vantyx lint` (2026-11-24; 613-test gate;
+  `L0001` unused binding, `L0002` `var` never reassigned, `L0003` unreachable
+  statement; underscore names, parameters, loop variables, and match bindings
+  ignored; lint-only findings exit `0`, compile errors exit `1`; 19 unit tests
+  and four e2e tests; `docs/linting.md`, specification §14, ADR-0037).
 - T-072 — Deterministic differential fuzzer (2026-11-24; 584-test gate;
   `tools/differential_fuzz.py` generates three well-typed program shapes,
   compares interpreter/native exit codes and stdout, saves failures, and skips

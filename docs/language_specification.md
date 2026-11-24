@@ -670,3 +670,13 @@ The REPL is a tooling surface, not a separate language mode. It compiles and exe
 - `:help`, `:history`, `:names`, and `:quit` are REPL meta-commands, not Vantyx syntax.
 
 See [ADR-0013](decisions/ADR-0013-repl-line-editing.md).
+
+## 14. Static lints (tooling)
+
+`vantyx lint <file.vtx>` compiles a program and then reports non-fatal warnings from a read-only AST pass. Lints are not part of the language semantics: they never change compilation, interpretation, or native output, and they are not emitted by `vantyx run`, `vantyx check`, or `vantyx build`.
+
+- `L0001`: a local or top-level binding is never read.
+- `L0002`: a `var` binding is read but never written after its declaration.
+- `L0003`: a statement follows a direct `return`, `break`, or `continue` in the same block.
+
+Names starting with `_` are treated as intentionally unused. Parameters, loop variables, and `match` payload bindings are not reported in this first pass. `L0003` is deliberately local: it does not report code after an all-terminating `if`/`match` and does not perform interprocedural analysis. A program with only lint findings exits `0`; compilation errors exit `1`. See [linting.md](linting.md) and [ADR-0037](decisions/ADR-0037-static-lints.md).

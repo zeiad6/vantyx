@@ -3010,34 +3010,39 @@ fn infer_return(returns: &[(Type, Span)]) -> Type {
 }
 
 fn block_returns(block: &Block) -> bool {
-    match block.stmts.last() {
-        Some(Stmt {
-            kind: StmtKind::Return(_),
-            ..
-        }) => true,
-        Some(Stmt {
-            kind:
-                StmtKind::If {
-                    then_block,
-                    elifs,
-                    else_block: Some(else_block),
-                    ..
-                },
-            ..
-        }) => {
-            block_returns(then_block)
-                && elifs.iter().all(|(_, block)| block_returns(block))
-                && block_returns(else_block)
+    // Statements after a `return`, `break`, or `continue` are unreachable and
+    // must not turn a returning block into a non-returning one. Walk reachable
+    // statements in order and stop at the first terminator.
+    for statement in &block.stmts {
+        match &statement.kind {
+            StmtKind::Return(_) => return true,
+            StmtKind::Break | StmtKind::Continue => return false,
+            StmtKind::If {
+                then_block,
+                elifs,
+                else_block: Some(else_block),
+                ..
+            } => {
+                if block_returns(then_block)
+                    && elifs.iter().all(|(_, block)| block_returns(block))
+                    && block_returns(else_block)
+                {
+                    return true;
+                }
+            }
+            StmtKind::Match { arms, .. }
+                if !arms.is_empty()
+                    && arms.iter().all(|arm| match &arm.body {
+                        MatchArmBody::Block(block) => block_returns(block),
+                        MatchArmBody::Expr(_) => false,
+                    }) =>
+            {
+                return true;
+            }
+            _ => {}
         }
-        Some(Stmt {
-            kind: StmtKind::Match { arms, .. },
-            ..
-        }) => arms.iter().all(|arm| match &arm.body {
-            MatchArmBody::Block(block) => block_returns(block),
-            MatchArmBody::Expr(_) => false,
-        }),
-        _ => false,
     }
+    false
 }
 
 #[cfg(test)]
@@ -3133,6 +3138,28 @@ mod tests {
     #[test]
     fn rejects_missing_return() {
         let diagnostics = check_errors("fn f(x: Bool) -> Int:\n    if x:\n        return 1\n");
+        assert!(diagnostics.items.iter().any(|d| d.code == "E0309"));
+    }
+
+    #[test]
+    fn dead_code_after_return_still_counts_as_returning() {
+        let model = check_ok(
+            "fn f() -> Int:\n    return 1\n    print(\"dead\")\n\nfn main():\n    print(f())\n",
+        );
+        assert_eq!(model.functions["f"].ret, Type::Int);
+    }
+
+    #[test]
+    fn dead_code_after_a_terminating_if_still_counts_as_returning() {
+        check_ok(
+            "fn f(x: Bool) -> Int:\n    if x:\n        return 1\n    else:\n        return 2\n    print(\"dead\")\n\nfn main():\n    print(f(true))\n",
+        );
+    }
+
+    #[test]
+    fn break_before_a_return_does_not_count_as_returning() {
+        let diagnostics =
+            check_errors("fn f() -> Int:\n    while true:\n        break\n        return 1\n");
         assert!(diagnostics.items.iter().any(|d| d.code == "E0309"));
     }
 

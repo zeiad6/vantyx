@@ -1447,6 +1447,24 @@ main()
 }
 
 #[test]
+fn dead_code_after_return_matches() {
+    assert_same(
+        "dead-code-after-return",
+        r#"fn classify(n: Int) -> Int:
+    if n > 0:
+        return 1
+    else:
+        return 2
+    print("dead")
+
+fn main():
+    print(classify(1))
+    print(classify(-1))
+"#,
+    );
+}
+
+#[test]
 fn effectful_binary_operands_keep_left_to_right_order() {
     assert_same(
         "effectful-binary-order",

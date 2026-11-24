@@ -324,3 +324,21 @@ file records operational choices.
   hand-written cases. Keep it standard-library-only, seed-reproducible, and
   wired into CI with a fixed seed; save failing programs for regression tests.
 - Record the contract in ADR-0036 and keep the `E0401` boundary unchanged.
+
+## 2026-11-24 — Static lints and reachability-aware returns
+
+- Keep lint findings out of `run`, `check`, and `build`. The linter is an
+  opt-in tooling pass; ordinary compilation and execution stay quiet, and
+  existing behavior does not change.
+- Report warnings only and exit `0` for lint-only findings. Compilation errors
+  still exit `1`. Do not add a deny mode until there is a documented need and a
+  testable contract.
+- Stay conservative in the first pass: ignore names starting with `_`,
+  parameters, loop variables, and match bindings; report only the first
+  unreachable statement per block; do not claim control-flow analysis.
+- Fix `block_returns` instead of documenting the `E0309` false positive. A
+  reachable `return` terminates a block even when unreachable statements follow,
+  and a fully returning `if`/`else` or `match` terminates it too. A reachable
+  `break`/`continue` stops the walk without counting as a return.
+- Keep the formatter as separate future work because the lexer discards
+  comments; do not build a rewrite-based formatter that loses user source.

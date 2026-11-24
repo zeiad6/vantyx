@@ -4,17 +4,20 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-070/T-071/T-072 — Commit and push the native condition and short-circuit
-  fixes plus the deterministic differential fuzzer; watch CI and record the run
-  ID. Local gate: 584 tests, clippy clean, release build, examples, 100/100
-  fuzz cases.
+- T-073/T-074 — Commit and push the static linter and reachability-aware return
+  checking; watch CI and record the run ID. Local gate: 613 tests, clippy clean,
+  release build, examples, 100/100 fuzz cases.
 
 ## Ready
 
-- T-019a — `vantyx lint` (first half of T-019, P2 tooling): `L0001` unused
-  local binding, `L0002` mutable binding never reassigned, `L0003` unreachable
-  statement after `return`/`break`/`continue`; unit, CLI, and e2e tests;
-  `docs/linting.md`; keep the formatter as a separate tracked task.
+- Differential fuzzer expansion — Add more typed program shapes (functions with
+  parameters/returns, strings and interpolation, nested collections, match
+  expressions) and run multiple seeds; fix any mismatch found.
+- T-019b — Comment-preserving formatter. The lexer discards comments today, so
+  this needs a lossless syntax representation and a separate ADR before code.
+- Linter follow-ups — Suppression/configuration, unused parameters and loop
+  variables, all-terminating `if`/`match` reachability, and a deny mode. Add
+  each only with a stable contract and tests.
 - T-070/T-071 follow-up — Consider replacing GNU statement expressions with a
   statement prelude only if benchmarks and review justify the larger codegen
   change; do not start without evidence.
@@ -44,5 +47,3 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 - Recursive move and atomic copy/write.
 - Immutable string concatenation and multibyte iteration optimization.
 - REPL multi-line history and field completion.
-- Formatter (second half of T-019) — requires preserving comments, which the
-  current lexer discards; treat as a separate design task.
