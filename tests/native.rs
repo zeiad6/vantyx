@@ -3273,12 +3273,19 @@ fn glob_result_cap_matches_in_both_engines() {
     let directory = workspace("glob-result-cap", source);
     let files = directory.join("files");
     fs::create_dir(&files).expect("create glob cap directory");
-    let anchor = files.join("anchor.txt");
-    fs::write(&anchor, "x").expect("write glob cap anchor");
-    for index in 0..100_001 {
-        fs::hard_link(&anchor, files.join(format!("f{index:06}")))
-            .expect("create glob cap link");
+    let mut created = 0usize;
+    // Stay below per-inode hard-link limits (for example ext4's 65,000) by
+    // spreading the links across several anchors.
+    for anchor_index in 0..4 {
+        let anchor = files.join(format!("anchor{anchor_index}.txt"));
+        fs::write(&anchor, "x").expect("write glob cap anchor");
+        for _ in 0..25_001 {
+            fs::hard_link(&anchor, files.join(format!("f{created:06}")))
+                .expect("create glob cap link");
+            created += 1;
+        }
     }
+    assert!(created > 100_000);
     let engines = run_engines_in_mode(directory, "glob-result-cap", true);
     let _ = fs::remove_dir_all(&files);
     let Some(engines) = engines else {
