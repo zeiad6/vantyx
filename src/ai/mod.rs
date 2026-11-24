@@ -52,9 +52,9 @@ pub use metrics::{MetricEvent, MetricsSink};
 pub use mock::{EchoProvider, MockProvider};
 pub use openai::OpenAiProvider;
 pub use rag::{
-    Chunk, ChunkOptions, Document, EvalQuery, EvalReport, IncrementalPlan, IngestOptions, RagIndex,
-    RetrievalHit, ReuseStats, SearchMode, chunk_document, collect_documents, embed_chunks,
-    embed_query, evaluate, parse_eval_queries,
+    Chunk, ChunkOptions, DEFAULT_MMR_LAMBDA, Document, EvalQuery, EvalReport, IncrementalPlan,
+    IngestOptions, RagIndex, RetrievalHit, ReuseStats, SearchMode, chunk_document,
+    collect_documents, embed_chunks, embed_query, evaluate, parse_eval_queries,
 };
 pub use provider::{
     AiError, ChatRequest, ChatResponse, ContentPart, EmbeddingRequest, EmbeddingResponse,

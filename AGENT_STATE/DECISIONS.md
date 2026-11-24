@@ -49,3 +49,23 @@ file records operational choices.
 - Benchmarks remain labelled plumbing-only when using the offline hash provider.
 - Do not claim live AI, grounding, GPU, training, or production readiness without
   direct evidence.
+
+## 2026-11-24 — MMR diversity reranking
+
+- Add diversity reranking as an explicit opt-in (`--diverse` /
+  `search_with_source_diverse`) instead of changing default ranking. Flat top-k
+  remains the baseline and evaluation behavior.
+- Use a bounded wider candidate pool (`limit * 4`, clamped to `20..MAX_TOP_K`,
+  or the full filtered set when `source_prefix` is set) so reranking has
+  alternatives without scanning the whole index for unfiltered searches.
+- Suppress identical trimmed chunk text before MMR, keeping the highest-ranked
+  copy. This is exact duplicate suppression, not semantic paraphrase dedup.
+- Use cosine similarity over stored vectors when every candidate has a vector;
+  otherwise use BM25-token Jaccard so lexical-only indexes can be diversified.
+  Normalize relevance by the best candidate score so `lambda` is comparable
+  across modes.
+- Keep deterministic tie-breaking by candidate order; the CLI exposes only the
+  default `lambda = 0.7`, while library callers can choose any finite value in
+  `[0, 1]`.
+- Treat reranking as a context-efficiency control. Do not claim improved
+  retrieval quality without a measured evaluation.

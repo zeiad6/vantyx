@@ -979,6 +979,145 @@ fn rag_index_search_and_eval_are_offline_and_cited() {
 }
 
 #[test]
+fn rag_diverse_search_deduplicates_and_marks_reranking() {
+    let root = temp_path("rag-diverse-corpus");
+    fs::create_dir_all(&root).unwrap();
+    let duplicate = "# Rust\nRust enforces memory safety without a garbage collector.\n";
+    fs::write(root.join("a.md"), duplicate).unwrap();
+    fs::write(root.join("b.md"), duplicate).unwrap();
+    fs::write(
+        root.join("c.md"),
+        "# Rust\nMemory safety depends on ownership and borrowing rules.\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("d.md"),
+        "# Python\nPython is used for data science and automation.\n",
+    )
+    .unwrap();
+    let index = temp_path("rag-diverse-index.json");
+    let root_arg = root.to_str().unwrap();
+    let index_arg = index.to_str().unwrap();
+
+    let build = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root_arg,
+            "--out",
+            index_arg,
+            "--mode",
+            "lexical",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(build.status, 0, "{}", build.stderr);
+
+    let baseline = vantyx(
+        &[
+            "ai",
+            "search",
+            "--index",
+            index_arg,
+            "--query",
+            "memory safety",
+            "--mode",
+            "lexical",
+            "--top-k",
+            "3",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(baseline.status, 0, "{}", baseline.stderr);
+    let baseline_value = vantyx::ai::parse(baseline.stdout.trim()).expect("baseline JSON");
+    assert_eq!(
+        baseline_value
+            .get("rerank")
+            .and_then(|value| value.as_str()),
+        Some("none")
+    );
+    let baseline_hits = baseline_value
+        .get("hits")
+        .and_then(|value| value.as_array())
+        .expect("baseline hits");
+    assert_eq!(baseline_hits.len(), 3);
+    assert!(
+        baseline_hits
+            .iter()
+            .filter_map(|hit| hit.get("text").and_then(|value| value.as_str()))
+            .any(|text| text.contains("garbage collector"))
+    );
+
+    let diverse = vantyx(
+        &[
+            "ai",
+            "search",
+            "--index",
+            index_arg,
+            "--query",
+            "memory safety",
+            "--mode",
+            "lexical",
+            "--top-k",
+            "3",
+            "--diverse",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(diverse.status, 0, "{}", diverse.stderr);
+    let diverse_value = vantyx::ai::parse(diverse.stdout.trim()).expect("diverse JSON");
+    assert_eq!(
+        diverse_value
+            .get("rerank")
+            .and_then(|value| value.as_str()),
+        Some("mmr")
+    );
+    let diverse_hits = diverse_value
+        .get("hits")
+        .and_then(|value| value.as_array())
+        .expect("diverse hits");
+    assert_eq!(diverse_hits.len(), 2);
+    let texts: Vec<&str> = diverse_hits
+        .iter()
+        .filter_map(|hit| hit.get("text").and_then(|value| value.as_str()))
+        .collect();
+    assert_eq!(texts.len(), 2);
+    assert_ne!(texts[0].trim(), texts[1].trim());
+    assert_eq!(
+        diverse_hits[0]
+            .get("source")
+            .and_then(|value| value.as_str()),
+        Some("a.md")
+    );
+
+    let rejected = vantyx(
+        &[
+            "ai",
+            "index",
+            "--root",
+            root_arg,
+            "--out",
+            index_arg,
+            "--diverse",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(rejected.status, 64);
+    assert!(rejected.stderr.contains("--diverse"), "{}", rejected.stderr);
+
+    let _ = fs::remove_dir_all(&root);
+    let _ = fs::remove_file(&index);
+}
+
+#[test]
 fn rag_incremental_index_reuses_vectors_and_prunes_deleted_documents() {
     let root = temp_path("rag-incremental-corpus");
     fs::create_dir_all(&root).unwrap();

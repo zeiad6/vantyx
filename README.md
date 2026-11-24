@@ -104,7 +104,7 @@ See the [language specification](docs/language_specification.md).
 | Pattern matching | Variant, wildcard, integer, string, and boolean patterns; nested payload patterns with recursive exhaustiveness; top-level or-patterns with consistent bindings; integer ranges with half-open and inclusive bounds; `Bool`-checked guards |
 | Modules | `import` and `from ... import`; flat namespace, entry-directory confinement |
 | REPL | Persistent declarations, line editing, single-line history, top-level Tab completion, expression echo |
-| AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, incremental vector reuse, citations, retrieval evaluation, tools, bounded agents |
+| AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, incremental vector reuse, MMR diversity reranking, citations, retrieval evaluation, tools, bounded agents |
 | Memory | Interpreter is reference-counted; native allocations are leaked by design; no cycle collector |
 | Tooling | Fuzz smoke, benchmarks, docs; no formatter, linter, LSP, package manager, or debug info |
 | Production readiness | No stable ABI, no LTS, not recommended for production |
@@ -166,6 +166,9 @@ executes a model, and remote HTTPS requires explicit opt-in.
   --query "native map hash index" --top-k 5
 ./target/release/vantyx ai search --index /tmp/vtx-index.json \
   --query "hybrid retrieval" --source-prefix ai/ --top-k 5
+# Suppress duplicate texts and spread results with deterministic MMR
+./target/release/vantyx ai search --index /tmp/vtx-index.json \
+  --query "hybrid retrieval" --diverse --top-k 5 --json
 ./target/release/vantyx ai eval --index /tmp/vtx-index.json \
   --fixture examples/ai/retrieval-eval.json --mode lexical --top-k 5 --json
 
@@ -193,16 +196,20 @@ executes a model, and remote HTTPS requires explicit opt-in.
   file-manifest shortcut or partial-prefix merge.
 - Retrieval returns cited chunks, not synthesized answers. Grounded generation
   is not claimed.
+- `--diverse` applies deterministic MMR reranking with a fixed relevance weight
+  of 0.7 and suppresses identical trimmed chunk text. It is a
+  context-efficiency control, not evidence of better retrieval quality.
 - Streaming chat prints text deltas only; streaming tool calls, interactive
   cancellation, and server-side constrained decoding are not implemented.
 - Model downloads/removal, keyring storage, PDF/HTML/Office ingestion,
-  arbitrary metadata filters, cross-source deduplication, reranking, and live
-  model evidence remain open. See
+  arbitrary metadata filters, cross-source deduplication, measured reranking
+  quality, and live model evidence remain open. See
   [AI architecture](docs/ai/AI_ARCHITECTURE.md),
   [AI research](docs/ai/AI_RESEARCH.md), [AI security](docs/ai/AI_SECURITY.md),
   [ADR-0018](docs/decisions/ADR-0018-local-rag-index.md),
-  [ADR-0023](docs/decisions/ADR-0023-streaming-chat.md), and
-  [ADR-0024](docs/decisions/ADR-0024-incremental-rag-index.md).
+  [ADR-0023](docs/decisions/ADR-0023-streaming-chat.md),
+  [ADR-0024](docs/decisions/ADR-0024-incremental-rag-index.md), and
+  [ADR-0025](docs/decisions/ADR-0025-mmr-diversity-reranking.md).
 
 Language-level AI syntax such as `from ai import Client` or `await` is not
 implemented; it depends on async support. The supported AI surface is the host

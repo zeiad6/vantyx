@@ -3,7 +3,8 @@
 Status: AI-0 and AI-1 complete; AI-2 compatible adapters implemented but live
 evidence blocked; AI-3 structured extraction and streamed text chat complete
 (streaming tool calls and live evidence open); AI-4
-host-side embeddings, retrieval, citations, and evaluation complete
+host-side embeddings, retrieval, citations, evaluation, and MMR diversity
+reranking complete
 Date: 2026-11-24
 Related: `AI_ARCHITECTURE.md`, `AI_RESEARCH.md`, `AI_SECURITY.md`,
 `RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md`
@@ -112,21 +113,25 @@ model evidence remain open.
 - [x] Relative source-prefix metadata filtering before top-k.
 - [x] Incremental semantic re-indexing with stable-chunk vector reuse,
       deletion pruning, and an explicit empty-index representation (ADR-0024).
-- [ ] Arbitrary metadata fields, cross-source deduplication, and reranking.
+- [x] Deterministic MMR diversity reranking with exact-duplicate suppression
+      and cosine/Jaccard similarity (`--diverse`, ADR-0025).
+- [ ] Arbitrary metadata fields, cross-source deduplication, and measured
+      reranking quality.
 - [ ] Licensed multi-document corpus; latency and memory measurements.
 - [ ] Grounded generation after retrieval evaluation.
 
-Evidence (2026-11-24): 413 tests pass, including deterministic hash embeddings,
-batch limits, cache hits/eviction/deduplication, loopback `/v1/embeddings`,
-`vantyx ai embed` JSON/stdin/error paths, 14 RAG unit tests, and 2 offline CLI
-integration tests. A manual run indexed three Markdown documents with the hash
-provider at 32 dimensions and returned `rust.md:1-4` as the top hybrid hit for
-"memory safety"; a one-query fixture scored recall@2 = 1.0 and MRR = 1.0.
-`benchmarks/rag.py` indexed 200 generated Markdown documents (600 chunks) at 64
-hash dimensions on 2026-11-24: index median 41.639 ms, hybrid search median
-26.720 ms, index 1,247,300 bytes, 10 cited hits per query. The hash provider is
-lexical and is not a trained semantic model; live trained embedding-model
-verification remains open.
+Evidence (2026-11-24): the full gate passes 469 tests, including deterministic
+hash embeddings, batch limits, cache hits/eviction/deduplication, loopback
+`/v1/embeddings`, `vantyx ai embed` JSON/stdin/error paths, RAG unit tests, and
+offline CLI integration tests. A manual run indexed three Markdown documents
+with the hash provider at 32 dimensions and returned `rust.md:1-4` as the top
+hybrid hit for "memory safety"; a one-query fixture scored recall@2 = 1.0 and
+MRR = 1.0. `benchmarks/rag.py` indexed 200 generated Markdown documents (600
+chunks) at 64 hash dimensions: index median 43.482 ms, hybrid search median
+27.175 ms, MMR diverse search median 28.292 ms with 10 hits and 0 duplicate
+texts, index 1,247,300 bytes. The hash provider is lexical and is not a trained
+semantic model; live trained embedding-model verification and measured
+retrieval-quality gains remain open.
 
 Exit gate: met for retrieval only. A local fixture produces reproducible
 retrieval metrics and every hit carries source and line citations. No answer is
@@ -202,8 +207,8 @@ The host API is not blocked by these; language-level syntax is.
 2. **P1:** AI-2 live local/cloud evidence, streaming tool calls/cancellation,
    structured output, embeddings, retrieval quality, bounded agents.
 3. **P1 core:** native reclamation, async design, tuple patterns.
-4. **P2:** model manager, retrieval metadata/deduplication/reranking,
-   observability, cross-platform CI.
+4. **P2:** model manager, retrieval metadata/deduplication and measured
+   reranking quality, observability, cross-platform CI.
 5. **P3+:** multimodal, MCP, ONNX/GGUF embedding, tensors.
 6. **P4:** GPU, autodiff, multi-agent orchestration — only with hardware and
    evidence.

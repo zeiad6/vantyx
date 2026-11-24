@@ -16,7 +16,7 @@
 //! - Saved indexes are written atomically with owner-only permissions on Unix,
 //!   because document text is frequently private.
 
-use super::bm25::Bm25Index;
+use super::bm25::{Bm25Index, tokenize};
 use super::embedding::Vector;
 use super::json::Json;
 use super::provider::{
@@ -54,6 +54,12 @@ const MAX_WALK_DEPTH: usize = 32;
 const MAX_EMBED_BATCH_INPUTS: usize = 64;
 const MAX_EMBED_BATCH_BYTES: usize = 24 * 1024;
 const RRF_K: f32 = 60.0;
+
+/// Default relevance weight for deterministic MMR diversity reranking.
+///
+/// Higher values favor the original relevance ranking; lower values favor
+/// chunks that are dissimilar to those already selected.
+pub const DEFAULT_MMR_LAMBDA: f32 = 0.7;
 
 /// Extensions accepted by the recursive ingester unless overridden.
 pub const DEFAULT_EXTENSIONS: &[&str] = &[
@@ -923,7 +929,7 @@ impl RagIndex {
         mode: SearchMode,
         limit: usize,
     ) -> Result<Vec<RetrievalHit>, AiError> {
-        self.search_with_source(query, query_vector, mode, limit, None)
+        self.search_inner(query, query_vector, mode, limit, None, None)
     }
 
     /// Search only chunks whose relative source path starts with `source_prefix`.
@@ -936,6 +942,52 @@ impl RagIndex {
         limit: usize,
         source_prefix: Option<&str>,
     ) -> Result<Vec<RetrievalHit>, AiError> {
+        self.search_inner(query, query_vector, mode, limit, source_prefix, None)
+    }
+
+    /// Search with deterministic maximal-marginal-relevance (MMR) reranking.
+    ///
+    /// Candidates are selected to balance relevance (`lambda`) against
+    /// similarity to already-selected chunks (`1 - lambda`). Chunks with
+    /// identical trimmed text are suppressed before selection. The result is
+    /// deterministic: ties keep the earlier candidate, and candidate order is
+    /// established by the underlying lexical or semantic ranking.
+    pub fn search_with_source_diverse(
+        &self,
+        query: &str,
+        query_vector: Option<&Vector>,
+        mode: SearchMode,
+        limit: usize,
+        source_prefix: Option<&str>,
+        lambda: f32,
+    ) -> Result<Vec<RetrievalHit>, AiError> {
+        self.search_inner(
+            query,
+            query_vector,
+            mode,
+            limit,
+            source_prefix,
+            Some(lambda),
+        )
+    }
+
+    fn search_inner(
+        &self,
+        query: &str,
+        query_vector: Option<&Vector>,
+        mode: SearchMode,
+        limit: usize,
+        source_prefix: Option<&str>,
+        diversity: Option<f32>,
+    ) -> Result<Vec<RetrievalHit>, AiError> {
+        if let Some(lambda) = diversity
+            && (!lambda.is_finite() || !(0.0..=1.0).contains(&lambda))
+        {
+            return Err(AiError::new(
+                AI_E_INVALID_REQUEST,
+                "diversity lambda must be a finite number between 0.0 and 1.0",
+            ));
+        }
         if query.trim().is_empty() {
             return Err(AiError::new(
                 AI_E_INVALID_REQUEST,
@@ -993,8 +1045,11 @@ impl RagIndex {
 
         // A filter may discard most candidates, so rank the whole index before
         // truncating. Unfiltered searches keep the cheaper bounded candidate set.
+        // Diversity reranking needs a wider pool than the final top-k.
         let candidate_limit = if source_prefix.is_some() {
             self.chunks.len()
+        } else if diversity.is_some() {
+            diversity_candidates(limit)
         } else {
             match mode {
                 SearchMode::Lexical | SearchMode::Semantic => limit,
@@ -1021,45 +1076,37 @@ impl RagIndex {
             Vec::new()
         };
 
-        match mode {
-            SearchMode::Lexical => {
-                let mut hits: Vec<RetrievalHit> = lexical
-                    .into_iter()
-                    .filter(|hit| self.source_matches(&hit.id, source_prefix))
-                    .filter_map(|hit| {
-                        let chunk = self.chunk(&hit.id)?;
-                        Some(hit_from_chunk(
-                            chunk,
-                            hit.score,
-                            Some(hit.score),
-                            None,
-                            None,
-                            None,
-                        ))
-                    })
-                    .collect();
-                hits.truncate(limit);
-                Ok(hits)
-            }
-            SearchMode::Semantic => {
-                let mut hits: Vec<RetrievalHit> = semantic
-                    .into_iter()
-                    .filter(|hit| self.source_matches(&hit.id, source_prefix))
-                    .filter_map(|hit| {
-                        let chunk = self.chunk(&hit.id)?;
-                        Some(hit_from_chunk(
-                            chunk,
-                            hit.score,
-                            None,
-                            Some(hit.score),
-                            None,
-                            None,
-                        ))
-                    })
-                    .collect();
-                hits.truncate(limit);
-                Ok(hits)
-            }
+        let mut hits: Vec<RetrievalHit> = match mode {
+            SearchMode::Lexical => lexical
+                .into_iter()
+                .filter(|hit| self.source_matches(&hit.id, source_prefix))
+                .filter_map(|hit| {
+                    let chunk = self.chunk(&hit.id)?;
+                    Some(hit_from_chunk(
+                        chunk,
+                        hit.score,
+                        Some(hit.score),
+                        None,
+                        None,
+                        None,
+                    ))
+                })
+                .collect(),
+            SearchMode::Semantic => semantic
+                .into_iter()
+                .filter(|hit| self.source_matches(&hit.id, source_prefix))
+                .filter_map(|hit| {
+                    let chunk = self.chunk(&hit.id)?;
+                    Some(hit_from_chunk(
+                        chunk,
+                        hit.score,
+                        None,
+                        Some(hit.score),
+                        None,
+                        None,
+                    ))
+                })
+                .collect(),
             SearchMode::Hybrid => {
                 let mut fused: Vec<RetrievalHit> = Vec::new();
                 for (rank, hit) in lexical
@@ -1107,10 +1154,71 @@ impl RagIndex {
                         .unwrap_or(std::cmp::Ordering::Equal)
                         .then_with(|| left.id.cmp(&right.id))
                 });
-                fused.truncate(limit);
-                Ok(fused)
+                fused
+            }
+        };
+
+        if let Some(lambda) = diversity {
+            self.diversify_hits(hits, lambda, limit)
+        } else {
+            hits.truncate(limit);
+            Ok(hits)
+        }
+    }
+
+    fn vector_for(&self, id: &str) -> Option<&Vector> {
+        self.chunks
+            .iter()
+            .find(|indexed| indexed.chunk.id == id)
+            .and_then(|indexed| indexed.vector.as_ref())
+    }
+
+    /// Applies exact-text deduplication and deterministic MMR selection.
+    ///
+    /// Similarity uses stored vectors when every candidate has one; otherwise
+    /// it uses token Jaccard similarity over the chunk text, so lexical-only
+    /// indexes can also be diversified.
+    fn diversify_hits(
+        &self,
+        hits: Vec<RetrievalHit>,
+        lambda: f32,
+        limit: usize,
+    ) -> Result<Vec<RetrievalHit>, AiError> {
+        let hits = deduplicate_hits(hits);
+        if hits.len() <= 1 {
+            return Ok(hits);
+        }
+        let vectors: Vec<Option<&Vector>> =
+            hits.iter().map(|hit| self.vector_for(&hit.id)).collect();
+        let use_vectors = vectors.iter().all(Option::is_some);
+        let token_sets: Vec<HashSet<String>> = if use_vectors {
+            Vec::new()
+        } else {
+            hits.iter()
+                .map(|hit| tokenize(&hit.text).into_iter().collect())
+                .collect()
+        };
+        let mut similarities = vec![vec![0.0_f32; hits.len()]; hits.len()];
+        for left in 0..hits.len() {
+            for right in (left + 1)..hits.len() {
+                let similarity = if use_vectors {
+                    let left_vector = vectors[left].expect("all candidates have vectors");
+                    let right_vector = vectors[right].expect("all candidates have vectors");
+                    if left_vector.norm() == 0.0 || right_vector.norm() == 0.0 {
+                        0.0
+                    } else {
+                        left_vector
+                            .cosine_similarity(right_vector)?
+                            .clamp(0.0, 1.0)
+                    }
+                } else {
+                    jaccard_similarity(&token_sets[left], &token_sets[right])
+                };
+                similarities[left][right] = similarity;
+                similarities[right][left] = similarity;
             }
         }
+        Ok(mmr_select(hits, &similarities, lambda, limit))
     }
 
     fn source_matches(&self, id: &str, source_prefix: Option<&str>) -> bool {
@@ -1385,6 +1493,113 @@ struct ScoredId {
 
 fn reciprocal_rank(zero_based_rank: usize) -> f32 {
     1.0 / (RRF_K + (zero_based_rank as f32) + 1.0)
+}
+
+/// Candidate pool for diversity reranking: at least 20, at most `MAX_TOP_K`.
+fn diversity_candidates(limit: usize) -> usize {
+    limit
+        .saturating_mul(4)
+        .clamp(20, MAX_TOP_K)
+        .max(limit)
+}
+
+/// Removes chunks whose trimmed text is identical, keeping the first one.
+///
+/// The input is already ordered by relevance, so the kept hit is the highest
+/// ranked copy. Citations for the removed copy are not reported.
+fn deduplicate_hits(hits: Vec<RetrievalHit>) -> Vec<RetrievalHit> {
+    let mut seen = HashSet::new();
+    let mut unique = Vec::with_capacity(hits.len());
+    for hit in hits {
+        let key = hit.text.trim().to_string();
+        if seen.insert(key) {
+            unique.push(hit);
+        }
+    }
+    unique
+}
+
+fn jaccard_similarity(left: &HashSet<String>, right: &HashSet<String>) -> f32 {
+    if left.is_empty() || right.is_empty() {
+        return 0.0;
+    }
+    let (small, large) = if left.len() <= right.len() {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    let intersection = small
+        .iter()
+        .filter(|token| large.contains(token.as_str()))
+        .count();
+    let union = left.len() + right.len() - intersection;
+    if union == 0 {
+        0.0
+    } else {
+        intersection as f32 / union as f32
+    }
+}
+
+/// Selects up to `limit` hits with maximal marginal relevance.
+///
+/// Relevance is normalized by the best candidate score, so `lambda` is
+/// comparable across lexical, semantic, and hybrid modes. Similarity must be in
+/// `[0, 1]`. Ties keep the earlier candidate for deterministic output.
+fn mmr_select(
+    hits: Vec<RetrievalHit>,
+    similarities: &[Vec<f32>],
+    lambda: f32,
+    limit: usize,
+) -> Vec<RetrievalHit> {
+    let target = limit.min(hits.len());
+    let max_score = hits
+        .iter()
+        .map(|hit| hit.score)
+        .filter(|score| score.is_finite())
+        .fold(0.0_f32, f32::max);
+    let relevance: Vec<f32> = hits
+        .iter()
+        .map(|hit| {
+            if max_score > 0.0 && hit.score.is_finite() {
+                (hit.score / max_score).clamp(0.0, 1.0)
+            } else {
+                1.0
+            }
+        })
+        .collect();
+    let mut order = Vec::with_capacity(target);
+    let mut used = vec![false; hits.len()];
+    let mut max_similarity = vec![0.0_f32; hits.len()];
+    for _ in 0..target {
+        let mut choice = None;
+        let mut choice_score = f32::NEG_INFINITY;
+        for index in 0..hits.len() {
+            if used[index] {
+                continue;
+            }
+            let score =
+                lambda * relevance[index] - (1.0 - lambda) * max_similarity[index];
+            if choice.is_none() || score > choice_score {
+                choice = Some(index);
+                choice_score = score;
+            }
+        }
+        let Some(index) = choice else {
+            break;
+        };
+        used[index] = true;
+        order.push(index);
+        for other in 0..hits.len() {
+            if !used[other] {
+                max_similarity[other] = max_similarity[other].max(similarities[index][other]);
+            }
+        }
+    }
+    let mut slots: Vec<Option<RetrievalHit>> = hits.into_iter().map(Some).collect();
+    order
+        .into_iter()
+        .filter_map(|index| slots[index].take())
+        .collect()
 }
 
 fn hit_from_chunk(
@@ -2015,6 +2230,131 @@ mod tests {
         assert!(hits[0].text.contains("memory safety"));
         assert!(hits[0].lexical_score.is_some());
         assert!(hits[0].semantic_score.is_none());
+    }
+
+    fn retrieval_hit(id: &str, score: f32, text: &str) -> RetrievalHit {
+        RetrievalHit {
+            id: id.into(),
+            source: format!("{id}.md"),
+            start_line: 1,
+            end_line: 1,
+            text: text.into(),
+            score,
+            lexical_score: Some(score),
+            semantic_score: None,
+            lexical_rank: None,
+            semantic_rank: None,
+        }
+    }
+
+    #[test]
+    fn deduplication_keeps_the_first_copy_and_jaccard_is_bounded() {
+        let hits = vec![
+            retrieval_hit("a", 2.0, "same text\n"),
+            retrieval_hit("b", 1.0, "same text"),
+            retrieval_hit("c", 0.5, "different text"),
+        ];
+        let unique = deduplicate_hits(hits);
+        assert_eq!(unique.len(), 2);
+        assert_eq!(unique[0].id, "a");
+        assert_eq!(unique[1].id, "c");
+
+        let left: HashSet<String> = ["rust", "memory"].iter().map(|term| (*term).into()).collect();
+        let right: HashSet<String> = ["rust", "safety"].iter().map(|term| (*term).into()).collect();
+        assert_eq!(jaccard_similarity(&left, &left), 1.0);
+        assert_eq!(jaccard_similarity(&left, &right), 1.0 / 3.0);
+        assert_eq!(
+            jaccard_similarity(&left, &HashSet::new()),
+            0.0
+        );
+    }
+
+    #[test]
+    fn mmr_balances_relevance_and_diversity_deterministically() {
+        let hits = vec![
+            retrieval_hit("a", 1.0, "rust memory safety"),
+            retrieval_hit("b", 0.95, "rust memory safety"),
+            retrieval_hit("c", 0.6, "webassembly browsers"),
+        ];
+        let similarities = vec![
+            vec![0.0, 0.9, 0.1],
+            vec![0.9, 0.0, 0.1],
+            vec![0.1, 0.1, 0.0],
+        ];
+        let selected = mmr_select(hits.clone(), &similarities, 0.6, 3);
+        let ids: Vec<&str> = selected.iter().map(|hit| hit.id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "c", "b"]);
+
+        let relevance_only = mmr_select(hits, &similarities, 1.0, 3);
+        let ids: Vec<&str> = relevance_only.iter().map(|hit| hit.id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn diverse_search_deduplicates_and_rejects_invalid_lambda() {
+        let duplicate = "Rust enforces memory safety without a garbage collector.";
+        let chunks = vec![
+            chunk("a.md", 1, 1, duplicate),
+            chunk("b.md", 1, 1, duplicate),
+            chunk(
+                "c.md",
+                1,
+                1,
+                "Rust memory safety depends on ownership and borrowing rules.",
+            ),
+            chunk("d.md", 1, 1, "Python is popular for data science and automation."),
+        ];
+        let index = RagIndex::lexical("lexical", "none", chunks).unwrap();
+        let first = index
+            .search_with_source_diverse(
+                "rust memory safety",
+                None,
+                SearchMode::Lexical,
+                3,
+                None,
+                DEFAULT_MMR_LAMBDA,
+            )
+            .unwrap();
+        let second = index
+            .search_with_source_diverse(
+                "rust memory safety",
+                None,
+                SearchMode::Lexical,
+                3,
+                None,
+                DEFAULT_MMR_LAMBDA,
+            )
+            .unwrap();
+        assert_eq!(first, second);
+        assert!(first.len() >= 2);
+        let texts: HashSet<&str> = first.iter().map(|hit| hit.text.trim()).collect();
+        assert_eq!(texts.len(), first.len());
+        assert!(!first.iter().any(|hit| hit.source == "b.md"));
+
+        assert!(
+            index
+                .search_with_source_diverse(
+                    "memory",
+                    None,
+                    SearchMode::Lexical,
+                    2,
+                    None,
+                    1.1
+                )
+                .is_err()
+        );
+        assert!(
+            index
+                .search_with_source_diverse(
+                    "memory",
+                    None,
+                    SearchMode::Lexical,
+                    2,
+                    None,
+                    f32::NAN
+                )
+                .is_err()
+        );
     }
 
     #[test]

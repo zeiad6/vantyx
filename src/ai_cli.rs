@@ -60,6 +60,8 @@ Options:
   --fixture <file>        Evaluation fixture for `eval`
   --mode <name>           lexical, semantic, or hybrid (default: inferred)
   --top-k <n>             Results or evaluation depth, 1 to 100
+  --diverse               Rerank search results with deterministic MMR
+                          diversity (relevance weight 0.7)
   --chunk-chars <n>       Maximum characters per chunk (default 900)
   --overlap-chars <n>     Chunk overlap in characters (default 120)
   --ext <ext>             Indexed extension; repeat or comma-separate
@@ -110,6 +112,7 @@ struct Options {
     overlap_chars: Option<usize>,
     extensions: Vec<String>,
     incremental: bool,
+    diverse: bool,
     stream: bool,
     json: bool,
     prompt_stdin: bool,
@@ -708,6 +711,10 @@ fn rag_index(args: &[String]) -> i32 {
         eprintln!("error: --source-prefix is only supported by `vantyx ai search`");
         return 64;
     }
+    if options.diverse {
+        eprintln!("error: --diverse is only supported by `vantyx ai search`");
+        return 64;
+    }
     let Some(root) = options.root.as_ref() else {
         eprintln!("error: `vantyx ai index` requires --root <dir>");
         return 64;
@@ -1178,13 +1185,24 @@ fn rag_search(args: &[String]) -> i32 {
             Err(error) => return report_error(&error),
         }
     };
-    let hits = match index.search_with_source(
-        &query,
-        query_vector.as_ref(),
-        mode,
-        top_k,
-        options.source_prefix.as_deref(),
-    ) {
+    let hits = match if options.diverse {
+        index.search_with_source_diverse(
+            &query,
+            query_vector.as_ref(),
+            mode,
+            top_k,
+            options.source_prefix.as_deref(),
+            ai::DEFAULT_MMR_LAMBDA,
+        )
+    } else {
+        index.search_with_source(
+            &query,
+            query_vector.as_ref(),
+            mode,
+            top_k,
+            options.source_prefix.as_deref(),
+        )
+    } {
         Ok(hits) => hits,
         Err(error) => return report_error(&error),
     };
@@ -1236,6 +1254,10 @@ fn rag_search(args: &[String]) -> i32 {
                     ai::Json::from(index_path.to_string_lossy().to_string()),
                 ),
                 ("mode", ai::Json::from(mode.as_str())),
+                (
+                    "rerank",
+                    ai::Json::from(if options.diverse { "mmr" } else { "none" }),
+                ),
                 ("query", ai::Json::from(query)),
                 ("hits", ai::Json::Array(entries)),
             ])
@@ -1244,6 +1266,9 @@ fn rag_search(args: &[String]) -> i32 {
     }
     println!("index: {}", index_path.display());
     println!("mode: {}", mode.as_str());
+    if options.diverse {
+        println!("rerank: mmr");
+    }
     println!("query: {query}");
     println!("hits: {}", hits.len());
     for (position, hit) in hits.iter().enumerate() {
@@ -1286,6 +1311,10 @@ fn rag_eval(args: &[String]) -> i32 {
     }
     if options.source_prefix.is_some() {
         eprintln!("error: --source-prefix is only supported by `vantyx ai search`");
+        return 64;
+    }
+    if options.diverse {
+        eprintln!("error: --diverse is only supported by `vantyx ai search`");
         return 64;
     }
     let Some(index_path) = options.index.as_ref() else {
@@ -1735,6 +1764,12 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
                 }
                 options.incremental = true;
             }
+            "--diverse" => {
+                if inline.is_some() {
+                    return Err("--diverse does not take a value".into());
+                }
+                options.diverse = true;
+            }
             "--stream" => {
                 if inline.is_some() {
                     return Err("--stream does not take a value".into());
@@ -1977,6 +2012,14 @@ mod tests {
         assert!(options.incremental);
         assert!(!options.json);
         assert!(parse_options(&args(&["--incremental=true"])).is_err());
+    }
+
+    #[test]
+    fn parses_the_diverse_search_flag() {
+        let options = parse_options(&args(&["--diverse", "--query", "memory"])).unwrap();
+        assert!(options.diverse);
+        assert_eq!(options.query.as_deref(), Some("memory"));
+        assert!(parse_options(&args(&["--diverse=true"])).is_err());
     }
 
     #[test]

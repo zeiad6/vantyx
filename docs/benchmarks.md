@@ -187,14 +187,18 @@ The index contains 600 chunks and 600 vectors (1,247,300 bytes).
 
 | Phase | Median ms | Min ms | Max ms |
 | --- | ---: | ---: | ---: |
-| Index (ingest + chunk + embed + save) | 41.639 | 40.347 | 42.529 |
-| Search (load + query embed + rank) | 26.720 | 25.133 | 27.154 |
+| Index (ingest + chunk + embed + save) | 43.482 | 42.662 | 45.614 |
+| Search (load + query embed + rank) | 27.175 | 26.505 | 29.117 |
+| Search with MMR diversity reranking | 28.292 | 27.354 | 30.767 |
 
-One warm-up pair was discarded; five measured pairs were taken; every search
-returned 10 cited hits. Index and search are separate processes, so search
-includes JSON index loading. This measures local plumbing and flat linear
-search, **not** semantic quality, trained-model latency, or vector-database
-performance. Raw results:
+One warm-up pair was discarded; five measured pairs were taken; every baseline
+search returned 10 cited hits and the first was `doc-0007.md:1`. MMR reranking
+also returned 10 hits with the same top-1 citation and no duplicate texts; the
+generated corpus has no identical documents, so this run measures reranking
+cost, not duplicate suppression. Index and search are separate processes, so
+search includes JSON index loading. This measures local plumbing and flat
+linear search, **not** semantic quality, trained-model latency, retrieval
+quality, or vector-database performance. Raw results:
 [`benchmarks/results/2026-11-24-rag.json`](../benchmarks/results/2026-11-24-rag.json)
 and
 [`benchmarks/results/2026-11-24-rag.md`](../benchmarks/results/2026-11-24-rag.md).

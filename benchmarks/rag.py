@@ -4,6 +4,7 @@
 This is a plumbing benchmark, not a model-quality benchmark. It measures:
   * index build time (ingestion, chunking, hash embeddings, JSON save),
   * one-shot search time (index load, query embedding, hybrid ranking),
+  * hybrid search with deterministic MMR diversity reranking,
   * no-op and one-changed-chunk incremental updates (vector reuse),
   * index size, document/chunk counts, and top-k hits.
 
@@ -151,26 +152,57 @@ def main() -> int:
         str(args.top_k),
         "--json",
     ]
+    diverse_search_command = search_command + ["--diverse"]
+
+    def first_citation(info: dict) -> tuple[object, object]:
+        if not info.get("hits"):
+            return (None, None)
+        first = info["hits"][0]
+        if not first.get("source") or not first.get("start_line"):
+            raise SystemExit("error: benchmark hit lacks a citation")
+        return (first.get("source"), first.get("start_line"))
 
     # Warm-up (also validates the exact command path before measured runs).
     index_info, _ = run_json(index_command, timeout=300.0)
     search_info, _ = run_json(search_command, timeout=300.0)
+    diverse_info, _ = run_json(diverse_search_command, timeout=300.0)
     if index_info.get("chunks", 0) <= 0:
         raise SystemExit("error: benchmark index contains no chunks")
-    if search_info.get("hits", []):
-        first = search_info["hits"][0]
-        if not first.get("source") or not first.get("start_line"):
-            raise SystemExit("error: benchmark hit lacks a citation")
+    first_citation(search_info)
+    if diverse_info.get("rerank") != "mmr":
+        raise SystemExit("error: diverse search did not report MMR reranking")
+    if first_citation(diverse_info) != first_citation(search_info):
+        raise SystemExit(
+            "error: MMR reranking changed the top-1 citation: "
+            f"{first_citation(search_info)} vs {first_citation(diverse_info)}"
+        )
+    for info in (search_info, diverse_info):
+        hits = info.get("hits", [])
+        if len(hits) > args.top_k:
+            raise SystemExit(
+                f"error: search returned {len(hits)} hits for top-k {args.top_k}"
+            )
 
     index_times: list[float] = []
     search_times: list[float] = []
+    diverse_search_times: list[float] = []
     hit_counts: list[int] = []
+    diverse_hit_counts: list[int] = []
+    diverse_duplicates: list[int] = []
     for _ in range(args.reps):
         index_info, elapsed = run_json(index_command, timeout=300.0)
         index_times.append(elapsed)
         search_info, elapsed = run_json(search_command, timeout=300.0)
         search_times.append(elapsed)
         hit_counts.append(len(search_info.get("hits", [])))
+        diverse_info, elapsed = run_json(diverse_search_command, timeout=300.0)
+        diverse_search_times.append(elapsed)
+        diverse_hits = diverse_info.get("hits", [])
+        diverse_hit_counts.append(len(diverse_hits))
+        texts = [hit.get("text", "").strip() for hit in diverse_hits]
+        diverse_duplicates.append(len(texts) - len(set(texts)))
+        if first_citation(diverse_info) != first_citation(search_info):
+            raise SystemExit("error: MMR reranking changed the top-1 citation")
 
     index_bytes = index_path.stat().st_size
     documents = index_info.get("documents", 0)
@@ -243,8 +275,9 @@ def main() -> int:
         "caveat": (
             "Offline hash embeddings and flat linear search. This measures "
             "plumbing, not semantic quality, model latency, or vector-database "
-            "performance. Incremental updates still scan and chunk the corpus; "
-            "they only avoid re-embedding unchanged chunks."
+            "performance. MMR diversity reranking is deterministic but is not "
+            "evidence that retrieval quality improved. Incremental updates still "
+            "scan and chunk the corpus; they only avoid re-embedding unchanged chunks."
         ),
         "environment": {
             "platform": platform.platform(),
@@ -265,6 +298,11 @@ def main() -> int:
         },
         "index": stats(index_times),
         "search": stats(search_times),
+        "search_diverse": {
+            **stats(diverse_search_times),
+            "hit_count": int(statistics.median(diverse_hit_counts)),
+            "duplicate_texts": int(statistics.median(diverse_duplicates)),
+        },
         "incremental": {
             "noop": {
                 **stats(noop_times),
@@ -314,6 +352,8 @@ def main() -> int:
                 f"{report['index']['min_ms']} | {report['index']['max_ms']} |",
                 f"| Search (load + query embed + rank) | {report['search']['median_ms']} | "
                 f"{report['search']['min_ms']} | {report['search']['max_ms']} |",
+                f"| Search with MMR diversity reranking | {report['search_diverse']['median_ms']} | "
+                f"{report['search_diverse']['min_ms']} | {report['search_diverse']['max_ms']} |",
                 f"| Incremental, no changes (reuse {report['incremental']['noop']['reused_chunks']}) | "
                 f"{report['incremental']['noop']['median_ms']} | "
                 f"{report['incremental']['noop']['min_ms']} | "
@@ -323,8 +363,13 @@ def main() -> int:
                 f"{report['incremental']['one_chunk']['min_ms']} | "
                 f"{report['incremental']['one_chunk']['max_ms']} |",
                 "",
-                f"Every measured search returned {report['hits']['count']} cited hits; "
-                f"the first was `{report['hits']['first_source']}:{report['hits']['first_line']}`.",
+                f"Every measured baseline search returned {report['hits']['count']} cited hits; "
+                f"the first was `{report['hits']['first_source']}:{report['hits']['first_line']}`. "
+                f"MMR reranking returned a median of "
+                f"{report['search_diverse']['hit_count']} hits with "
+                f"{report['search_diverse']['duplicate_texts']} duplicate texts and the "
+                f"same top-1 citation. The generated corpus has no identical documents, "
+                f"so this run measures reranking cost, not duplicate suppression.",
                 "",
                 "One warm-up pair was discarded. Index and search are separate "
                 "processes, so search time includes JSON index loading. Incremental "

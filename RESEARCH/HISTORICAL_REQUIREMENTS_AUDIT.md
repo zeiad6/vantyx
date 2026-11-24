@@ -49,7 +49,7 @@ because a document says so; the table cites code or an observed command.
 | AI host | `src/ai/` foundation and `vantyx ai` CLI implemented; offline and loopback tests pass; streamed text chat is covered by loopback HTTP and HTTPS smoke tests |
 | Embeddings | deterministic hash provider, batch limits, bounded cache, OpenAI-compatible `/v1/embeddings`, and `vantyx ai embed` implemented; offline/loopback tests pass |
 | Modules (T-013) | file imports, path confinement, cycles, declaration-only modules, interpreter/native differential test, and `E0501`–`E0512` |
-| RAG (T-046, T-054) | bounded ingestion, stable cited chunks, strict versioned JSON index, BM25/cosine/hybrid RRF search, source-prefix filtering, recall/precision/MRR evaluation, and incremental vector reuse with deletion pruning; 18 unit + 3 CLI tests and manual 3-document runs |
+| RAG (T-046, T-054, T-057) | bounded ingestion, stable cited chunks, strict versioned JSON index, BM25/cosine/hybrid RRF search, source-prefix filtering, recall/precision/MRR evaluation, incremental vector reuse with deletion pruning, and deterministic MMR diversity reranking with duplicate suppression; 21 unit + 4 CLI tests and manual 3-document runs |
 | Or-patterns (T-047/T-050) | top-level `|` alternatives, shared binding-set checking (`E0317`), exhaustiveness integration, ordered interpreter matching, and native short-circuit lowering with conditional binding initialization; parser/checker/e2e/native tests; ADR-0021 |
 | Nested patterns (T-048/T-049) | recursive payload patterns, multi-level bindings, matrix exhaustiveness, guard exclusion, and native short-circuit lowering with path-based bindings; parser/checker/e2e/native tests; ADR-0019/ADR-0020 |
 | AI live evidence | none; no local server, embedding model, or cloud credentials available |
@@ -120,7 +120,7 @@ the AI matrix rather than duplicated here; T-044–T-050 are included above.
 | T-035 | Public repository and launch kit | Public repo, CI, release, issue, `llms.txt`; Vantyx rename verified by GitHub and clean-clone CI | COMPLETE | Keep discovery material current | P1 | Maintain |
 | T-044 | Native scalar-key map hash index | `src/codegen_c.rs`; `large_scalar_maps_match`; 2026-11-24 benchmark | COMPLETE | Structural-key hashing; adversarial seed | P1 | Keep |
 | T-045 | Embedding provider interface, batch embeddings, cache, and CLI | `src/ai/provider.rs`, `src/ai/embedding_provider.rs`, `src/ai/openai.rs`, `src/ai_cli.rs`; 413-test run; loopback `/v1/embeddings`; ADR-0017 | COMPLETE (offline/loopback) | Live embedding-model evidence; TTL/persistent cache | P1 | Extend |
-| T-046 | Local RAG ingestion, hybrid retrieval, citations, persistence, source filtering, and evaluation | `src/ai/rag.rs` (14 unit tests), `src/ai_cli.rs` (`index`/`search`/`eval`), `tests/ai.rs` (2 integration tests), `examples/ai/retrieval-eval.json`; ADR-0018 | COMPLETE (offline/loopback) | PDF/HTML/Office ingestion, arbitrary metadata fields, cross-source dedup, reranking, grounded generation, live corpus evaluation | P1 | Extend |
+| T-046 | Local RAG ingestion, hybrid retrieval, citations, persistence, source filtering, and evaluation | `src/ai/rag.rs` (14 unit tests), `src/ai_cli.rs` (`index`/`search`/`eval`), `tests/ai.rs` (2 integration tests), `examples/ai/retrieval-eval.json`; ADR-0018 | COMPLETE (offline/loopback) | PDF/HTML/Office ingestion, arbitrary metadata fields, cross-source dedup, measured reranking quality, grounded generation, live corpus evaluation | P1 | Extend |
 | T-047 | Top-level or-patterns with shared bindings and exhaustiveness | `src/ast.rs` (`Pattern::Or`), `src/parser.rs`, `src/checker.rs` (`E0317`), `src/interp.rs`; parser + 5 checker + e2e tests | COMPLETE (interpreter; native lowering added by T-050) | Or-patterns over `Any` natively | P1 | Extend |
 | T-048 | Nested payload patterns with multi-level bindings and matrix exhaustiveness | `src/ast.rs` (`PatternArg::Nested`), `src/parser.rs`, `src/checker.rs` (`CoverPattern`, `matrix_exhaustive`), `src/interp.rs`; parser + 4 checker + e2e tests; ADR-0019 | COMPLETE (interpreter; native lowering added by T-049) | Tuple patterns; nested unreachable analysis | P1 | Extend |
 | T-049 | Native nested-pattern lowering with path-based bindings and single-evaluation guards | `src/ir.rs` (recursive `IrPattern`, `IrFieldPath`), `src/codegen_c.rs` (recursive conditions, binding declarations), `tests/native.rs::nested_patterns_match`, extended e2e; ADR-0020 | COMPLETE (interpreter/native differential) | Tuple patterns; nested unreachable analysis | P1 | Extend |
@@ -129,6 +129,7 @@ the AI matrix rather than duplicated here; T-044–T-050 are included above.
 | T-052 | Streamed OpenAI-compatible text chat through the provider, HTTP transport, and CLI | `src/ai/provider.rs` (`chat_stream`, `streaming` capability), `src/ai/sse.rs` (`push_bytes` UTF-8 carry), `src/ai/http.rs` (`Transport::stream`, content-length/chunked/close-delimited, `curl --include --no-buffer`), `src/ai/openai.rs` (`ChatStreamState`, streaming request JSON), `src/ai_cli.rs` (`--stream`), `tools/streaming_smoke.py`; unit, loopback CLI, and HTTP/HTTPS smoke tests; ADR-0023 | COMPLETE (offline/loopback; live provider blocked) | Streaming tool calls, interactive cancellation, live first-token/tokens-per-second evidence | P1 | Extend |
 | T-053 | Remove the unrelated `auren` account from contributor attribution | `git filter-branch` over branches and tags, force-with-lease push of `main` and `v0.1.0`, `.mailmap`; contributor API and commit-identity checks | COMPLETE (history rewritten with explicit authorization) | None; old hashes are historical | P1 | Keep |
 | T-054 | Incremental RAG re-indexing with stable-chunk vector reuse, deletion pruning, and empty-index semantics | `src/ai/rag.rs` (`IncrementalPlan`, `ReuseStats`, `plan_incremental`, `validate_chunk_set`, 4 unit tests), `src/ai_cli.rs` (`--incremental`, compatibility checks, lazy provider, reuse reporting, parser test), `tests/ai.rs` (1 CLI integration test), `benchmarks/rag.py` incremental phases; ADR-0024 | COMPLETE (offline/loopback) | File-manifest shortcut, partial-prefix merge, sub-chunk diffing, trained-model evidence | P1 | Extend |
+| T-057 | Deterministic MMR diversity reranking for local RAG search | `src/ai/rag.rs` (`DEFAULT_MMR_LAMBDA`, `search_with_source_diverse`, `diversify_hits`, `deduplicate_hits`, `jaccard_similarity`, `mmr_select`, 3 unit tests), `src/ai_cli.rs` (`--diverse`, `rerank` reporting, parser test), `tests/ai.rs` (1 CLI integration test), `benchmarks/rag.py` diverse phase; ADR-0025 | COMPLETE (offline/loopback) | Measured retrieval-quality improvement; semantic paraphrase dedup; configurable CLI lambda | P1 | Extend |
 
 ### Core partials that must not be described as finished
 
@@ -193,9 +194,9 @@ exist but async does not.
 | AI-012 | Tool calling with capabilities | Typed tool registry, capability sets, path roots, approval enum, timeouts, redacted logging | COMPLETE | Only read-only demo tools ship; add dangerous tools with approvals | P1 | Maintain |
 | AI-013 | Agent loop with hard limits | Bounded loop with step/tool/token/time limits and cancellation flag | PARTIAL | Persistent state and resume | P1 | Extend |
 | AI-014 | Multi-agent orchestration research | No evidence gathered; deliberately unbuilt | MISSING | Research only if a measurable use case appears | P3 | Defer |
-| AI-015 | RAG ingestion/chunking | `src/ai/rag.rs` bounded recursive text/Markdown/code ingestion, stable line-cited chunks; filtering and limit tests | COMPLETE (subset) | PDF/HTML/Office, arbitrary metadata fields, incremental re-index, dedup/deletion | P1 | Extend |
+| AI-015 | RAG ingestion/chunking | `src/ai/rag.rs` bounded recursive text/Markdown/code ingestion, stable line-cited chunks, incremental re-index, and deletion pruning; filtering and limit tests | COMPLETE (subset) | PDF/HTML/Office, arbitrary metadata fields, cross-source dedup | P1 | Extend |
 | AI-016 | Embeddings and vector store | Provider interface, batch limits, deterministic hash provider, bounded cache, OpenAI-compatible `/v1/embeddings`, vector math, in-memory index, and strict-JSON persisted RAG index | PARTIAL | Live trained embedding-model evidence; approximate/large-scale index; vector-database integration | P1 | Extend |
-| AI-017 | Hybrid search / BM25 | BM25 with Unicode tokenization, cosine semantic search, hybrid reciprocal-rank fusion, deterministic ties, source-prefix filtering, and cited hits | COMPLETE (subset) | Reranking and arbitrary metadata filters | P2 | Extend |
+| AI-017 | Hybrid search / BM25 | BM25 with Unicode tokenization, cosine semantic search, hybrid reciprocal-rank fusion, deterministic ties, source-prefix filtering, cited hits, and opt-in MMR diversity reranking | COMPLETE (subset) | Measured reranking quality and arbitrary metadata filters | P2 | Extend |
 | AI-018 | Retrieval evaluation harness | `vantyx ai eval` reports recall@k, precision@k, MRR, and per-query hits from a JSON fixture; offline integration test | COMPLETE (retrieval-only) | Grounding/hallucination/latency metrics; licensed multi-document corpus | P2 | Extend |
 | AI-019 | Tensor primitives | None | MISSING | Shape/dtype/strides/matmul or documented non-goal | P3 | Research |
 | AI-020 | Automatic differentiation | None | MISSING | Evaluate Burn instead of custom autodiff | P4 | Research |
@@ -332,6 +333,18 @@ one-changed-chunk update at 48.049 ms (599 reused, 1 embedded), versus a
 still scans and chunks the corpus, the gain is avoided embedding calls rather
 than wall time.
 
+Re-verification after T-057 on 2026-11-24: `cargo test` — 469 passed
+(304 library unit + 15 CLI unit + 32 AI integration + 44 end-to-end + 74 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched. Diversity tests cover trimmed-duplicate
+suppression, Jaccard bounds, MMR ordering versus relevance-only ordering,
+deterministic repeated runs, invalid-lambda rejection, `--diverse` parsing and
+mode rejection, and an offline CLI run with two identical and two distinct
+documents. The RAG plumbing benchmark recorded standard hybrid search at
+27.175 ms and MMR diverse search at 28.292 ms over 600 chunks, with 10 hits,
+0 duplicate texts, and the same top-1 citation. Reranking is a
+context-efficiency control; retrieval-quality improvement is not claimed.
+
 Re-verification after T-051 on 2026-11-24: `cargo test` — 437 passed
 (281 library unit + 12 CLI unit + 27 AI integration + 44 end-to-end + 73 native);
 `cargo clippy --all-targets -- -D warnings` clean; debug and release builds
@@ -413,9 +426,9 @@ The previous engineering directives are **not** complete. The core language
 reaches a verified v0.1 subset with file-based modules; the Vantyx rename is
 complete in code, documentation, GitHub, and clean-clone CI; and the offline AI
 host foundation now includes embeddings, local RAG retrieval, citations, and
-retrieval evaluation with tests, plus incremental vector reuse and deletion
-pruning; nested payload patterns and top-level
-or-patterns are implemented in the interpreter and native backend. The
+retrieval evaluation with tests, plus incremental vector reuse, deletion
+pruning, and deterministic MMR diversity reranking; nested payload patterns and
+top-level or-patterns are implemented in the interpreter and native backend. The
 following previously requested items remain open: generics, traits, closures, iterators, `Result`/`?`, async, concurrency,
 FFI, formatter, linter, package manager, standard library, native reclamation,
 cycle handling, structural-key map hashing, REPL multi-line history, REPL field

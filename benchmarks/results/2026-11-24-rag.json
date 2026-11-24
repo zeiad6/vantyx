@@ -1,7 +1,7 @@
 {
-  "generated": "2026-11-24T10:24:14+00:00",
+  "generated": "2026-11-24T11:28:59+00:00",
   "kind": "local-rag-flat-index",
-  "caveat": "Offline hash embeddings and flat linear search. This measures plumbing, not semantic quality, model latency, or vector-database performance. Incremental updates still scan and chunk the corpus; they only avoid re-embedding unchanged chunks.",
+  "caveat": "Offline hash embeddings and flat linear search. This measures plumbing, not semantic quality, model latency, or vector-database performance. MMR diversity reranking is deterministic but is not evidence that retrieval quality improved. Incremental updates still scan and chunk the corpus; they only avoid re-embedding unchanged chunks.",
   "environment": {
     "platform": "Linux-7.2.15+kali-amd64-x86_64-with-glibc2.43",
     "machine": "x86_64",
@@ -20,27 +20,34 @@
     "index_bytes": 1247300
   },
   "index": {
-    "median_ms": 42.746,
-    "min_ms": 41.815,
-    "max_ms": 45.176
+    "median_ms": 43.482,
+    "min_ms": 42.662,
+    "max_ms": 45.614
   },
   "search": {
-    "median_ms": 27.659,
-    "min_ms": 26.466,
-    "max_ms": 28.333
+    "median_ms": 27.175,
+    "min_ms": 26.505,
+    "max_ms": 29.117
+  },
+  "search_diverse": {
+    "median_ms": 28.292,
+    "min_ms": 27.354,
+    "max_ms": 30.767,
+    "hit_count": 10,
+    "duplicate_texts": 0
   },
   "incremental": {
     "noop": {
-      "median_ms": 47.377,
-      "min_ms": 47.084,
-      "max_ms": 49.341,
+      "median_ms": 48.003,
+      "min_ms": 46.953,
+      "max_ms": 49.873,
       "reused_chunks": 600,
       "embedded_chunks": 0
     },
     "one_chunk": {
-      "median_ms": 48.049,
-      "min_ms": 47.221,
-      "max_ms": 51.943,
+      "median_ms": 48.184,
+      "min_ms": 44.618,
+      "max_ms": 48.495,
       "reused_chunks": 599,
       "embedded_chunks": 1
     }

@@ -3,7 +3,7 @@
 Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented but live verification blocked; AI-3 structured output and streamed text chat complete (streaming tool calls and live evidence pending); AI-4 host-side embeddings and retrieval complete (live embedding models pending)
 Date: 2026-11-24
 Related: `AI_RESEARCH.md`, `AI_SECURITY.md`, `AI_ROADMAP.md`, ADR-0007,
-ADR-0014, ADR-0015, ADR-0017, ADR-0018
+ADR-0014, ADR-0015, ADR-0017, ADR-0018, ADR-0024, ADR-0025
 
 ## Position
 
@@ -24,7 +24,7 @@ This avoids two failure modes:
 | Track | Scope | Current state |
 | --- | --- | --- |
 | A — Core Vantyx | Lexer, parser, checker, interpreter, native backend, memory, modules, tooling | v0.1 subset verified; modules implemented; async/generics missing |
-| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, streamed text chat, embedding providers/cache, local retrieval/evaluation, and incremental vector reuse implemented; live providers, streaming tool calls, and grounded generation pending |
+| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, streamed text chat, embedding providers/cache, local retrieval/evaluation, incremental vector reuse, and MMR diversity reranking implemented; live providers, streaming tool calls, and grounded generation pending |
 
 Track B must not wait for the entire Track A roadmap. It may use the host CLI and
 Rust API while language-level integration remains blocked.
@@ -231,6 +231,8 @@ validated ChatRequest
 documents → bounded ingest → chunk → embed → persisted index
 query     → embed → cosine + BM25 → reciprocal-rank fusion → cited top-k
                                                     ↓
+                                      optional MMR diversity reranking
+                                                    ↓
                                       retrieval evaluation (recall/precision/MRR)
 ```
 
@@ -269,6 +271,12 @@ query     → embed → cosine + BM25 → reciprocal-rank fusion → cited top-k
   label both scores and both ranks.
 - Search scans vectors linearly. This is honest for local corpora and is not a
   production vector database.
+- `--diverse` (ADR-0025) applies deterministic MMR reranking over a bounded
+  wider candidate pool, suppresses identical trimmed chunk text, uses cosine
+  similarity when every candidate has a vector and BM25-token Jaccard
+  otherwise, and normalizes relevance by the best candidate score. It is a
+  context-efficiency control; measured retrieval-quality improvement is not
+  claimed.
 - Evaluation reports recall@k, precision@k, MRR, and per-query retrievals over
   exact chunk-id or source-path labels. It does not measure answer accuracy,
   hallucination rate, or grounding.

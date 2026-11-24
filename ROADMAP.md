@@ -82,6 +82,9 @@ Research evidence: [`docs/ai/AI_RESEARCH.md`](docs/ai/AI_RESEARCH.md).
   reciprocal-rank search, and recall/precision/MRR evaluation (ADR-0018).
 - Incremental RAG updates: stable-chunk vector reuse, deletion pruning, no-op
   provider bypass, and empty semantic indexes (ADR-0024).
+- Deterministic MMR diversity reranking: opt-in `--diverse`, exact-duplicate
+  suppression, cosine/Jaccard similarity, and bounded reranking cost
+  (ADR-0025).
 - Typed tools with deny-by-default capabilities, bounded agents with
   cancellation, redacted metrics, and SSE parsing.
 - `vantyx ai providers`, `doctor`, `models`, `chat`, `extract`, `embed`,
@@ -95,9 +98,10 @@ Research evidence: [`docs/ai/AI_RESEARCH.md`](docs/ai/AI_RESEARCH.md).
 2. **Streaming follow-ups:** streaming tool calls and interactive cancellation
    on top of the verified text-delta path.
 3. **Retrieval quality:** arbitrary metadata filters (source-prefix filtering
-   ships), cross-source deduplication, reranking, a licensed multi-document
-   corpus, and latency/memory measurements. Incremental re-indexing and
-   deletion pruning now ship (ADR-0024).
+   ships), cross-source deduplication, measured reranking quality (MMR
+   diversity reranking now ships), a licensed multi-document corpus, and
+   latency/memory measurements. Incremental re-indexing and deletion pruning
+   also ship (ADR-0024).
 4. **Grounded generation:** only after retrieval evaluation; cite retrieved
    chunks and explicitly mark ungrounded answers. Do not claim grounding yet.
 5. **Model manager:** `info`/`pull`/`remove` with checksums, size, license,

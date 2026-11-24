@@ -36,3 +36,10 @@ See `TASKS.md` for full acceptance criteria and evidence.
 - T-029–T-033 — REPL upgrade, native enums, bracketed-match diagnostic, scalar
   literal patterns, and match guards (2026-11-24).
 - T-035 — Public repository, CI, and v0.1.0 pre-release (2026-11-24).
+- T-057 — Deterministic MMR diversity reranking for local RAG search
+  (2026-11-24; 469-test gate; `--diverse`, duplicate suppression,
+  cosine/Jaccard similarity; ADR-0025; RAG diverse search 28.292 ms vs
+  27.175 ms standard over 600 chunks).
+- T-056 — Native enum construction and match benchmark (2026-11-24; 464-test
+  gate; `enum_ops` native 3.646 ms vs C 3.766 ms and Rust 4.529 ms; CI run
+  45380623770).
