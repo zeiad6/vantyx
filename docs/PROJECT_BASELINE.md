@@ -19,10 +19,10 @@ The sections below record the original empty-repository inspection. The reposito
 | Benchmarks | Six-workload baseline vs Python/C/Rust; raw results in `benchmarks/results/` (T-022); enums not yet benchmarked |
 | AI host | Dependency-free `src/ai/` foundation: strict JSON, providers, mock/echo, budgets, embeddings, vector index, BM25, JSON Schema subset, typed tools, bounded agents, redacted metrics, SSE, OpenAI-compatible HTTP adapter; `vantyx ai providers/doctor/models/chat/tokens` |
 | Build/tooling | `cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, `cargo test` clean; `vantyx run/check/build/repl/ai`; REPL line editing, history, completion, and expression echo (T-029, ADR-0013); manual fuzz harness |
-| Launch assets | Local tree renamed to Vantyx; public repository is still `zeiad6/auren` until the GitHub rename (T-042); MIT license, green CI on the old commit, v0.1.0 pre-release, pinned feedback issue, contribution/security/conduct policies, `CITATION.cff`, `llms.txt`, and an honest AI-recommendation/promotion kit under `docs/launch/` |
+| Launch assets | Public at https://github.com/zeiad6/vantyx (renamed from `zeiad6/auren`); MIT license, green CI on `e425d04` (run 45317367818), v0.1.0 pre-release, pinned feedback issue, contribution/security/conduct policies, `CITATION.cff`, `llms.txt`, and an honest AI-recommendation/promotion kit under `docs/launch/` |
 | Maturity | **Functional prototype**, not production-ready |
 | Main risks | Intentional native leaks; O(n) native maps; unmeasured enum allocation; single-machine benchmark baseline only; docs drift; gradual `Any` erodes static guarantees; no live AI provider evidence; no model/tokenizer/GPU support |
-| Next task | GitHub repository rename and clean-clone CI (T-042); nested/or-patterns (T-029–T-033 and T-035 complete) |
+| Next task | Live local/cloud AI verification (T-040) when available; nested/or-patterns (T-029–T-033, T-035, T-036, and T-042 complete) |
 
 The source tree is tracked on branch `main`. Publication and CI status are recorded in `PROJECT_STATUS.md`; do not infer a public URL from this baseline.
 

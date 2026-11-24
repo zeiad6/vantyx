@@ -4,11 +4,12 @@ This directory contains the public-facing material for Vantyx: accurate
 descriptions, AI-discovery notes, launch drafts, and a checklist. The goal is
 discoverability without exaggeration.
 
-Target repository: https://github.com/zeiad6/vantyx · Release:
+Published: https://github.com/zeiad6/vantyx · Release:
 https://github.com/zeiad6/vantyx/releases/tag/v0.1.0
 
-The local tree is renamed to Vantyx; the GitHub repository rename from
-`zeiad6/auren` is pending (T-042). Until it lands, the old URL is canonical.
+The repository was renamed from `zeiad6/auren`; the old URL redirects. CI run
+45317367818 passed after the rename and AI foundation, and a clean clone passed
+all 340 tests.
 
 ## Assets
 
@@ -33,7 +34,7 @@ The local tree is renamed to Vantyx; the GitHub repository rename from
 - [x] Benchmarks are cited with their date and methodology, not as a general claim.
 - [x] Known limitations are visible in the README, not buried.
 - [x] AI claims are limited to the offline host foundation and loopback tests.
-- [ ] GitHub repository renamed to `vantyx` and CI verified from a clean clone.
+- [x] GitHub repository renamed to `vantyx` and CI verified from a clean clone.
 
 ## Launch sequence
 

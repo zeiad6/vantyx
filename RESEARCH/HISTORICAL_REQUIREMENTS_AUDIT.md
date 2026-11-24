@@ -1,7 +1,7 @@
 # Historical Requirements Audit
 
 Date: 2026-11-23
-Repository: RustZ (public name currently `auren`; proposed rename `vantyx`)
+Repository: RustZ (public name `vantyx`; renamed from `auren`)
 Auditor: autonomous engineering session
 Scope: every requirement recoverable from `TASKS.md`, `PROJECT_STATUS.md`,
 `docs/roadmap.md`, `AGENTS.md`, the ADR set, the public launch material, Git
@@ -29,7 +29,7 @@ because a document says so; the table cites code or an observed command.
 | `cargo test` | 241 passed: 126 library unit, 7 CLI unit, 41 e2e, 67 native |
 | `cargo build` / `--release` | succeeded earlier in the session; re-checked before release claims |
 | `cargo clippy --all-targets -- -D warnings` | clean at the last recorded gate |
-| Public CI | runs 45308499010, 45308796021, 45309035756 passed |
+| Public CI | runs 45308499010, 45308796021, 45309035756 passed (pre-rename); run 45317367818 passed after rename and AI foundation |
 | Source AI references | none (`grep` over `src/`, `tests/`, `Cargo.toml`) |
 | Modules / imports | no AST or parser support |
 | Async / await | no language support; only a host thread for the interpreter stack |
@@ -39,11 +39,11 @@ because a document says so; the table cites code or an observed command.
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | **340 passed**: 208 library unit, 10 CLI unit, 14 AI integration, 41 e2e, 67 native |
+| `cargo test` | **340 passed**: 208 library unit, 10 CLI unit, 14 AI integration, 41 e2e, 67 native; clean clone and CI run 45317367818 also passed |
 | `cargo build` / `--release` | both succeeded after the AI foundation and rename |
 | `cargo clippy --all-targets -- -D warnings` | clean, zero warnings |
 | Examples | all five interpreter/native outputs identical |
-| Rename | code, CLI, extension, env vars, tests, docs, CI renamed locally; GitHub repo rename pending |
+| Rename | code, CLI, extension, env vars, tests, docs, CI, GitHub repository, and clean-clone CI complete |
 | AI host | `src/ai/` foundation and `vantyx ai` CLI implemented; offline and loopback tests pass |
 | AI live evidence | none; no local server or cloud credentials available |
 | Language-level AI | still blocked on modules (T-013) and async (T-017) |
@@ -161,7 +161,7 @@ not exist yet.
 | ID | Requirement | Current state | Status | Missing work | Priority | Action |
 | --- | --- | --- | --- | --- | --- | --- |
 | AI-001 | Historical requirement recovery | This document | COMPLETE | Keep synchronized | P0 | Maintain |
-| AI-002 | Rename audit and execution | `RESEARCH/NAMING_AUDIT.md`; code, CLI, extension, docs, tests, and CI renamed to Vantyx | PARTIAL | Rename the GitHub repository and verify CI from a clean clone | P0 | Execute |
+| AI-002 | Rename audit and execution | `RESEARCH/NAMING_AUDIT.md`; code, CLI, extension, docs, tests, CI, GitHub repository, and clean-clone CI verified | COMPLETE | Keep old-name redirects documented | P0 | Maintain |
 | AI-003 | AI architecture document | `docs/ai/AI_ARCHITECTURE.md` | COMPLETE | Keep synchronized | P0 | Maintain |
 | AI-004 | Current AI ecosystem research | `docs/ai/AI_RESEARCH.md` with verified repository metadata | COMPLETE | Refresh before dependency decisions | P0 | Maintain |
 | AI-005 | AI security threat model | `docs/ai/AI_SECURITY.md` | COMPLETE | Revisit when tools gain write/network capability | P0 | Maintain |

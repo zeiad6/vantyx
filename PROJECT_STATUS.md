@@ -1,13 +1,13 @@
 # Project Status
 
-Updated: 2026-11-23 (Vantyx rename applied locally; dependency-free AI host foundation and `vantyx ai` CLI verified offline; T-035 public repository, CI, and v0.1.0 pre-release; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums; T-031 bracketed-match diagnostic; T-028 sustainability addendum; documentation reconciled)
+Updated: 2026-11-23/24 (Vantyx rename applied and published at https://github.com/zeiad6/vantyx with clean-clone CI; dependency-free AI host foundation and `vantyx ai` CLI verified offline; T-035 public repository, CI, and v0.1.0 pre-release; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums; T-031 bracketed-match diagnostic; T-028 sustainability addendum; documentation reconciled)
 
 ## Project overview
 
 **Vantyx** is a gradual-typing programming language implemented in Rust. It targets Python-like ergonomics with Rust-like safety and a real native compilation path. Repository codename: RustZ.
 
 - Language: Vantyx
-- Repository: https://github.com/zeiad6/vantyx (public, MIT)
+- Repository: https://github.com/zeiad6/vantyx (public, MIT; renamed from `zeiad6/auren`)
 - File extension: `.vtx`
 - CLI: `vantyx`
 - Implementation: Rust 1.100.0, 2024 edition, zero third-party dependencies
@@ -160,7 +160,9 @@ Verified on 2026-11-23:
 | `python3 tools/fuzz_smoke.py --binary target/debug/vantyx` | 9 depth/limit cases + 400 random/mutated inputs, all controlled diagnostics |
 | Launch-material link check | 8 files checked; all relative links resolve |
 | Native `Any` rejection demo | `vantyx run` prints the value; `vantyx build` exits 1 with `E0401` and help |
-| GitHub Actions CI (public, run 45308796021) | passed build, 241 tests, clippy, release build, and differential examples on commit `86bfcb7` |
+| GitHub Actions CI (run 45317367818) | passed build, 340 tests, clippy, release build, and differential examples on commit `e425d04` |
+| Clean clone of `zeiad6/vantyx` | 340 tests passed; all five examples matched interpreter/native output |
+| `gh repo view zeiad6/vantyx` | public repository on `main`; description and AI topics set |
 
 Not re-run for this verification: `python3 benchmarks/run.py`. Its last recorded results remain in `benchmarks/results/`.
 
@@ -176,22 +178,21 @@ See `docs/PROJECT_BASELINE.md` and `docs/security-audit-2026-11-22.md`. The larg
 
 ## Public launch
 
-The public repository is currently still **https://github.com/zeiad6/auren**; the local tree has been renamed to Vantyx, and the GitHub repository rename plus clean-clone CI verification are the remaining P0 steps (T-042). The rename target is **https://github.com/zeiad6/vantyx**. The public repository includes `.gitignore`, a GitHub Actions CI workflow, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`, `llms.txt`, and `docs/launch/` with canonical descriptions, recommendation boundaries, launch drafts, and a demo script. The material states the pre-1.0 status, native subset, intentional leaks, O(n) maps, and missing tooling. GitHub Actions CI run 45308499010 passed on launch commit `ea4f2ec`, and run 45308796021 passed after the checkout-action update on commit `86bfcb7`; both covered build, 241 tests, clippy, release build, and differential examples. The repository description and ten discovery topics are set. The [v0.1.0 pre-release](https://github.com/zeiad6/vantyx/releases/tag/v0.1.0) is published, and [issue #1](https://github.com/zeiad6/vantyx/issues/1) is pinned for questions and corrections. T-035 is VERIFIED.
+Vantyx is published at **https://github.com/zeiad6/vantyx** (renamed from `zeiad6/auren`; the old URL redirects). The rename commit `e425d04` is on `main`, GitHub Actions CI run 45317367818 passed, and a fresh clone passed all 340 tests and all five interpreter/native comparisons. The public repository includes `.gitignore`, a GitHub Actions CI workflow, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`, `llms.txt`, and `docs/launch/` with canonical descriptions, recommendation boundaries, launch drafts, and a demo script. The material states the pre-1.0 status, native subset, intentional leaks, O(n) maps, and missing tooling. GitHub Actions CI run 45308499010 passed on launch commit `ea4f2ec`, run 45308796021 passed after the checkout-action update on commit `86bfcb7` (both 241 tests), and run 45317367818 passed after the rename and AI foundation on commit `e425d04` (340 tests). The repository description and ten discovery topics are set. The [v0.1.0 pre-release](https://github.com/zeiad6/vantyx/releases/tag/v0.1.0) is published, and [issue #1](https://github.com/zeiad6/vantyx/issues/1) is pinned for questions and corrections. T-035 is VERIFIED.
 
 ## Current task
 
-T-036 Vantyx rename — IN_PROGRESS (local code and docs renamed; GitHub repository rename pending). T-037 AI host foundation — VERIFIED. T-038 `vantyx ai` CLI — VERIFIED. T-039 OpenAI-compatible adapter — VERIFIED offline. T-040 live local/cloud verification — BLOCKED (no server or credentials). T-041 AI discovery and status synchronization — VERIFIED. T-042 GitHub repository rename and clean-clone CI — READY. T-035 public repository and launch kit — VERIFIED on the old repository name. T-029, T-030, T-031, T-032, and T-033 — VERIFIED.
+T-036 Vantyx rename — VERIFIED (code, docs, GitHub repository, and clean-clone CI). T-037 AI host foundation — VERIFIED. T-038 `vantyx ai` CLI — VERIFIED. T-039 OpenAI-compatible adapter — VERIFIED offline. T-040 live local/cloud verification — BLOCKED (no server or credentials). T-041 AI discovery and status synchronization — VERIFIED. T-042 GitHub repository rename and clean-clone CI — VERIFIED (https://github.com/zeiad6/vantyx; CI run 45317367818; clean clone passed 340 tests). T-035 public repository and launch kit — VERIFIED on the old repository name. T-029, T-030, T-031, T-032, and T-033 — VERIFIED.
 
 ## Next tasks
 
-1. T-042 rename the GitHub repository, push, and verify CI from a clean clone
-2. T-040 live local/cloud AI verification when a server and credentials are available
-3. Nested/or-patterns (follow-up to T-014/T-030/T-032/T-033)
-4. Native map hash index if benchmarks justify it
-5. T-011 bytecode VM feasibility study
-6. Enum allocation benchmark before optimizing the native representation
-7. T-034 REPL multi-line history and field completion (P4, BACKLOG)
+1. T-040 live local/cloud AI verification when a server and credentials are available
+2. Nested/or-patterns (follow-up to T-014/T-030/T-032/T-033)
+3. Native map hash index if benchmarks justify it
+4. T-011 bytecode VM feasibility study
+5. Enum allocation benchmark before optimizing the native representation
+6. T-034 REPL multi-line history and field completion (P4, BACKLOG)
 
 ## Last verification
 
-`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-23: 208 library unit + 10 CLI unit + 14 AI integration + 41 end-to-end + 67 native = 340 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. Manual AI CLI smokes verified providers, mock/echo chat, JSON output, token estimates, doctor, and network denial; loopback OpenAI-compatible chat is covered by integration tests. Live local/cloud AI, the REPL pty smoke, fuzz smoke, and benchmarks were not re-run for this verification; their earlier recorded results remain valid for the unchanged subsystems.
+`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-23: 208 library unit + 10 CLI unit + 14 AI integration + 41 end-to-end + 67 native = 340 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. Manual AI CLI smokes verified providers, mock/echo chat, JSON output, token estimates, doctor, and network denial; loopback OpenAI-compatible chat is covered by integration tests. GitHub Actions run 45317367818 passed on commit `e425d04`, and a fresh clone of https://github.com/zeiad6/vantyx passed all 340 tests and all five example comparisons. Live local/cloud AI, the REPL pty smoke, fuzz smoke, and benchmarks were not re-run for this verification; their earlier recorded results remain valid for the unchanged subsystems.

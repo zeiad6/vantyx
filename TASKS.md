@@ -269,13 +269,12 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-036 — Rename the project to Vantyx
 - Priority: P0
-- Status: IN_PROGRESS
+- Status: VERIFIED
 - Description: Rename the language, CLI, file extension, crate, environment variables, repository references, tests, examples, benchmarks, and documentation from Auren to Vantyx, preserving history and recording the naming tradeoffs.
 - Acceptance: `cargo build` and the full test suite pass under the new names; the extension is `.vtx`; the CLI and crate are `vantyx`; environment variables use `VANTYX_`; no stale `auren`/`AUREN_` references remain outside historical records; the public GitHub repository is renamed and CI passes from a clean clone.
 - Dependencies: T-035.
 - Implementation: `Cargo.toml` package/lib/bin; `src/` imports; `tests/`; `examples/*.vtx`; `benchmarks/*.vtx`; `.github/workflows/ci.yml`; `AGENTS.md`, `README.md`, `PROJECT_STATUS.md`, `TASKS.md`, `llms.txt`, launch material, and ADR-0014. Historical references remain in ADR-0006, `RESEARCH/NAMING_AUDIT.md`, and this audit.
-- Verification: 2026-11-23 — `cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` passed with 340 tests (208 library unit + 10 CLI unit + 14 AI integration + 41 e2e + 67 native); all five examples ran under the interpreter and as native binaries with identical output.
-- Remaining: rename the GitHub repository from `zeiad6/auren` to `zeiad6/vantyx`, push the rename commit, and verify CI from a clean clone.
+- Verification: 2026-11-23/24 — `cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` passed with 340 tests (208 library unit + 10 CLI unit + 14 AI integration + 41 e2e + 67 native); all five examples ran under the interpreter and as native binaries with identical output. The GitHub repository was renamed to https://github.com/zeiad6/vantyx; CI run 45317367818 passed on commit `e425d04`; a fresh `git clone` of the public repository passed all 340 tests and all five example comparisons. No stale `auren` references remain outside historical ADR/audit records.
 
 ### T-037 — Dependency-free AI host foundation
 - Priority: P0
@@ -329,8 +328,8 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-042 — GitHub repository rename and clean-clone CI
 - Priority: P0
-- Status: READY
+- Status: VERIFIED
 - Description: Rename `zeiad6/auren` to `zeiad6/vantyx`, push the rename and AI foundation, update the remote, and verify CI from a clean clone.
 - Acceptance: the old URL redirects; the new URL serves the repository; CI passes build, 340 tests, clippy, release build, and differential examples; the v0.1.0 release and pinned issue remain reachable; no credentials are committed.
 - Dependencies: T-036, T-041.
-- Verification: Pending.
+- Verification: 2026-11-23/24 — `gh repo view zeiad6/vantyx` reports the public repository at https://github.com/zeiad6/vantyx on `main`; `git push origin main` advanced `e4361b5..e425d04`; GitHub Actions run 45317367818 passed build, all 340 tests, clippy, release build, and differential examples; a clean `git clone` passed all 340 tests and all five interpreter/native comparisons. The old `auren` URL redirects to the new repository.
