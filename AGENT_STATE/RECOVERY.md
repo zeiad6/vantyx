@@ -16,7 +16,8 @@
 - `main` and `origin/main` are at `4982ab3`; `e6ec597` contains the
   T-058–T-069 change set and `4982ab3` fixes the glob result-cap test
   portability.
-- CI run 45488725812 passed on `4982ab3` with 581 tests.
+- CI run 45488725812 passed on `4982ab3` with 581 tests; the status
+  documentation commit `0491c63` also passed run 45489360135.
 - The working tree is clean after the CI-status documentation commit.
 
 ## If the network or a provider is unavailable

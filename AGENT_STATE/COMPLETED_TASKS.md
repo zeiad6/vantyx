@@ -5,7 +5,8 @@ See `TASKS.md` for full acceptance criteria and evidence.
 
 CI run 45488725812 passed on `4982ab3` with 581 tests. The preceding run
 45488152955 failed only the glob result-cap test because ext4 caps hard links
-per inode; `4982ab3` spreads the links across four anchors.
+per inode; `4982ab3` spreads the links across four anchors. The status
+documentation commit `0491c63` also passed run 45489360135.
 
 - T-069 — Destructive recursive-removal roots refused (2026-11-24; 581-test
   gate; CI run 45488725812; `remove_dir_all` refuses `.`, `./`, `..`, `../`,

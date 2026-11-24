@@ -6,7 +6,7 @@ files. Only one subagent runs at a time until it finishes.
 
 | Role | Agent | Current assignment | Status |
 | --- | --- | --- | --- |
-| Orchestrator / chief engineer | primary session | T-058–T-069 committed in `e6ec597`; CI run 45488725812 green on `4982ab3` | Complete |
+| Orchestrator / chief engineer | primary session | T-058–T-069 committed in `e6ec597`; CI runs 45488725812 and 45489360135 green | Complete |
 | Compiler architecture review | `compiler-architect` | Native memory reclamation design (read-only) | Blocked on subagent capacity |
 | Backend implementation | `backend-engineer` | No active assignment | Idle |
 | Language implementation | `language-implementer` | No active assignment | Idle |

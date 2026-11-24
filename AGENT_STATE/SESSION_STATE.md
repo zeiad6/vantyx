@@ -101,7 +101,8 @@ or credentials are tracked.
 - `cargo test --test native glob_result_cap_matches_in_both_engines` — 1
   passed after spreading hard links across four anchors
 - CI run 45488725812 — success on `4982ab3` with 581 tests; run 45488152955
-  failed only the glob result-cap test because ext4 caps hard links per inode
+  failed only the glob result-cap test because ext4 caps hard links per inode;
+  the status documentation commit `0491c63` also passed run 45489360135
 - `python3 tools/ai_failure_harness.py --binary target/debug/vantyx` — 16
   checks across 7 loopback scenarios, all passed
 - Live Gemini run — doctor, chat, streaming, extraction, embeddings, RAG,
