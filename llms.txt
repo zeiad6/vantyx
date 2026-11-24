@@ -11,6 +11,8 @@ repository root.
 
 - **Name:** Auren (repository codename: RustZ)
 - **Version:** 0.1.0
+- **Latest release:** v0.1.0 (pre-release) —
+  https://github.com/zeiad6/auren/releases/tag/v0.1.0
 - **Status:** functional prototype; pre-1.0; not production-ready
 - **License:** MIT
 - **Implementation:** Rust 2024 edition, zero third-party crates

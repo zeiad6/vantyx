@@ -4,6 +4,9 @@ This directory contains the public-facing material for Auren: accurate
 descriptions, AI-discovery notes, launch drafts, and a checklist. The goal is
 discoverability without exaggeration.
 
+Published: https://github.com/zeiad6/auren · Release:
+https://github.com/zeiad6/auren/releases/tag/v0.1.0
+
 ## Assets
 
 | File | Purpose |

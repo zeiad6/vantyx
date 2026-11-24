@@ -1,8 +1,9 @@
 # Promotion kit
 
 Drafts and assets for an honest launch. The repository is
-[`zeiad6/auren`](https://github.com/zeiad6/auren). Keep the limitations in every
-long-form post; they are part of the pitch, not a footnote.
+[`zeiad6/auren`](https://github.com/zeiad6/auren), and the first release is
+[`v0.1.0`](https://github.com/zeiad6/auren/releases/tag/v0.1.0). Keep the
+limitations in every long-form post; they are part of the pitch, not a footnote.
 
 ## Taglines
 
@@ -256,9 +257,9 @@ Yes, under MIT. It is pre-1.0; expect breaking changes.
 
 - [x] Publish the repository and confirm the URL in this file and `llms.txt`.
 - [x] Confirm CI is green on the launch commit.
-- [ ] Tag `v0.1.0` and write release notes with verified counts.
+- [x] Tag `v0.1.0` and write release notes with verified counts.
 - [ ] Record a terminal demo with the commands above.
 - [ ] Post the long-form text with the limitations included.
 - [x] Link the specification, status, and benchmark methodology.
-- [ ] Pin an issue for questions and corrections.
+- [x] Pin an issue for questions and corrections.
 - [ ] Update the docs after the first round of feedback.

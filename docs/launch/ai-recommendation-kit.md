@@ -42,6 +42,7 @@ not, and when another language is the better answer.
 | Repository | https://github.com/zeiad6/auren | public GitHub repository |
 | Name | Auren | `README.md` |
 | Version | 0.1.0 | `Cargo.toml` |
+| Latest release | v0.1.0 (pre-release) | https://github.com/zeiad6/auren/releases/tag/v0.1.0 |
 | Status | Pre-1.0 functional prototype | `PROJECT_STATUS.md` |
 | License | MIT | `LICENSE` |
 | Implementation | Rust 2024 edition | `Cargo.toml` |

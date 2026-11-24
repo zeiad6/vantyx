@@ -1,6 +1,6 @@
 # Project Status
 
-Updated: 2026-11-23 (T-035 public repository published and CI verified; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums verified; T-031 bracketed-match diagnostic; T-028 sustainability addendum; documentation reconciled)
+Updated: 2026-11-23 (T-035 public repository, CI, and v0.1.0 pre-release verified; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums verified; T-031 bracketed-match diagnostic; T-028 sustainability addendum; documentation reconciled)
 
 ## Project overview
 
@@ -128,7 +128,7 @@ Verified on 2026-11-23:
 | `python3 tools/fuzz_smoke.py --binary target/debug/auren` | 9 depth/limit cases + 400 random/mutated inputs, all controlled diagnostics |
 | Launch-material link check | 8 files checked; all relative links resolve |
 | Native `Any` rejection demo | `auren run` prints the value; `auren build` exits 1 with `E0401` and help |
-| GitHub Actions CI (public, run 45308499010) | passed build, 241 tests, clippy, release build, and differential examples |
+| GitHub Actions CI (public, run 45308796021) | passed build, 241 tests, clippy, release build, and differential examples on commit `86bfcb7` |
 
 Not re-run for this verification: `python3 benchmarks/run.py`. Its last recorded results remain in `benchmarks/results/`.
 
@@ -144,7 +144,7 @@ See `docs/PROJECT_BASELINE.md` and `docs/security-audit-2026-11-22.md`. The larg
 
 ## Public launch
 
-Auren is published at **https://github.com/zeiad6/auren** under the MIT license. The public repository includes `.gitignore`, a GitHub Actions CI workflow, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`, `llms.txt`, and `docs/launch/` with canonical descriptions, recommendation boundaries, launch drafts, and a demo script. The material states the pre-1.0 status, native subset, intentional leaks, O(n) maps, and missing tooling. GitHub Actions CI run 45308499010 passed build, 241 tests, clippy, release build, and differential examples on commit `ea4f2ec`; the repository description and ten discovery topics are set. T-035 is VERIFIED.
+Auren is published at **https://github.com/zeiad6/auren** under the MIT license. The public repository includes `.gitignore`, a GitHub Actions CI workflow, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`, `llms.txt`, and `docs/launch/` with canonical descriptions, recommendation boundaries, launch drafts, and a demo script. The material states the pre-1.0 status, native subset, intentional leaks, O(n) maps, and missing tooling. GitHub Actions CI run 45308499010 passed on launch commit `ea4f2ec`, and run 45308796021 passed after the checkout-action update on commit `86bfcb7`; both covered build, 241 tests, clippy, release build, and differential examples. The repository description and ten discovery topics are set. The [v0.1.0 pre-release](https://github.com/zeiad6/auren/releases/tag/v0.1.0) is published, and [issue #1](https://github.com/zeiad6/auren/issues/1) is pinned for questions and corrections. T-035 is VERIFIED.
 
 ## Current task
 

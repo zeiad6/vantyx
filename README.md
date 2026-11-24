@@ -9,6 +9,7 @@ the statically typed subset.
 ![status](https://img.shields.io/badge/status-pre--1.0-orange)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 [![CI](https://github.com/zeiad6/auren/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/zeiad6/auren/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/zeiad6/auren?include_prereleases&label=release)](https://github.com/zeiad6/auren/releases)
 
 ```auren
 fn main():
@@ -124,6 +125,7 @@ general performance claim.
 - [Roadmap](docs/roadmap.md)
 - [Tasks](TASKS.md)
 - [Project status](PROJECT_STATUS.md)
+- [Release v0.1.0](https://github.com/zeiad6/auren/releases/tag/v0.1.0)
 - [Launch and AI-discovery kit](docs/launch/)
 - [`llms.txt`](llms.txt) — compact facts for AI assistants
 - [Contributing](CONTRIBUTING.md)
