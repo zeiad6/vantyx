@@ -69,8 +69,9 @@ python3 benchmarks/run.py --reps 5
 
 - Public repository: https://github.com/zeiad6/vantyx (MIT; renamed from
   `zeiad6/auren`; CI run 45321718008 green on `main` with 358 tests; earlier
-  runs and a clean clone verified).
-- `cargo test`: 358 passed (218 library unit + 11 CLI unit + 20 AI integration +
+  runs and a clean clone verified; T-045 is verified locally with 383 tests and
+  its CI run is recorded after the push).
+- `cargo test`: 383 passed (237 library unit + 12 CLI unit + 25 AI integration +
   41 e2e + 68 native).
 - Clippy clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
@@ -81,15 +82,18 @@ python3 benchmarks/run.py --reps 5
   `match` on `Any`, unannotated value-returning functions.
 - AI host support: offline mock/echo chat, OpenAI-compatible non-streaming chat
   and model listing, strict JSON and JSON Schema subset, validated structured
-  extraction with bounded repair, token estimates, budgets, embeddings and
-  in-memory vector index, BM25, typed tools with capabilities, bounded agents,
-  redacted metrics, and `vantyx ai`.
+  extraction with bounded repair, token estimates, budgets, embedding provider
+  interface with batch limits, deterministic lexical hash embeddings and a
+  bounded FIFO cache, OpenAI-compatible `/v1/embeddings`, in-memory vector
+  index, BM25, typed tools with capabilities, bounded agents, redacted metrics,
+  and `vantyx ai`.
 - Known gaps: no reclamation, O(n) structural-key native maps and a fixed hash
   seed for scalar keys, no modules/generics/closures/async/FFI, block-shaped
   `match` cannot appear inside parentheses, REPL history recall is single-line
-  and completion is top-level-only, no live local/cloud AI evidence, no
-  streaming/constrained decoding/model manager/keyring, no language-level AI
-  syntax, no tensors or GPU support.
+  and completion is top-level-only, no live local/cloud AI or embedding-model
+  evidence, no streaming/constrained decoding/model manager/keyring, no vector
+  persistence/hybrid retrieval/RAG evaluation, no language-level AI syntax, no
+  tensors or GPU support.
 
 ## Definition of done
 

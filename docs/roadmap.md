@@ -89,13 +89,15 @@ Detailed plan and exit gates: `docs/ai/AI_ROADMAP.md`.
 - [x] AI-0 — historical audit, naming audit, ecosystem research, architecture,
       security model, and dependency decision.
 - [x] AI-1 — dependency-free offline foundation: JSON, providers, budgets,
-      embeddings, vector index, BM25, JSON Schema, tools, bounded agents,
-      metrics, SSE, and `vantyx ai` CLI.
+      embedding providers with a bounded cache, vector index, BM25, JSON Schema,
+      tools, bounded agents, metrics, SSE, and `vantyx ai` CLI.
 - [ ] AI-2 — live local/cloud providers, model manager, keyring (compatible
       endpoint path and `models`/`doctor` already work).
-- [ ] AI-3 — streaming output, typed extraction, constrained decoding.
-- [ ] AI-4 — embedding providers, persistence, hybrid retrieval, ingestion,
-      citations, and evaluation.
+- [ ] AI-3 — streaming output, typed extraction, constrained decoding
+      (validated extraction and bounded repair complete; streaming and
+      constrained decoding open).
+- [ ] AI-4 — embedding providers and batch cache complete; persistence, hybrid
+      retrieval, ingestion, citations, and evaluation remain open.
 - [ ] AI-5 — write/shell/network tools with approvals, persistent agents.
 - [ ] AI-6 — multimodal audio/video and size validation.
 - [ ] AI-7 — tensor and numerical foundations after an ADR.

@@ -6,15 +6,18 @@
 //! dropping them.
 
 use super::budget::Budget;
+use super::embedding::Vector;
 use super::http::{HttpResponse, Transport};
 use super::json::{self, Json};
 use super::provider::{
     AI_E_AUTH, AI_E_CONFIG, AI_E_JSON, AI_E_PROVIDER, AI_E_RATE_LIMIT, AiError, ChatRequest,
-    ChatResponse, ContentPart, FinishReason, Message, Provider, ProviderCapabilities,
-    ResponseFormat, Role, ToolCall, Usage,
+    ChatResponse, ContentPart, EmbeddingRequest, EmbeddingResponse, EmbeddingUsage, FinishReason,
+    Message, Provider, ProviderCapabilities, ResponseFormat, Role, ToolCall, Usage,
 };
 use super::redact;
-use super::tokens::{check_context_limit, estimate_request_tokens, estimate_tokens};
+use super::tokens::{
+    check_context_limit, estimate_embedding_tokens, estimate_request_tokens, estimate_tokens,
+};
 use std::time::Duration;
 
 pub struct OpenAiProvider {
@@ -286,6 +289,160 @@ impl Provider for OpenAiProvider {
             },
         })
     }
+
+    fn embed(
+        &self,
+        request: &EmbeddingRequest,
+        budget: &mut Budget,
+    ) -> Result<EmbeddingResponse, AiError> {
+        request.validate()?;
+        if !self.capabilities.embeddings {
+            return Err(AiError::unsupported("embeddings", &self.id));
+        }
+        let estimate = u64::try_from(estimate_embedding_tokens(request)).unwrap_or(u64::MAX);
+        budget.check_tokens(estimate)?;
+
+        let body = build_embedding_request_json(request).to_compact_string();
+        let timeout = request.timeout_ms.map(Duration::from_millis);
+        let response = self.transport.execute_with_timeout(
+            "POST",
+            &embeddings_url(&self.base_url),
+            &self.headers(),
+            Some(&body),
+            timeout,
+        )?;
+        if !(200..300).contains(&response.status) {
+            return Err(self.status_error(&response));
+        }
+        let value = json::parse(&response.body).map_err(|error| {
+            AiError::new(
+                AI_E_JSON,
+                format!("provider returned invalid JSON: {error}"),
+            )
+        })?;
+        if let Some(error) = value.get("error") {
+            let detail = redact::sanitize(
+                &provider_detail(&error.to_compact_string()),
+                &self.secrets(),
+                512,
+            );
+            return Err(AiError::new(
+                AI_E_PROVIDER,
+                format!("provider error: {detail}"),
+            ));
+        }
+        let data = value.get("data").and_then(Json::as_array).ok_or_else(|| {
+            AiError::new(
+                AI_E_PROVIDER,
+                "provider embedding response is missing the `data` array",
+            )
+        })?;
+
+        let mut indexed = Vec::with_capacity(data.len());
+        for (position, item) in data.iter().enumerate() {
+            let index = match item.get("index") {
+                Some(value) => value.as_u64().ok_or_else(|| {
+                    AiError::new(
+                        AI_E_PROVIDER,
+                        "provider embedding `index` must be a non-negative integer",
+                    )
+                })?,
+                None => position as u64,
+            };
+            let index = usize::try_from(index).map_err(|_| {
+                AiError::new(AI_E_PROVIDER, "provider embedding `index` is out of range")
+            })?;
+            indexed.push((index, item));
+        }
+        indexed.sort_by_key(|(index, _)| *index);
+        let mut seen = vec![false; request.input.len()];
+        for (index, _) in &indexed {
+            if *index >= seen.len() || seen[*index] {
+                return Err(AiError::new(
+                    AI_E_PROVIDER,
+                    "provider embedding indexes are duplicate or out of range",
+                ));
+            }
+            seen[*index] = true;
+        }
+        if indexed.len() != request.input.len() {
+            return Err(AiError::new(
+                AI_E_PROVIDER,
+                format!(
+                    "provider returned {} embeddings for {} inputs",
+                    indexed.len(),
+                    request.input.len()
+                ),
+            ));
+        }
+
+        let mut vectors = Vec::with_capacity(indexed.len());
+        for (_, item) in indexed {
+            let embedding = item
+                .get("embedding")
+                .and_then(Json::as_array)
+                .ok_or_else(|| {
+                    AiError::new(
+                        AI_E_PROVIDER,
+                        "provider embedding item is missing the `embedding` array",
+                    )
+                })?;
+            let mut values = Vec::with_capacity(embedding.len());
+            for value in embedding {
+                let number = value.as_f64().ok_or_else(|| {
+                    AiError::new(
+                        AI_E_PROVIDER,
+                        "provider embedding values must be finite numbers",
+                    )
+                })?;
+                values.push(number as f32);
+            }
+            vectors.push(Vector::new(values)?);
+        }
+        let dimensions = vectors.first().map_or(0, Vector::len);
+        if vectors.iter().any(|vector| vector.len() != dimensions) {
+            return Err(AiError::new(
+                AI_E_PROVIDER,
+                "provider returned embeddings with inconsistent dimensions",
+            ));
+        }
+        if let Some(expected) = request.dimensions
+            && dimensions != expected
+        {
+            return Err(AiError::new(
+                AI_E_PROVIDER,
+                format!(
+                    "provider returned {dimensions}-dimensional embeddings, but {expected} were requested"
+                ),
+            ));
+        }
+
+        let prompt_tokens = value
+            .get("usage")
+            .and_then(|usage| usage.get("prompt_tokens"))
+            .and_then(Json::as_u64)
+            .unwrap_or(estimate);
+        let total_tokens = value
+            .get("usage")
+            .and_then(|usage| usage.get("total_tokens"))
+            .and_then(Json::as_u64)
+            .unwrap_or(prompt_tokens);
+        let usage = EmbeddingUsage {
+            prompt_tokens,
+            total_tokens,
+        };
+        budget.record_tokens(usage.total_tokens)?;
+
+        Ok(EmbeddingResponse {
+            model: value
+                .get("model")
+                .and_then(Json::as_str)
+                .unwrap_or(&request.model)
+                .to_string(),
+            vectors,
+            usage,
+        })
+    }
 }
 
 fn chat_url(base_url: &str) -> String {
@@ -310,6 +467,39 @@ fn models_url(base_url: &str) -> String {
     } else {
         format!("{base}/v1/models")
     }
+}
+
+fn embeddings_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    if base.ends_with("/embeddings") {
+        base.to_string()
+    } else if base.ends_with("/chat/completions") {
+        format!("{}/embeddings", base.trim_end_matches("/chat/completions"))
+    } else if base.ends_with("/v1") {
+        format!("{base}/embeddings")
+    } else {
+        format!("{base}/v1/embeddings")
+    }
+}
+
+fn build_embedding_request_json(request: &EmbeddingRequest) -> Json {
+    let mut entries: Vec<(&str, Json)> = vec![
+        ("model", Json::from(request.model.clone())),
+        (
+            "input",
+            Json::Array(
+                request
+                    .input
+                    .iter()
+                    .map(|text| Json::from(text.clone()))
+                    .collect(),
+            ),
+        ),
+    ];
+    if let Some(dimensions) = request.dimensions {
+        entries.push(("dimensions", Json::from(dimensions as u64)));
+    }
+    Json::object(entries)
 }
 
 fn build_request_json(request: &ChatRequest) -> Json {
@@ -765,6 +955,111 @@ mod tests {
         assert_eq!(captured[0].1, "http://127.0.0.1:11434/v1/models");
     }
 
+    fn embedding_body() -> String {
+        r#"{"model":"embed-demo","data":[{"index":1,"embedding":[0.0,1.0]},{"index":0,"embedding":[1.0,0.0]}],"usage":{"prompt_tokens":4,"total_tokens":4}}"#.to_string()
+    }
+
+    #[test]
+    fn sends_and_parses_an_embedding_batch() {
+        let (provider, capture) = provider_with_capture(200, embedding_body());
+        let mut budget = Budget::default();
+        let mut request =
+            EmbeddingRequest::new("embed-demo", vec!["alpha".to_string(), "beta".to_string()]);
+        request.dimensions = Some(2);
+        request.timeout_ms = Some(900);
+        let response = provider.embed(&request, &mut budget).unwrap();
+        assert_eq!(response.model, "embed-demo");
+        assert_eq!(response.vectors[0].values(), &[1.0, 0.0]);
+        assert_eq!(response.vectors[1].values(), &[0.0, 1.0]);
+        assert_eq!(response.usage.prompt_tokens, 4);
+        assert_eq!(response.usage.total_tokens, 4);
+        assert_eq!(budget.used_tokens(), 4);
+
+        let captured = capture.borrow();
+        assert_eq!(captured[0].0, "POST");
+        assert_eq!(captured[0].1, "http://127.0.0.1:11434/v1/embeddings");
+        assert_eq!(captured[0].4, Some(Duration::from_millis(900)));
+        assert!(
+            captured[0]
+                .2
+                .iter()
+                .any(|(name, value)| { name == "Authorization" && value == "Bearer sk-secret" })
+        );
+        let body = json::parse(captured[0].3.as_deref().unwrap()).unwrap();
+        assert_eq!(body.get("model").unwrap().as_str(), Some("embed-demo"));
+        assert_eq!(body.get("dimensions").unwrap().as_u64(), Some(2));
+        let input = body.get("input").unwrap().as_array().unwrap();
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0].as_str(), Some("alpha"));
+    }
+
+    #[test]
+    fn rejects_embeddings_when_the_capability_is_disabled() {
+        let mut capabilities = ProviderCapabilities::openai_compatible();
+        capabilities.embeddings = false;
+        let provider = make_provider(200, embedding_body()).with_capabilities(capabilities);
+        let mut budget = Budget::default();
+        let request = EmbeddingRequest::single("embed-demo", "alpha");
+        let error = provider.embed(&request, &mut budget).unwrap_err();
+        assert_eq!(error.code, AI_E_UNSUPPORTED);
+    }
+
+    #[test]
+    fn rejects_malformed_embedding_responses() {
+        let duplicate =
+            r#"{"model":"m","data":[{"index":0,"embedding":[1.0]},{"index":0,"embedding":[2.0]}]}"#;
+        let provider = make_provider(200, duplicate.to_string());
+        let mut budget = Budget::default();
+        let request = EmbeddingRequest::new("m", vec!["a".into(), "b".into()]);
+        assert_eq!(
+            provider.embed(&request, &mut budget).unwrap_err().code,
+            AI_E_PROVIDER
+        );
+
+        let short = r#"{"model":"m","data":[{"index":0,"embedding":[1.0]}]}"#;
+        let provider = make_provider(200, short.to_string());
+        assert_eq!(
+            provider.embed(&request, &mut budget).unwrap_err().code,
+            AI_E_PROVIDER
+        );
+
+        let wrong_dimensions =
+            r#"{"model":"m","data":[{"index":0,"embedding":[1.0]},{"index":1,"embedding":[1.0]}]}"#;
+        let provider = make_provider(200, wrong_dimensions.to_string());
+        let mut sized = request.clone();
+        sized.dimensions = Some(2);
+        assert_eq!(
+            provider.embed(&sized, &mut budget).unwrap_err().code,
+            AI_E_PROVIDER
+        );
+    }
+
+    #[test]
+    fn maps_embedding_http_errors_without_leaking_the_key() {
+        let provider = make_provider(
+            401,
+            r#"{"error":{"message":"bad key sk-secret"}}"#.to_string(),
+        );
+        let mut budget = Budget::default();
+        let request = EmbeddingRequest::single("m", "alpha");
+        let error = provider.embed(&request, &mut budget).unwrap_err();
+        assert_eq!(error.code, AI_E_AUTH);
+        assert!(!error.message.contains("sk-secret"));
+        assert!(error.message.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn embedding_budget_is_checked_before_transport() {
+        let (provider, capture) = provider_with_capture(200, embedding_body());
+        let mut budget = Budget::default().with_tokens(1);
+        let request = EmbeddingRequest::single("m", "a long embedding input");
+        assert_eq!(
+            provider.embed(&request, &mut budget).unwrap_err().code,
+            AI_E_BUDGET
+        );
+        assert!(capture.borrow().is_empty());
+    }
+
     #[test]
     fn joins_endpoint_variants() {
         assert_eq!(
@@ -778,6 +1073,14 @@ mod tests {
         assert_eq!(
             models_url("http://localhost:1234/v1/chat/completions"),
             "http://localhost:1234/v1/models"
+        );
+        assert_eq!(
+            embeddings_url("http://localhost:1234/v1"),
+            "http://localhost:1234/v1/embeddings"
+        );
+        assert_eq!(
+            embeddings_url("http://localhost:1234/v1/chat/completions"),
+            "http://localhost:1234/v1/embeddings"
         );
     }
 }

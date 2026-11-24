@@ -17,7 +17,7 @@ repository root.
 - **License:** MIT
 - **Implementation:** Rust 2024 edition, zero third-party crates
 - **AI surface:** `vantyx ai` host CLI (providers, doctor, models, chat, extract,
-  tokens); offline by default, OpenAI-compatible HTTP, no bundled model
+  embed, tokens); offline by default, OpenAI-compatible HTTP, no bundled model
 - **Semantic oracle:** the tree-walking interpreter
 - **Native backend:** emits GNU C11, invokes the system C compiler (`clang` by
   default, override with `VANTYX_CC`), and links only libc/libm
@@ -46,12 +46,14 @@ repository root.
   constructs are rejected with `E0401`, never silently miscompiled.
 - Dependency-free AI host foundation: strict JSON, JSON Schema subset, provider
   abstraction, mock/echo providers, validated structured extraction with
-  bounded repair, token estimates, budgets, embeddings, in-memory vector index,
-  BM25, typed tools with capabilities, bounded agents, redacted metrics, SSE
-  parser, and an OpenAI-compatible non-streaming adapter.
-- `vantyx ai providers`, `doctor`, `models`, `chat`, `extract`, and `tokens`;
-  loopback HTTP by default, remote HTTPS only with `--allow-network`, API keys
-  only from an environment variable.
+  bounded repair, token estimates, budgets, embedding provider interface with
+  batch limits, deterministic lexical hash embeddings and a bounded FIFO cache,
+  OpenAI-compatible `/v1/embeddings`, in-memory vector index, BM25, typed tools
+  with capabilities, bounded agents, redacted metrics, SSE parser, and an
+  OpenAI-compatible non-streaming adapter.
+- `vantyx ai providers`, `doctor`, `models`, `chat`, `extract`, `embed`, and
+  `tokens`; loopback HTTP by default, remote HTTPS only with `--allow-network`,
+  API keys only from an environment variable.
 
 ## What is not implemented
 
@@ -72,8 +74,9 @@ repository root.
   `match` on `Any` (rejected with `E0401`)
 - Language-level AI syntax (`from ai import Client`, `await`)
 - Streaming chat output, server-side constrained decoding, model
-  download/removal, keyring storage, persistent agent state, embedding
-  providers, hybrid retrieval, or retrieval evaluation
+  download/removal, keyring storage, persistent agent state, live embedding-model
+  verification, vector index persistence, hybrid retrieval, or retrieval
+  evaluation
 - Tensors, autodiff, SIMD, GPU, MCP, ONNX/GGUF embedding, or multi-agent
   orchestration
 - Live local-model or cloud-provider verification (the adapter is tested only
@@ -93,6 +96,8 @@ cargo build
 ./target/debug/vantyx ai extract --provider mock --model demo \
   --schema examples/ai/person.schema.json \
   --response '{"name":"Ada","role":"engineer"}' "Extract the person"
+./target/debug/vantyx ai embed --provider hash --dimensions 8 \
+  --json "compiler" "native backend"
 ./target/debug/vantyx ai tokens "hello world"
 ```
 
@@ -135,6 +140,8 @@ fn main():
 - [AI security](docs/ai/AI_SECURITY.md): threat model and limits
 - [AI roadmap](docs/ai/AI_ROADMAP.md): AI-0 through AI-8 phases
 - [ADR-0015](docs/decisions/ADR-0015-ai-host-foundation.md): zero-dependency AI host
+- [ADR-0017](docs/decisions/ADR-0017-embedding-provider-and-cache.md):
+  embedding provider interface, hash baseline, and bounded cache
 - [Historical requirements audit](RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md): recovered requirements and gaps
 - [ADRs](docs/decisions/): design decisions and trade-offs
 - [Security policy](SECURITY.md): reporting and known limits

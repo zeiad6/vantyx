@@ -1,6 +1,7 @@
 //! Provider-neutral AI request and response types.
 
 use super::budget::Budget;
+use super::embedding::Vector;
 use super::json::Json;
 use std::fmt;
 
@@ -21,6 +22,13 @@ pub const AI_E_PROVIDER: &str = "AI_E_PROVIDER";
 pub const AI_E_RESPONSE_TOO_LARGE: &str = "AI_E_RESPONSE_TOO_LARGE";
 pub const AI_E_CANCELLED: &str = "AI_E_CANCELLED";
 pub const AI_E_IO: &str = "AI_E_IO";
+
+/// Hard limits for one embedding request. They are conservative request
+/// guards, not model-specific limits.
+pub const MAX_EMBEDDING_INPUTS: usize = 128;
+pub const MAX_EMBEDDING_ITEM_BYTES: usize = 8 * 1024;
+pub const MAX_EMBEDDING_REQUEST_BYTES: usize = 32 * 1024;
+pub const MAX_EMBEDDING_DIMENSIONS: usize = 4096;
 
 /// A stable, redacted error from the AI layer.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -380,6 +388,167 @@ impl ChatResponse {
     }
 }
 
+/// A provider-neutral embedding request.
+///
+/// `input` is always a batch, even for one string, so the same request type is
+/// used for single and batch calls. Limits are enforced by [`Self::validate`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EmbeddingRequest {
+    pub model: String,
+    pub input: Vec<String>,
+    /// Requested output dimensions. Providers that cannot honor an explicit
+    /// dimension must reject the request rather than ignore it.
+    pub dimensions: Option<usize>,
+    pub timeout_ms: Option<u64>,
+}
+
+impl EmbeddingRequest {
+    pub fn new(model: impl Into<String>, input: Vec<String>) -> Self {
+        Self {
+            model: model.into(),
+            input,
+            dimensions: None,
+            timeout_ms: None,
+        }
+    }
+
+    pub fn single(model: impl Into<String>, text: impl Into<String>) -> Self {
+        Self::new(model, vec![text.into()])
+    }
+
+    pub fn validate(&self) -> Result<(), AiError> {
+        if self.model.trim().is_empty() {
+            return Err(AiError::new(
+                AI_E_INVALID_REQUEST,
+                "embedding model must not be empty",
+            ));
+        }
+        if self.input.is_empty() {
+            return Err(AiError::new(
+                AI_E_INVALID_REQUEST,
+                "at least one embedding input is required",
+            ));
+        }
+        if self.input.len() > MAX_EMBEDDING_INPUTS {
+            return Err(AiError::new(
+                AI_E_INVALID_REQUEST,
+                format!(
+                    "embedding batch has {} inputs; the limit is {MAX_EMBEDDING_INPUTS}",
+                    self.input.len()
+                ),
+            ));
+        }
+        let mut total = 0usize;
+        for (index, text) in self.input.iter().enumerate() {
+            if text.trim().is_empty() {
+                return Err(AiError::new(
+                    AI_E_INVALID_REQUEST,
+                    format!("embedding input at index {index} is empty"),
+                ));
+            }
+            if text.len() > MAX_EMBEDDING_ITEM_BYTES {
+                return Err(AiError::new(
+                    AI_E_INVALID_REQUEST,
+                    format!(
+                        "embedding input at index {index} is {} bytes; the per-input limit is {MAX_EMBEDDING_ITEM_BYTES}",
+                        text.len()
+                    ),
+                ));
+            }
+            total = total.saturating_add(text.len());
+        }
+        if total > MAX_EMBEDDING_REQUEST_BYTES {
+            return Err(AiError::new(
+                AI_E_INVALID_REQUEST,
+                format!(
+                    "embedding batch is {total} bytes; the request limit is {MAX_EMBEDDING_REQUEST_BYTES}"
+                ),
+            ));
+        }
+        if let Some(dimensions) = self.dimensions
+            && !(1..=MAX_EMBEDDING_DIMENSIONS).contains(&dimensions)
+        {
+            return Err(AiError::new(
+                AI_E_INVALID_REQUEST,
+                format!("embedding dimensions must be between 1 and {MAX_EMBEDDING_DIMENSIONS}"),
+            ));
+        }
+        if self.timeout_ms == Some(0) {
+            return Err(AiError::new(
+                AI_E_INVALID_REQUEST,
+                "embedding timeout_ms must be greater than zero",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EmbeddingUsage {
+    pub prompt_tokens: u64,
+    pub total_tokens: u64,
+}
+
+impl EmbeddingUsage {
+    pub fn new(prompt_tokens: u64) -> Self {
+        Self {
+            prompt_tokens,
+            total_tokens: prompt_tokens,
+        }
+    }
+}
+
+/// A provider-neutral embedding response. Vectors are in the same order as the
+/// request inputs; adapters must reorder server responses by index.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EmbeddingResponse {
+    pub model: String,
+    pub vectors: Vec<Vector>,
+    pub usage: EmbeddingUsage,
+}
+
+impl EmbeddingResponse {
+    pub fn dimensions(&self) -> Option<usize> {
+        self.vectors.first().map(Vector::len)
+    }
+
+    /// Serializes the public response fields for CLI and test output.
+    pub fn to_json(&self) -> Json {
+        Json::object([
+            ("model", Json::from(self.model.clone())),
+            (
+                "dimensions",
+                self.dimensions()
+                    .map_or(Json::Null, |dimensions| Json::from(dimensions as u64)),
+            ),
+            (
+                "vectors",
+                Json::Array(
+                    self.vectors
+                        .iter()
+                        .map(|vector| {
+                            Json::Array(
+                                vector
+                                    .values()
+                                    .iter()
+                                    .map(|value| Json::from(f64::from(*value)))
+                                    .collect(),
+                            )
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "usage",
+                Json::object([
+                    ("prompt_tokens", Json::from(self.usage.prompt_tokens)),
+                    ("total_tokens", Json::from(self.usage.total_tokens)),
+                ]),
+            ),
+        ])
+    }
+}
+
 /// Explicit capability declaration. A provider must not claim what it cannot
 /// verify, and callers must check before sending parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -442,7 +611,9 @@ impl ProviderCapabilities {
             json_object: true,
             // Server-side JSON-schema support varies; enable explicitly.
             json_schema: false,
-            embeddings: false,
+            // The adapter speaks `/v1/embeddings`; model/server support varies
+            // and is reported by the endpoint at request time.
+            embeddings: true,
             // Vision is model-dependent; the adapter can express image parts.
             vision: true,
             audio_input: false,
@@ -451,17 +622,90 @@ impl ProviderCapabilities {
             max_context_tokens: None,
         }
     }
+
+    /// Capabilities for the deterministic offline feature-hash provider. It is
+    /// an embedding-only provider, not a chat provider.
+    pub fn hash_embedding() -> Self {
+        Self {
+            chat: false,
+            embeddings: true,
+            ..Self::default()
+        }
+    }
 }
 
 pub trait Provider {
     fn id(&self) -> &str;
     fn capabilities(&self) -> ProviderCapabilities;
-    fn chat(&self, request: &ChatRequest, budget: &mut Budget) -> Result<ChatResponse, AiError>;
+
+    /// Sends a chat request. Providers that only support embeddings return a
+    /// stable `AI_E_UNSUPPORTED` error by default.
+    fn chat(&self, _request: &ChatRequest, _budget: &mut Budget) -> Result<ChatResponse, AiError> {
+        Err(AiError::unsupported("chat", self.id()))
+    }
+
+    /// Sends an embedding request. Providers that do not support embeddings
+    /// return a stable `AI_E_UNSUPPORTED` error by default.
+    fn embed(
+        &self,
+        _request: &EmbeddingRequest,
+        _budget: &mut Budget,
+    ) -> Result<EmbeddingResponse, AiError> {
+        Err(AiError::unsupported("embeddings", self.id()))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_embedding_requests() {
+        let valid = EmbeddingRequest::single("model", "hello");
+        assert!(valid.validate().is_ok());
+
+        let empty_model = EmbeddingRequest::single(" ", "hello");
+        assert_eq!(
+            empty_model.validate().unwrap_err().code,
+            AI_E_INVALID_REQUEST
+        );
+
+        let empty_batch = EmbeddingRequest::new("model", Vec::new());
+        assert!(empty_batch.validate().is_err());
+
+        let empty_item = EmbeddingRequest::new("model", vec![" ".into()]);
+        assert!(empty_item.validate().is_err());
+
+        let too_many = EmbeddingRequest::new(
+            "model",
+            (0..MAX_EMBEDDING_INPUTS + 1)
+                .map(|index| format!("item {index}"))
+                .collect(),
+        );
+        assert!(too_many.validate().is_err());
+
+        let oversized_item =
+            EmbeddingRequest::single("model", "x".repeat(MAX_EMBEDDING_ITEM_BYTES + 1));
+        assert!(oversized_item.validate().is_err());
+
+        let oversized_batch = EmbeddingRequest::new(
+            "model",
+            (0..5)
+                .map(|_| "x".repeat(MAX_EMBEDDING_ITEM_BYTES))
+                .collect(),
+        );
+        assert!(oversized_batch.validate().is_err());
+
+        let mut bad_dimensions = EmbeddingRequest::single("model", "hello");
+        bad_dimensions.dimensions = Some(0);
+        assert!(bad_dimensions.validate().is_err());
+        bad_dimensions.dimensions = Some(MAX_EMBEDDING_DIMENSIONS + 1);
+        assert!(bad_dimensions.validate().is_err());
+
+        let mut bad_timeout = EmbeddingRequest::single("model", "hello");
+        bad_timeout.timeout_ms = Some(0);
+        assert!(bad_timeout.validate().is_err());
+    }
 
     #[test]
     fn rejects_invalid_sampling_parameters() {

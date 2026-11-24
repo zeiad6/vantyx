@@ -1,6 +1,6 @@
 # Project Status
 
-Updated: 2026-11-24 (T-044 native scalar-key map hash index verified with differential tests, a re-measured benchmark, and CI run 45321718008; Vantyx rename published at https://github.com/zeiad6/vantyx with clean-clone CI; dependency-free AI host foundation, `vantyx ai` CLI, and validated structured extraction verified offline; T-035 public repository, CI, and v0.1.0 pre-release; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums; T-031 bracketed-match diagnostic; T-028 sustainability addendum)
+Updated: 2026-11-24 (T-045 embedding provider interface, batch embeddings, bounded cache, OpenAI-compatible `/v1/embeddings`, and `vantyx ai embed` verified locally; T-044 native scalar-key map hash index verified with differential tests, a re-measured benchmark, and CI run 45321718008; Vantyx rename published at https://github.com/zeiad6/vantyx with clean-clone CI; dependency-free AI host foundation, `vantyx ai` CLI, and validated structured extraction verified offline; T-035 public repository, CI, and v0.1.0 pre-release; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums; T-031 bracketed-match diagnostic; T-028 sustainability addendum)
 
 ## Project overview
 
@@ -16,7 +16,7 @@ Updated: 2026-11-24 (T-044 native scalar-key map hash index verified with differ
 
 ## Current phase
 
-**Phase 6 — native compiler, in progress; AI phase AI-1 complete.** The front end (Phases 2–3), interpreter (Phase 4), and gradual type checker (Phase 5) are complete for the v0.1 language, including closed enums, exhaustive matching, scalar literal patterns, and guards. The typed IR and C backend (Phase 6) cover typed lists, insertion-ordered maps with a scalar-key hash index, structs, string indexing and iteration, and native enums with guarded `match`. Memory reclamation, debug information, and further benchmark-driven optimization remain open. The AI host foundation (AI-0, AI-1, and the structured-output part of AI-3) is implemented and verified offline: providers, JSON, schema validation, validated structured extraction with bounded repair, budgets, embeddings, BM25, tools, bounded agents, metrics, and an OpenAI-compatible HTTP adapter exposed through `vantyx ai`. Live local/cloud AI evidence, streaming, server-side constrained decoding, and language-level AI syntax remain open.
+**Phase 6 — native compiler, in progress; AI phase AI-1 complete and AI-4 started.** The front end (Phases 2–3), interpreter (Phase 4), and gradual type checker (Phase 5) are complete for the v0.1 language, including closed enums, exhaustive matching, scalar literal patterns, and guards. The typed IR and C backend (Phase 6) cover typed lists, insertion-ordered maps with a scalar-key hash index, structs, string indexing and iteration, and native enums with guarded `match`. Memory reclamation, debug information, and further benchmark-driven optimization remain open. The AI host foundation (AI-0, AI-1, and the structured-output part of AI-3) is implemented and verified offline: providers, JSON, schema validation, validated structured extraction with bounded repair, budgets, embedding providers with a bounded cache, BM25, tools, bounded agents, metrics, and an OpenAI-compatible HTTP adapter exposed through `vantyx ai`. Live local/cloud AI evidence, streaming, server-side constrained decoding, vector persistence, hybrid retrieval, RAG evaluation, and language-level AI syntax remain open.
 
 ## Implemented and verified
 
@@ -75,6 +75,8 @@ Every item below is exercised by the test suite or was manually verified through
 - Strict JSON value, parser, and writer with depth, size, and duplicate-key limits; no `serde`.
 - Provider trait with chat/model-list capabilities, stable `AI_E_*` errors, retryability, usage, finish reasons, text and image content parts, and mock/echo providers.
 - OpenAI-compatible non-streaming chat and model-list adapter; request mapping for messages, tools, response format, temperature, top-p, max tokens, and seed; bounded 8 MiB responses; timeouts; 401/429/5xx mapping; secret redaction.
+- Embedding provider interface (T-045, ADR-0017): typed batch requests with 128-input, 8 KiB-per-input, 32 KiB-per-request, and 1–4096-dimension limits; `Provider::embed` defaults to a stable unsupported error; `HashEmbeddingProvider` is a deterministic lexical feature-hash baseline, explicitly not a semantic model; `CachingEmbeddingProvider` is a bounded FIFO cache (1,024 entries / 4 MiB) keyed by model, dimensions, and text, with batch deduplication and clearable state; the OpenAI-compatible adapter posts to `/v1/embeddings`, sorts by index, validates counts and dimensions, and accounts usage.
+- `vantyx ai embed` with offline `mock`/`hash`, OpenAI-compatible `openai`, `--dimensions`, stdin batches, JSON output, timeouts, and metrics; `echo` is rejected because it has no embeddings.
 - Network policy: loopback HTTP is local; remote HTTPS requires `--allow-network` or `VANTYX_AI_ALLOW_NETWORK=1`; no implicit downloads.
 - Deterministic budgets for steps, tool calls, tokens, and wall-clock time; cancellation flag; bounded agent loop with tool-result feedback.
 - Token estimates are explicitly labelled as estimates, not model tokenizers.
@@ -84,7 +86,7 @@ Every item below is exercised by the test suite or was manually verified through
 - Typed tool registry with capability sets, deny-by-default policy, path roots, approval modes, and read-only demo tools; denied capabilities return errors to the agent instead of executing.
 - Opt-in JSONL metrics containing provider, model, operation, latency, usage, finish reason, error code, retry count, and tool name — never prompts, responses, arguments, or secrets.
 - SSE parser with size and line limits (not yet wired to streaming output).
-- CLI: `vantyx ai providers`, `doctor`, `models`, `chat`, and `tokens`; `--json`, `--metrics`, `--system`, repeated `--message`, stdin prompts, and environment configuration.
+- CLI: `vantyx ai providers`, `doctor`, `models`, `chat`, `extract`, `embed`, and `tokens`; `--json`, `--metrics`, `--system`, repeated `--message`, stdin prompts, and environment configuration.
 
 ### Tooling
 - `vantyx run <file>` (also `-` for stdin), `vantyx check <file>`, `vantyx build <file> [-o out]`, `vantyx repl`, `vantyx ai <command>`, `vantyx version`, `vantyx help`.
@@ -101,7 +103,7 @@ Every item below is exercised by the test suite or was manually verified through
 
 ## Partially implemented
 
-- **AI host** — the offline foundation, compatible-endpoint path, and validated structured extraction are verified, but no live local model or cloud provider request has been recorded; streaming output, server-side constrained decoding, model pull/remove with integrity checks, keyring storage, persistent agent state, embedding providers, hybrid retrieval, ingestion/chunking, retrieval evaluation, and a dedicated prompt-injection corpus remain open. Language-level `from ai import Client` is blocked on modules (T-013) and async (T-017).
+- **AI host** — the offline foundation, compatible-endpoint path, validated structured extraction, and embedding provider interface are verified, but no live local model, cloud provider, or live embedding-model request has been recorded; streaming output, server-side constrained decoding, model pull/remove with integrity checks, keyring storage, persistent agent state, vector persistence, hybrid retrieval, ingestion/chunking, retrieval evaluation, and a dedicated prompt-injection corpus remain open. Language-level `from ai import Client` is blocked on modules (T-013) and async (T-017).
 
 - **Native backend subset** — `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, dynamic `match` on `Any`, unsupported loop forms, and string index assignment are rejected with `E0401`/`E0306`; native strings, structs, list buffers, map buffers, map indexes, and enum values are leaked; no debug info. Scalar map keys use a hash index, but struct/enum/list/map keys remain O(n) and the fixed hash seed is not collision-resistant against adversarial keys (ADR-0016). Native enum layout and allocation policy are documented in ADR-0012.
 - **Enums and pattern matching** — closed enums, payloads, exhaustive matching, `Any` matching, scalar literal patterns, and guards are implemented in the interpreter and for statically typed values natively. Nested/or-patterns, float/interpolated-string patterns, generic enums, and explicit discriminants are not implemented (ADR-0011).
@@ -117,9 +119,9 @@ Every item below is exercised by the test suite or was manually verified through
 - Server-side constrained decoding (local validation and bounded repair are implemented)
 - Model manager `info`/`pull`/`remove` with checksums, size, license, and provenance
 - Keyring-backed credential storage
-- Live local/cloud AI verification
+- Live local/cloud AI and live embedding-model verification
 - Persistent agent state and resume
-- Embedding providers, hybrid retrieval, ingestion/chunking, and retrieval evaluation
+- Vector index persistence, hybrid retrieval, ingestion/chunking, citations, and retrieval evaluation
 - Tensors, autodiff, SIMD, GPU, MCP, ONNX/GGUF embedding, multi-agent orchestration
 - Bytecode VM (T-011)
 - Modules/imports (T-013)
@@ -137,14 +139,14 @@ Every item below is exercised by the test suite or was manually verified through
 
 ## Test status
 
-Verified on 2026-11-24 (language, native backend, and map index); AI and REPL rows retain their 2026-11-23 evidence:
+Verified on 2026-11-24 (language, native backend, map index, and embedding providers); REPL pty and fuzz rows retain their earlier evidence:
 
 | Command | Result |
 | --- | --- |
 | `cargo build` | success |
 | `cargo build --release` | success |
 | `cargo clippy --all-targets -- -D warnings` | success, zero warnings |
-| `cargo test` | **358 passed, 0 failed** (218 library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 68 native) |
+| `cargo test` | **383 passed, 0 failed** (237 library unit + 12 CLI unit + 25 AI integration + 41 end-to-end + 68 native) |
 | `python3 benchmarks/run.py --reps 5` | all implementations printed identical output; wrote `benchmarks/results/2026-11-24.{json,md}`; `map_ops` native 3.597 ms vs interpreter 121.728 ms |
 | `vantyx run examples/*.vtx` | all 5 exit 0 with expected output |
 | `vantyx build examples/*.vtx` + run | all 5 exit 0 with output identical to `run` |
@@ -160,6 +162,10 @@ Verified on 2026-11-24 (language, native backend, and map index); AI and REPL ro
 | `--metrics` redaction test | JSONL contains usage and status only; prompt absent |
 | `vantyx ai extract` (mock fixture) | exit 0; returned schema-valid JSON; one invalid fixture repaired in 2 attempts; exhaustion exited 1 with `AI_E_SCHEMA` and "after 2 attempts" |
 | Loopback HTTP extraction | request contained `response_format=json_object`; validated response and usage envelope returned |
+| `vantyx ai providers` / `doctor --provider hash` | hash provider listed as offline deterministic embeddings only; doctor reported dimensions and `embeddings` capability |
+| `vantyx ai embed --provider mock` (human and `--json`) | exit 0; deterministic L2-normalized vectors, dimensions and input count reported; JSON parsed |
+| Loopback `/v1/embeddings` adapter and CLI | request path, model, input batch, and dimensions asserted; out-of-order response indexes sorted and validated; usage recorded |
+| `vantyx ai embed --provider echo` | exit 64 with a clear "has no embeddings" error |
 | `python3 tools/fuzz_smoke.py --binary target/debug/vantyx` | 9 depth/limit cases + 400 random/mutated inputs, all controlled diagnostics |
 | Launch-material link check | 8 files checked; all relative links resolve |
 | Native `Any` rejection demo | `vantyx run` prints the value; `vantyx build` exits 1 with `E0401` and help |
@@ -187,17 +193,18 @@ Vantyx is published at **https://github.com/zeiad6/vantyx** (renamed from `zeiad
 
 ## Current task
 
-T-036 Vantyx rename — VERIFIED (code, docs, GitHub repository, and clean-clone CI). T-037 AI host foundation — VERIFIED. T-038 `vantyx ai` CLI — VERIFIED. T-039 OpenAI-compatible adapter — VERIFIED offline. T-040 live local/cloud verification — BLOCKED (no server or credentials). T-041 AI discovery and status synchronization — VERIFIED. T-042 GitHub repository rename and clean-clone CI — VERIFIED (https://github.com/zeiad6/vantyx; CI run 45317367818; clean clone passed 340 tests). T-043 validated structured extraction — VERIFIED locally. T-044 native scalar-key map hash index — VERIFIED (CI run 45321718008). T-035 public repository and launch kit — VERIFIED on the old repository name. T-029, T-030, T-031, T-032, and T-033 — VERIFIED.
+T-036 Vantyx rename — VERIFIED (code, docs, GitHub repository, and clean-clone CI). T-037 AI host foundation — VERIFIED. T-038 `vantyx ai` CLI — VERIFIED. T-039 OpenAI-compatible adapter — VERIFIED offline. T-040 live local/cloud verification — BLOCKED (no server or credentials). T-041 AI discovery and status synchronization — VERIFIED. T-042 GitHub repository rename and clean-clone CI — VERIFIED (https://github.com/zeiad6/vantyx; CI run 45317367818; clean clone passed 340 tests). T-043 validated structured extraction — VERIFIED locally. T-044 native scalar-key map hash index — VERIFIED (CI run 45321718008). T-045 embedding provider interface, batch embeddings, cache, and `vantyx ai embed` — VERIFIED locally (383 tests; CI recorded after push). T-035 public repository and launch kit — VERIFIED on the old repository name. T-029, T-030, T-031, T-032, and T-033 — VERIFIED.
 
 ## Next tasks
 
-1. T-040 live local/cloud AI verification when a server and credentials are available
-2. Nested/or-patterns (follow-up to T-014/T-030/T-032/T-033)
-3. T-011 bytecode VM feasibility study
-4. Enum allocation benchmark before optimizing the native representation
-5. Immutable string concatenation optimization (largest measured native gap)
-6. T-034 REPL multi-line history and field completion (P4, BACKLOG)
+1. T-040 live local/cloud AI and live embedding-model verification when a server and credentials are available
+2. Retrieval/RAG evaluation harness over a licensed fixture corpus (AI-4 next)
+3. Nested/or-patterns (follow-up to T-014/T-030/T-032/T-033)
+4. T-011 bytecode VM feasibility study
+5. Enum allocation benchmark before optimizing the native representation
+6. Immutable string concatenation optimization (largest measured native gap)
+7. T-034 REPL multi-line history and field completion (P4, BACKLOG)
 
 ## Last verification
 
-`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-24: 218 library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 68 native = 358 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. `python3 benchmarks/run.py --reps 5` verified identical output and wrote the 2026-11-24 baseline; `map_ops` native median fell to 3.597 ms. GitHub Actions run 45317367818 passed on commit `e425d04` with the earlier 340-test suite, a fresh clone of https://github.com/zeiad6/vantyx passed those tests and all five example comparisons, run 45318733338 passed build, 357 tests, clippy, release build, and differential examples on T-043 commit `2d991c6`, and run 45321718008 passed build, 358 tests, clippy, release build, and differential examples on T-044 commit `f55c91c`. Live local/cloud AI, the REPL pty smoke, and fuzz smoke were not re-run for this verification; their earlier recorded results remain valid for the unchanged subsystems.
+`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-24: 237 library unit + 12 CLI unit + 25 AI integration + 41 end-to-end + 68 native = 383 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. `python3 benchmarks/run.py --reps 5` verified identical output and wrote the 2026-11-24 baseline; `map_ops` native median fell to 3.597 ms. T-045 embedding tests covered deterministic offline hash vectors, batch stdin input, bounded cache behavior, loopback `/v1/embeddings`, dimension and index validation, and `echo` rejection. GitHub Actions run 45317367818 passed on commit `e425d04` with the earlier 340-test suite, a fresh clone of https://github.com/zeiad6/vantyx passed those tests and all five example comparisons, run 45318733338 passed build, 357 tests, clippy, release build, and differential examples on T-043 commit `2d991c6`, and run 45321718008 passed build, 358 tests, clippy, release build, and differential examples on T-044 commit `f55c91c`. The T-045 CI run is recorded after the push. Live local/cloud AI, the REPL pty smoke, and fuzz smoke were not re-run for this verification; their earlier recorded results remain valid for the unchanged subsystems.

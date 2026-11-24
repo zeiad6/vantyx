@@ -52,8 +52,9 @@ typed code. The REPL persists
 bindings and declarations and provides line editing, history, Tab completion,
 and expression echo. The AI host foundation is offline and tested: strict JSON,
 JSON Schema validation, validated structured extraction with bounded repair,
-provider abstraction, token budgets, embeddings, BM25, typed tools, bounded
-agents, redacted metrics, and an OpenAI-compatible HTTP adapter. Language-level AI syntax is not implemented yet; `vantyx ai` is the
+provider abstraction, token budgets, embedding providers with a bounded cache,
+BM25, typed tools, bounded agents, redacted metrics, and an OpenAI-compatible
+HTTP adapter. Language-level AI syntax is not implemented yet; `vantyx ai` is the
 supported surface.
 
 | Need | Vantyx today |
@@ -64,6 +65,8 @@ supported surface.
 | Offline AI chat with a mock provider | Yes, through `vantyx ai` |
 | OpenAI-compatible local or cloud chat | Yes, via an explicit endpoint and `--allow-network` for remote HTTPS |
 | Validated structured extraction | Yes, `vantyx ai extract` with a JSON Schema and bounded repair |
+| Offline embeddings | Yes, `vantyx ai embed --provider hash`; lexical, not semantic |
+| OpenAI-compatible embeddings | Yes, `/v1/embeddings`; actual server/model support varies |
 | Language-level `from ai import Client` | Not yet (needs modules and async) |
 | Bundled model, tokenizer, tensors, GPU | No |
 | Modules, generics, closures, async, FFI | Not yet |
@@ -114,10 +117,18 @@ default and never bundles or downloads a model.
   --response '{"name":"Ada","role":"engineer"}' \
   "Extract the person"
 
+# Deterministic offline embeddings (lexical hash baseline, not semantic)
+./target/debug/vantyx ai embed --provider hash --model demo \
+  --dimensions 8 --json "compiler" "native backend"
+printf 'alpha\nbeta\n' | ./target/debug/vantyx ai embed \
+  --provider hash --dimensions 4 --json -
+
 # A local OpenAI-compatible server (Ollama, llama.cpp, LM Studio, ...)
 ./target/debug/vantyx ai models --endpoint http://127.0.0.1:11434/v1
 ./target/debug/vantyx ai chat --provider openai --model qwen2.5:7b \
   --endpoint http://127.0.0.1:11434/v1 "Explain this error"
+./target/debug/vantyx ai embed --provider openai --model nomic-embed-text \
+  --endpoint http://127.0.0.1:11434/v1 --json "Explain this error"
 
 # Remote HTTPS requires an explicit opt-in and a key in an environment variable
 export VANTYX_AI_API_KEY_ENV=MY_API_KEY
@@ -137,9 +148,16 @@ export MY_API_KEY=...
 - `vantyx ai extract` validates strict JSON against the documented schema
   subset, repairs invalid output at most three times, and never returns
   unvalidated model text. Server-side constrained decoding is not claimed.
-- Streaming, model download/removal, keyring storage, and live provider tests
-  are not implemented. See [docs/ai/](docs/ai/) and
-  [ADR-0015](docs/decisions/ADR-0015-ai-host-foundation.md).
+- `vantyx ai embed` returns L2-normalized vectors from `mock`/`hash` (offline,
+  deterministic lexical feature hashing, **not** a semantic model) or an
+  OpenAI-compatible `/v1/embeddings` endpoint. Requests are capped at 128
+  inputs, 8 KiB per input, 32 KiB total, and 4096 dimensions; the library cache
+  is bounded and process-local.
+- Streaming, model download/removal, keyring storage, vector persistence,
+  hybrid retrieval, RAG evaluation, and live provider tests are not
+  implemented. See [docs/ai/](docs/ai/),
+  [ADR-0015](docs/decisions/ADR-0015-ai-host-foundation.md), and
+  [ADR-0017](docs/decisions/ADR-0017-embedding-provider-and-cache.md).
 
 ## REPL
 
@@ -193,6 +211,7 @@ general performance claim.
 - [AI security](docs/ai/AI_SECURITY.md)
 - [AI roadmap](docs/ai/AI_ROADMAP.md)
 - [ADR-0015: AI host foundation](docs/decisions/ADR-0015-ai-host-foundation.md)
+- [ADR-0017: Embedding provider and bounded cache](docs/decisions/ADR-0017-embedding-provider-and-cache.md)
 - [Historical requirements audit](RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md)
 - [Tasks](TASKS.md)
 - [Project status](PROJECT_STATUS.md)

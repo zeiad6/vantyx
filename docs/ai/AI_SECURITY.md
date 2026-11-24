@@ -1,7 +1,7 @@
 # AI Security Model
 
-Status: AI-1 controls are implemented; later-phase controls are design only
-Date: 2026-11-23
+Status: AI-1 controls are implemented; embedding request/cache controls are implemented; later-phase controls are design only
+Date: 2026-11-24
 Related: `SECURITY.md`, `AI_ARCHITECTURE.md`, `docs/security-audit-2026-11-22.md`
 
 ## Security position
@@ -19,6 +19,16 @@ privilege, and honest documentation of residual risk.
   is local. HTTPS uses the system `curl`, never an implicit download.
 - Response bodies are capped (8 MiB default, configurable with a hard ceiling),
   requests have timeouts, and SSE parsing is bounded.
+- Embedding requests are capped at 128 inputs, 8 KiB per input, 32 KiB per
+  request, and 1–4096 dimensions; empty or oversized requests fail before
+  transport. The OpenAI-compatible adapter validates response indexes, counts,
+  finite values, and dimensions before returning vectors.
+- The embedding cache is bounded (default 1,024 entries / 4 MiB), process-local,
+  and never written to disk. Its key contains the raw input text, so callers
+  handling sensitive text must treat cache memory as sensitive and call
+  `clear()` when appropriate. The hash provider is lexical, not a privacy or
+  semantic guarantee.
+- No embedding model is bundled or downloaded automatically.
 - JSON and JSON Schema validation enforce depth, size, duplicate-key, and
   schema-shape limits; invalid model output is rejected with a path.
 - Tool capabilities are explicit and deny by default; path tools canonicalize
@@ -188,6 +198,11 @@ target platform.
 | Response size | 8 MiB | streaming reader |
 | Prompt estimate | 8,000 tokens | budget |
 | Completion tokens | 1,024 | request + response check |
+| Embedding inputs | 128 | request validation |
+| Embedding input size | 8 KiB | request validation |
+| Embedding request size | 32 KiB | request validation |
+| Embedding dimensions | 1–4096 | request + response check |
+| Embedding cache | 1,024 entries / 4 MiB | FIFO cache |
 | Agent steps | 8 | loop |
 | Tool calls per step | 4 | loop |
 | Tool calls per run | 16 | registry |
@@ -210,6 +225,8 @@ stable error naming the limit.
   still denies it.
 - Agent loop termination tests.
 - Schema depth/size tests.
+- Embedding batch-size, input-size, dimension, malformed-response, and
+  cache-eviction tests.
 - Model download checksum and archive traversal tests when that code exists.
 
 ## Reporting

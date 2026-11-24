@@ -1,7 +1,7 @@
 # AI Roadmap
 
-Status: AI-0 and AI-1 complete; AI-2 in progress (offline and compatible-endpoint foundation verified; live local/cloud evidence pending)
-Date: 2026-11-23
+Status: AI-0 and AI-1 complete; AI-2 in progress (offline and compatible-endpoint foundation verified; live local/cloud evidence pending); AI-4 embedding provider interface and batch cache complete
+Date: 2026-11-24
 Related: `AI_ARCHITECTURE.md`, `AI_RESEARCH.md`, `AI_SECURITY.md`,
 `RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md`
 
@@ -91,8 +91,9 @@ reporting, and bounded repair are implemented; streaming remains open.
 
 ## Phase AI-4 — Embeddings and retrieval 🚧
 
-- [ ] Embedding provider interface (local and cloud).
-- [ ] Batch embeddings and cache.
+- [x] Embedding provider interface (offline hash and OpenAI-compatible
+      `/v1/embeddings`; ADR-0017).
+- [x] Batch embeddings and bounded FIFO cache with batch deduplication.
 - [x] In-memory vector index with deletion and cosine search.
 - [x] BM25 lexical retrieval.
 - [ ] Vector index persistence.
@@ -101,6 +102,12 @@ reporting, and bounded repair are implemented; streaming remains open.
 - [ ] Chunking with metadata and stable IDs.
 - [ ] Citations and grounding metadata.
 - [ ] Evaluation harness: recall@k, MRR, precision, latency.
+
+Evidence (2026-11-24): 383 tests pass, including deterministic hash embeddings,
+batch limits, cache hits/eviction/deduplication, loopback `/v1/embeddings`, and
+`vantyx ai embed` JSON/stdin/error paths. The hash provider is lexical and is
+not a trained semantic model; live local/cloud embedding-model verification and
+retrieval evaluation remain open.
 
 Exit gate: a licensed fixture corpus produces reproducible retrieval metrics;
 answers cite retrieved chunks or explicitly say they are not grounded.

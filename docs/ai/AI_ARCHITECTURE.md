@@ -1,9 +1,9 @@
 # AI Architecture
 
-Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 in progress
-Date: 2026-11-23
+Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 in progress; AI-4 embedding provider interface and bounded cache implemented
+Date: 2026-11-24
 Related: `AI_RESEARCH.md`, `AI_SECURITY.md`, `AI_ROADMAP.md`, ADR-0007,
-ADR-0014, ADR-0015
+ADR-0014, ADR-0015, ADR-0017
 
 ## Position
 
@@ -22,7 +22,7 @@ This avoids two failure modes:
 | Track | Scope | Current state |
 | --- | --- | --- |
 | A — Core Vantyx | Lexer, parser, checker, interpreter, native backend, memory, modules, tooling | v0.1 subset verified; modules/async/generics missing |
-| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation and compatible-endpoint adapter implemented; live providers, streaming, and RAG pipeline pending |
+| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, and embedding provider/cache implemented; live providers, streaming, and RAG pipeline pending |
 
 Track B must not wait for the entire Track A roadmap. It may use the host CLI and
 Rust API while language-level integration remains blocked.
@@ -37,7 +37,8 @@ Rust API while language-level integration remains blocked.
 ├─────────────────────────────────────────────────────────────┤
 │ Host API: src/ai/                                           │
 │   provider · json · sse · tokens · embedding · bm25         │
-│   tools · agent · budget · metrics · config                 │
+│   embedding_provider · tools · agent · budget · metrics     │
+│   config                                                    │
 ├─────────────────────────────────────────────────────────────┤
 │ Transport boundary                                          │
 │   std::net for loopback HTTP · curl for HTTPS (opt-in)      │
@@ -54,8 +55,9 @@ Rust API while language-level integration remains blocked.
 | Module | Responsibility | Must not do |
 | --- | --- | --- |
 | `ai/json.rs` | Strict JSON value, parser, writer, schema subset | Accept trailing garbage or NaN |
-| `ai/provider.rs` | Typed request/response, roles, content parts, usage, capabilities, errors | Pretend all providers support all fields |
-| `ai/mock.rs` | Deterministic offline provider | Hit the network |
+| `ai/provider.rs` | Typed chat and embedding requests/responses, roles, content parts, usage, capabilities, errors, default `embed` | Pretend all providers support all fields |
+| `ai/embedding_provider.rs` | Deterministic lexical hash embeddings and a bounded FIFO cache | Claim semantic quality or unbounded growth |
+| `ai/mock.rs` | Deterministic offline chat provider | Hit the network |
 | `ai/openai.rs` | OpenAI-compatible request/response mapping | Log secrets or prompts by default |
 | `ai/http.rs` | Bounded HTTP transport (loopback std, HTTPS via curl) | Follow arbitrary redirects or exceed limits |
 | `ai/sse.rs` | Incremental server-sent-events parser | Buffer without bound |
@@ -93,10 +95,30 @@ pub struct ChatResponse {
     pub usage: Usage,
 }
 
+pub struct EmbeddingRequest {
+    pub model: String,
+    pub inputs: Vec<String>,
+    pub dimensions: Option<usize>,
+    pub timeout_ms: Option<u64>,
+}
+
+pub struct EmbeddingResponse {
+    pub model: String,
+    pub vectors: Vec<Vector>,
+    pub usage: EmbeddingUsage,
+}
+
 pub trait Provider {
     fn id(&self) -> &str;
     fn capabilities(&self) -> &ProviderCapabilities;
     fn chat(&self, request: &ChatRequest, budget: &mut Budget) -> Result<ChatResponse, AiError>;
+    fn embed(
+        &self,
+        request: &EmbeddingRequest,
+        budget: &mut Budget,
+    ) -> Result<EmbeddingResponse, AiError> {
+        Err(AiError::unsupported("embeddings", self.id()))
+    }
     // Streaming is planned for AI-3; the SSE parser exists but no provider
     // exposes a streaming method yet.
 }
@@ -170,9 +192,21 @@ query     → embed → cosine / BM25 → fuse → top-k → citations
 ```
 
 - The first index is in-memory and deterministic.
+- `Provider::embed` accepts batches of up to 128 inputs (8 KiB each, 32 KiB per
+  request) and 1–4096 requested dimensions. Invalid requests fail before
+  transport.
+- `HashEmbeddingProvider` is a deterministic lexical baseline over tokens and
+  character trigrams, L2-normalized; it is **not** a trained semantic model.
+- `CachingEmbeddingProvider` is a bounded FIFO cache (default 1,024 entries /
+  4 MiB) keyed by model, dimensions, and text. Repeated inputs in a batch are
+  sent once; the cache is process-local and clearable.
+- `OpenAiProvider::embed` posts to `/v1/embeddings`, sorts items by index,
+  rejects duplicate/out-of-range indexes, validates count and dimensions, and
+  records provider usage.
 - Cosine similarity requires equal dimensions; dimension mismatch is an error.
 - BM25 is lexical, not semantic; hybrid results label both scores.
-- Retrieval evaluation uses a small, licensed fixture set with recall@k and MRR.
+- Retrieval evaluation uses a small, licensed fixture set with recall@k and MRR;
+  this harness is not implemented yet.
 
 ## Tools and agents
 
@@ -215,6 +249,9 @@ query     → embed → cosine / BM25 → fuse → top-k → citations
 
 - Unit tests for JSON, SSE, token estimation, vector math, BM25, schemas, and
   budgets.
+- Embedding tests cover deterministic normalized vectors, batch limits, cache
+  hits/misses/eviction/deduplication, loopback `/v1/embeddings`, response index
+  and dimension validation, and unsupported-provider errors.
 - Deterministic mock/echo providers for chat, tools, and failure injection;
   SSE parsing is unit-tested separately because no provider streams yet.
 - A loopback HTTP test server for the OpenAI-compatible adapter; no internet.

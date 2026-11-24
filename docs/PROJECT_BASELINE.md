@@ -1,7 +1,7 @@
 # Project Baseline — Vantyx (repository: RustZ)
 
 Date: 2026-11-24
-Session: re-baselined after the native scalar-key map hash index (T-044), the Vantyx rename, the AI host foundation and `vantyx ai` CLI (T-037–T-039), validated structured extraction (T-043), the REPL upgrade (T-029), match guards (T-033), scalar literal patterns (T-032), native enums and `match` (T-030), the bracketed-match diagnostic (T-031), the sustainability research addendum (T-028), launch-kit preparation (T-035), and documentation reconciliation
+Session: re-baselined after the embedding provider interface, batch embeddings, bounded cache, and `vantyx ai embed` (T-045), the native scalar-key map hash index (T-044), the Vantyx rename, the AI host foundation and `vantyx ai` CLI (T-037–T-039), validated structured extraction (T-043), the REPL upgrade (T-029), match guards (T-033), scalar literal patterns (T-032), native enums and `match` (T-030), the bracketed-match diagnostic (T-031), the sustainability research addendum (T-028), launch-kit preparation (T-035), and documentation reconciliation
 
 ## Current re-baseline (2026-11-24)
 
@@ -15,14 +15,14 @@ The sections below record the original empty-repository inspection. The reposito
 | Interpreter | Full v0.1 language, reference semantics, checked operations, call-depth guard, enum values, match, scalar literal dispatch, and guarded arm selection |
 | Native path | Typed IR + GNU C11 backend for a statically typed subset (`Unit`/`Int`/`Float`/`Bool`/`Str`/`List[T]`/`Map[K,V]`/structs/enums) with UTF-8 string indexing/iteration, an insertion-ordered scalar-key map hash index, `match` with guards over enums and scalar literals, and cycle-safe structural equality |
 | Native exclusions | `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported loop forms → `E0401` |
-| Tests | 218 library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 68 differential native = 358 passing |
+| Tests | 237 library unit + 12 CLI unit + 25 AI integration + 41 end-to-end + 68 differential native = 383 passing |
 | Benchmarks | Six-workload baseline vs Python/C/Rust; 2026-11-24 results in `benchmarks/results/` after the map hash index (T-022, T-044); enums not yet benchmarked |
-| AI host | Dependency-free `src/ai/` foundation: strict JSON, providers, mock/echo, budgets, embeddings, vector index, BM25, JSON Schema subset, validated structured extraction with bounded repair, typed tools, bounded agents, redacted metrics, SSE, OpenAI-compatible HTTP adapter; `vantyx ai providers/doctor/models/chat/extract/tokens` |
+| AI host | Dependency-free `src/ai/` foundation: strict JSON, providers, mock/echo, budgets, embedding provider interface with batch limits, deterministic lexical hash embeddings and bounded cache, OpenAI-compatible `/v1/embeddings`, vector index, BM25, JSON Schema subset, validated structured extraction with bounded repair, typed tools, bounded agents, redacted metrics, SSE, OpenAI-compatible HTTP adapter; `vantyx ai providers/doctor/models/chat/extract/embed/tokens` |
 | Build/tooling | `cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, `cargo test` clean; `vantyx run/check/build/repl/ai`; REPL line editing, history, completion, and expression echo (T-029, ADR-0013); manual fuzz harness |
 | Launch assets | Public at https://github.com/zeiad6/vantyx (renamed from `zeiad6/auren`); MIT license, green CI on `f55c91c` (run 45321718008, 358 tests), v0.1.0 pre-release, pinned feedback issue, contribution/security/conduct policies, `CITATION.cff`, `llms.txt`, and an honest AI-recommendation/promotion kit under `docs/launch/` |
 | Maturity | **Functional prototype**, not production-ready |
-| Main risks | Intentional native leaks; O(n) structural-key maps and a fixed scalar-key hash seed; unmeasured enum allocation; single-machine benchmark baseline only; docs drift; gradual `Any` erodes static guarantees; no live AI provider evidence; no model/tokenizer/GPU support |
-| Next task | Live local/cloud AI verification (T-040) when available; nested/or-patterns; string concatenation optimization (T-029–T-033, T-035, T-036, T-042, T-043, and T-044 complete) |
+| Main risks | Intentional native leaks; O(n) structural-key maps and a fixed scalar-key hash seed; unmeasured enum allocation; single-machine benchmark baseline only; docs drift; gradual `Any` erodes static guarantees; no live AI or embedding-model evidence; no model/tokenizer/GPU support |
+| Next task | Live local/cloud AI and embedding-model verification (T-040) when available; retrieval/RAG evaluation; nested/or-patterns; string concatenation optimization (T-029–T-033, T-035, T-036, T-042, T-043, T-044, and T-045 complete) |
 
 The source tree is tracked on branch `main`. Publication and CI status are recorded in `PROJECT_STATUS.md`; do not infer a public URL from this baseline.
 

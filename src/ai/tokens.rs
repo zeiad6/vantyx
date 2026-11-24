@@ -4,7 +4,7 @@
 //! context guards. Exact counts require the model's tokenizer files and a
 //! dependency decision (ADR-0015).
 
-use super::provider::{AI_E_INVALID_REQUEST, AiError, ChatRequest, Message};
+use super::provider::{AI_E_INVALID_REQUEST, AiError, ChatRequest, EmbeddingRequest, Message};
 
 /// Approximate tokens for a string: roughly one token per four characters, plus
 /// one token for a short or empty tail. It deliberately rounds up.
@@ -42,6 +42,12 @@ pub fn estimate_request_tokens(request: &ChatRequest) -> usize {
         .map(|tool| estimate_tokens(&tool.name) + estimate_tokens(&tool.description))
         .sum();
     messages + tools
+}
+
+/// Conservative estimate for one embedding request. Provider-reported usage
+/// replaces this value when the response includes it.
+pub fn estimate_embedding_tokens(request: &EmbeddingRequest) -> usize {
+    request.input.iter().map(|text| estimate_tokens(text)).sum()
 }
 
 /// Checks the estimate against a declared context window. This is a guard, not

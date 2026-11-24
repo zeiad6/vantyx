@@ -8,8 +8,9 @@ use std::io::{self, IsTerminal, Read};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use vantyx::ai::{
-    self, AiConfig, Budget, ChatRequest, ChatResponse, EchoProvider, HttpTransport, Message,
-    MetricEvent, MetricsSink, MockProvider, OpenAiProvider, Provider, ProviderCapabilities,
+    self, AiConfig, Budget, ChatRequest, ChatResponse, DEFAULT_HASH_DIMENSIONS, EchoProvider,
+    EmbeddingRequest, HashEmbeddingProvider, HttpTransport, Message, MetricEvent, MetricsSink,
+    MockProvider, OpenAiProvider, Provider, ProviderCapabilities,
 };
 
 const AI_USAGE: &str = "\
@@ -22,11 +23,14 @@ Usage:
   vantyx ai chat [options] [prompt] Chat with a provider
   vantyx ai extract [options] [prompt]
                                    Validate JSON output against a schema
+  vantyx ai embed [options] [text...]
+                                   Create embeddings; mock/hash is offline and
+                                   deterministic, openai uses /v1/embeddings
   vantyx ai tokens [text]          Estimate tokens (not a model tokenizer)
 
 Options:
-  --provider <name>       mock, echo, or openai (default: env or mock)
-  --model <name>          Model name
+  --provider <name>       mock, echo, hash (embed only), or openai
+                          (default: env or mock)
   --endpoint <url>        OpenAI-compatible base URL
   --system <text>         System instruction
   --message <text>        User message; may be repeated
@@ -35,6 +39,7 @@ Options:
   --timeout-ms <n>        Request timeout in milliseconds
   --max-tokens <n>        Completion token limit
   --temperature <n>       Sampling temperature, 0 to 2
+  --dimensions <n>        Embedding dimensions, 1 to 4096
   --metrics <path>        Append redacted JSONL metrics (no prompts)
   --schema <path|json>    JSON Schema for `extract` (file path or inline object)
   --repair-attempts <n>   Repair attempts after invalid output (0-3; default 1)
@@ -62,6 +67,7 @@ struct Options {
     timeout_ms: Option<u64>,
     max_tokens: Option<u32>,
     temperature: Option<f64>,
+    dimensions: Option<usize>,
     system: Option<String>,
     messages: Vec<String>,
     positional: Vec<String>,
@@ -90,6 +96,7 @@ pub fn run(args: &[String]) -> i32 {
         "models" => models(rest),
         "chat" => chat(rest),
         "extract" => extract_command(rest),
+        "embed" => embed(rest),
         "tokens" => tokens(rest),
         other => {
             eprintln!("error: unknown `vantyx ai` command `{other}`");
@@ -106,10 +113,15 @@ fn providers(args: &[String]) -> i32 {
         return 64;
     }
     let config = AiConfig::from_env();
-    println!("mock    offline deterministic provider; no network or model");
+    println!("mock    offline deterministic chat provider; no network or model");
     println!(
         "        capabilities: {}",
         capabilities(&ProviderCapabilities::mock())
+    );
+    println!("hash    offline deterministic feature-hash embeddings; not a semantic model");
+    println!(
+        "        capabilities: {}",
+        capabilities(&ProviderCapabilities::hash_embedding())
     );
     println!("echo    offline provider that returns the user text");
     println!(
@@ -178,6 +190,17 @@ fn doctor(args: &[String]) -> i32 {
             println!("capabilities: {}", capabilities(&caps));
             0
         }
+        "hash" => {
+            let dimensions = options.dimensions.unwrap_or(DEFAULT_HASH_DIMENSIONS);
+            println!("provider: hash");
+            println!("status: ok (offline; deterministic feature hashing, not a semantic model)");
+            println!("dimensions: {dimensions}");
+            println!(
+                "capabilities: {}",
+                capabilities(&ProviderCapabilities::hash_embedding())
+            );
+            0
+        }
         "openai" => {
             let endpoint = config.endpoint.clone();
             let openai = match build_openai(&config, &model) {
@@ -213,7 +236,7 @@ fn doctor(args: &[String]) -> i32 {
             }
         }
         other => {
-            eprintln!("error: unknown provider `{other}`; expected mock, echo, or openai");
+            eprintln!("error: unknown provider `{other}`; expected mock, echo, hash, or openai");
             64
         }
     }
@@ -242,12 +265,12 @@ fn models(args: &[String]) -> i32 {
         .unwrap_or_else(|| config.model.clone());
     match provider.as_str() {
         "openai" => {}
-        "mock" | "echo" => {
+        "mock" | "echo" | "hash" => {
             eprintln!("error: provider `{provider}` has no model list; use --provider openai");
             return 64;
         }
         other => {
-            eprintln!("error: unknown provider `{other}`; expected mock, echo, or openai");
+            eprintln!("error: unknown provider `{other}`; expected mock, echo, hash, or openai");
             return 64;
         }
     }
@@ -407,7 +430,9 @@ fn extract_command(args: &[String]) -> i32 {
             Err(error) => return report_error(&error),
         },
         other => {
-            eprintln!("error: unknown provider `{other}`; expected mock, echo, or openai");
+            eprintln!(
+                "error: unknown provider `{other}`; expected mock, echo, or openai (`hash` is embed-only)"
+            );
             return 64;
         }
     };
@@ -458,6 +483,172 @@ fn extract_command(args: &[String]) -> i32 {
             report_error(&error)
         }
     }
+}
+
+fn embed(args: &[String]) -> i32 {
+    let options = match parse_options(args) {
+        Ok(options) => options,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return 64;
+        }
+    };
+    if options.help {
+        print!("{AI_USAGE}");
+        return 0;
+    }
+    if options.system.is_some()
+        || !options.messages.is_empty()
+        || options.schema.is_some()
+        || options.repair_attempts.is_some()
+        || !options.responses.is_empty()
+        || options.max_tokens.is_some()
+        || options.temperature.is_some()
+    {
+        eprintln!("error: `vantyx ai embed` accepts embedding options only");
+        eprintln!("help: use positional text, `-`, --dimensions, --model, --endpoint, and --json");
+        return 64;
+    }
+    let inputs = match embedding_inputs(&options) {
+        Ok(inputs) => inputs,
+        Err(code) => return code,
+    };
+    let config = resolve_config(&options);
+    let provider_name = options
+        .provider
+        .clone()
+        .unwrap_or_else(|| config.provider.clone());
+    let model = options
+        .model
+        .clone()
+        .unwrap_or_else(|| config.model.clone());
+    let dimensions = options.dimensions;
+    let provider: Box<dyn Provider> = match provider_name.as_str() {
+        "mock" | "hash" => {
+            let dimensions = dimensions.unwrap_or(DEFAULT_HASH_DIMENSIONS);
+            match HashEmbeddingProvider::new(dimensions) {
+                Ok(provider) => Box::new(provider),
+                Err(error) => return report_error(&error),
+            }
+        }
+        "openai" => match build_openai(&config, &model) {
+            Ok(openai) => Box::new(openai),
+            Err(error) => return report_error(&error),
+        },
+        "echo" => {
+            eprintln!("error: provider `echo` has no embeddings; use mock/hash or openai");
+            return 64;
+        }
+        other => {
+            eprintln!("error: unknown provider `{other}`; expected mock, echo, hash, or openai");
+            return 64;
+        }
+    };
+
+    let mut request = EmbeddingRequest::new(model.clone(), inputs.clone());
+    request.dimensions = dimensions;
+    request.timeout_ms = options.timeout_ms;
+    let mut budget = Budget::default();
+    let started = Instant::now();
+    let metrics = options
+        .metrics
+        .as_ref()
+        .map_or_else(MetricsSink::disabled, MetricsSink::file);
+    match provider.embed(&request, &mut budget) {
+        Ok(response) => {
+            if options.json {
+                let mut entries = match response.to_json() {
+                    ai::Json::Object(entries) => entries,
+                    _ => unreachable!("embedding responses serialize as JSON objects"),
+                };
+                entries.insert(0, ("provider".into(), ai::Json::from(provider.id())));
+                entries.push((
+                    "input_count".into(),
+                    ai::Json::from(u64::try_from(inputs.len()).unwrap_or(u64::MAX)),
+                ));
+                println!("{}", ai::Json::Object(entries));
+            } else {
+                println!("provider: {}", provider.id());
+                println!("model: {}", response.model);
+                println!("dimensions: {}", response.dimensions().unwrap_or(0));
+                println!("inputs: {}", inputs.len());
+                println!(
+                    "usage: prompt_tokens={} total_tokens={}",
+                    response.usage.prompt_tokens, response.usage.total_tokens
+                );
+                let mut previewed = false;
+                for (index, vector) in response.vectors.iter().enumerate() {
+                    let preview = vector
+                        .values()
+                        .iter()
+                        .take(8)
+                        .map(|value| format!("{value:.6}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let suffix = if vector.len() > 8 {
+                        previewed = true;
+                        ", ..."
+                    } else {
+                        ""
+                    };
+                    println!("[{index}] [{preview}{suffix}]");
+                }
+                if previewed {
+                    println!(
+                        "note: human output previews 8 components; use --json for full vectors"
+                    );
+                }
+            }
+            let event = MetricEvent::new(provider.id(), &model, "embed")
+                .success(started.elapsed().as_millis() as u64)
+                .usage(response.usage.prompt_tokens, 0, response.usage.total_tokens);
+            if let Err(error) = metrics.record(&event) {
+                eprintln!("warning: {error}");
+            }
+            0
+        }
+        Err(error) => {
+            let event = MetricEvent::new(provider.id(), &model, "embed")
+                .failure(started.elapsed().as_millis() as u64, error.code.clone());
+            if let Err(metrics_error) = metrics.record(&event) {
+                eprintln!("warning: {metrics_error}");
+            }
+            report_error(&error)
+        }
+    }
+}
+
+fn embedding_inputs(options: &Options) -> Result<Vec<String>, i32> {
+    let inputs = if options.prompt_stdin {
+        read_stdin_lines()?
+    } else if !options.positional.is_empty() {
+        options.positional.clone()
+    } else if !io::stdin().is_terminal() {
+        read_stdin_lines()?
+    } else {
+        eprintln!("error: provide text, multiple texts, or `-` to read one input per line");
+        return Err(64);
+    };
+    if inputs.is_empty() {
+        eprintln!("error: no non-empty embedding inputs were provided");
+        return Err(64);
+    }
+    Ok(inputs)
+}
+
+fn read_stdin_lines() -> Result<Vec<String>, i32> {
+    let text = read_stdin()?;
+    let inputs: Vec<String> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect();
+    if inputs.is_empty() {
+        eprintln!("error: standard input contained no non-empty lines");
+        return Err(64);
+    }
+    Ok(inputs)
 }
 
 fn build_messages(options: &Options) -> Result<Vec<Message>, i32> {
@@ -583,7 +774,9 @@ fn build_provider(
         "openai" => Ok(Box::new(build_openai(config, model)?)),
         other => Err(ai::AiError::new(
             ai::provider::AI_E_CONFIG,
-            format!("unknown provider `{other}`; expected mock, echo, or openai"),
+            format!(
+                "unknown provider `{other}`; expected mock, echo, or openai (`hash` is embed-only)"
+            ),
         )),
     }
 }
@@ -760,6 +953,21 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
                         .map_err(|_| "--temperature requires a number".to_string())?,
                 );
             }
+            "--dimensions" => {
+                let value = take_value(flag, inline, args, &mut index)?;
+                options.dimensions = Some(
+                    value
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|value| (1..=ai::MAX_EMBEDDING_DIMENSIONS).contains(value))
+                        .ok_or_else(|| {
+                            format!(
+                                "--dimensions requires an integer from 1 to {}",
+                                ai::MAX_EMBEDDING_DIMENSIONS
+                            )
+                        })?,
+                );
+            }
             "-" => options.prompt_stdin = true,
             other if other.starts_with('-') => {
                 return Err(format!("unknown option `{other}`; try `vantyx ai --help`"));
@@ -824,6 +1032,25 @@ mod tests {
     }
 
     #[test]
+    fn parses_embedding_dimensions() {
+        let options = parse_options(&args(&[
+            "--provider",
+            "hash",
+            "--dimensions",
+            "16",
+            "--json",
+            "one",
+            "two",
+        ]))
+        .unwrap();
+        assert_eq!(options.provider.as_deref(), Some("hash"));
+        assert_eq!(options.dimensions, Some(16));
+        assert_eq!(options.positional, vec!["one", "two"]);
+        assert!(parse_options(&args(&["--dimensions", "0"])).is_err());
+        assert!(parse_options(&args(&["--dimensions", "4097"])).is_err());
+    }
+
+    #[test]
     fn parses_extract_options() {
         let options = parse_options(&args(&[
             "--provider",
@@ -857,6 +1084,9 @@ mod tests {
         let text = capabilities(&ProviderCapabilities::openai_compatible());
         assert!(text.contains("chat"));
         assert!(!text.contains("streaming"));
-        assert!(!text.contains("embeddings"));
+        assert!(text.contains("embeddings"));
+        let hash = capabilities(&ProviderCapabilities::hash_embedding());
+        assert!(hash.contains("embeddings"));
+        assert!(!hash.contains("chat"));
     }
 }

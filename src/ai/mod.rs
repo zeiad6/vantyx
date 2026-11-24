@@ -18,6 +18,7 @@ pub mod bm25;
 pub mod budget;
 pub mod config;
 pub mod embedding;
+pub mod embedding_provider;
 pub mod extract;
 pub mod http;
 pub mod json;
@@ -36,6 +37,10 @@ pub use bm25::{Bm25Hit, Bm25Index};
 pub use budget::Budget;
 pub use config::AiConfig;
 pub use embedding::{SearchHit, Vector, VectorEntry, VectorIndex};
+pub use embedding_provider::{
+    CachingEmbeddingProvider, DEFAULT_CACHE_BYTES, DEFAULT_CACHE_ENTRIES, DEFAULT_HASH_DIMENSIONS,
+    EmbeddingCacheStats, HashEmbeddingProvider,
+};
 pub use extract::{Extraction, MAX_REPAIR_ATTEMPTS, extract};
 pub use http::{HttpResponse, HttpTransport, NetworkPolicy, Transport};
 pub use json::{Json, JsonNumber, parse};
@@ -43,12 +48,16 @@ pub use metrics::{MetricEvent, MetricsSink};
 pub use mock::{EchoProvider, MockProvider};
 pub use openai::OpenAiProvider;
 pub use provider::{
-    AiError, ChatRequest, ChatResponse, ContentPart, FinishReason, Message, Provider,
-    ProviderCapabilities, ResponseFormat, Role, ToolCall, ToolSpec, Usage,
+    AiError, ChatRequest, ChatResponse, ContentPart, EmbeddingRequest, EmbeddingResponse,
+    EmbeddingUsage, FinishReason, MAX_EMBEDDING_DIMENSIONS, MAX_EMBEDDING_INPUTS,
+    MAX_EMBEDDING_ITEM_BYTES, MAX_EMBEDDING_REQUEST_BYTES, Message, Provider, ProviderCapabilities,
+    ResponseFormat, Role, ToolCall, ToolSpec, Usage,
 };
 pub use schema::{SchemaError, validate as validate_schema};
 pub use sse::{SseEvent, SseParser};
-pub use tokens::{check_context_limit, estimate_request_tokens, estimate_tokens};
+pub use tokens::{
+    check_context_limit, estimate_embedding_tokens, estimate_request_tokens, estimate_tokens,
+};
 pub use tools::{
     Approval, Capability, CapabilitySet, EchoTool, ReadTextFileTool, Tool, ToolContext, ToolError,
     ToolPolicy, ToolRegistry, WordCountTool,

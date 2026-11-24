@@ -33,20 +33,22 @@ because a document says so; the table cites code or an observed command.
 | Source AI references | none (`grep` over `src/`, `tests/`, `Cargo.toml`) |
 | Modules / imports | no AST or parser support |
 | Async / await | no language support; only a host thread for the interpreter stack |
-| Tensor / GPU / embedding code | none |
+| Tensor / GPU code | none at initial inspection; still none |
+| Embedding code | vector math and in-memory index existed at initial inspection; T-045 adds provider interface, hash baseline, bounded cache, and `/v1/embeddings` |
 
 ## Post-implementation verification (2026-11-23)
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | **358 passed**: 218 library unit, 11 CLI unit, 20 AI integration, 41 e2e, 68 native (2026-11-24, after T-044); the earlier 357-test and 340-test runs also passed |
+| `cargo test` | **383 passed**: 237 library unit, 12 CLI unit, 25 AI integration, 41 e2e, 68 native (2026-11-24, after T-045); the earlier 358-, 357-, and 340-test runs also passed |
 | Map benchmark | `map_ops` native 3.597 ms, interpreter 121.728 ms, C 2.884 ms, Rust 4.495 ms (2026-11-24; `benchmarks/results/2026-11-24.*`) |
 | `cargo build` / `--release` | both succeeded after the AI foundation and rename |
 | `cargo clippy --all-targets -- -D warnings` | clean, zero warnings |
 | Examples | all five interpreter/native outputs identical |
 | Rename | code, CLI, extension, env vars, tests, docs, CI, GitHub repository, and clean-clone CI complete |
 | AI host | `src/ai/` foundation and `vantyx ai` CLI implemented; offline and loopback tests pass |
-| AI live evidence | none; no local server or cloud credentials available |
+| Embeddings | deterministic hash provider, batch limits, bounded cache, OpenAI-compatible `/v1/embeddings`, and `vantyx ai embed` implemented; offline/loopback tests pass |
+| AI live evidence | none; no local server, embedding model, or cloud credentials available |
 | Language-level AI | still blocked on modules (T-013) and async (T-017) |
 | Tensor / GPU / embedding model code | none; only vector math and an in-memory index |
 
@@ -113,6 +115,7 @@ through T-035; their documented subset limits remain real gaps, listed below.
 | T-034 | REPL multi-line history/field completion | None | MISSING | Entire task | P4 | Defer |
 | T-035 | Public repository and launch kit | Public repo, CI, release, issue, `llms.txt` | COMPLETE | Rename to Vantyx; AI discovery update | P1 | Rename |
 | T-044 | Native scalar-key map hash index | `src/codegen_c.rs`; `large_scalar_maps_match`; 2026-11-24 benchmark | COMPLETE | Structural-key hashing; adversarial seed | P1 | Keep |
+| T-045 | Embedding provider interface, batch embeddings, cache, and CLI | `src/ai/provider.rs`, `src/ai/embedding_provider.rs`, `src/ai/openai.rs`, `src/ai_cli.rs`; 383-test run; loopback `/v1/embeddings` | COMPLETE (offline/loopback) | Live embedding model; persistence; RAG | P1 | Extend |
 
 ### Core partials that must not be described as finished
 
@@ -177,7 +180,7 @@ not exist yet.
 | AI-013 | Agent loop with hard limits | Bounded loop with step/tool/token/time limits and cancellation flag | PARTIAL | Persistent state and resume | P1 | Extend |
 | AI-014 | Multi-agent orchestration research | No evidence gathered; deliberately unbuilt | MISSING | Research only if a measurable use case appears | P3 | Defer |
 | AI-015 | RAG ingestion/chunking | None | MISSING | Text/Markdown/code ingestion, chunking, metadata | P2 | Implement |
-| AI-016 | Embeddings and vector store | Vector math, normalization, cosine/dot, and in-memory index | PARTIAL | Embedding provider interface, batching, persistence | P1 | Extend |
+| AI-016 | Embeddings and vector store | Provider interface, batch limits, deterministic hash provider, bounded cache, OpenAI-compatible `/v1/embeddings`, vector math, and in-memory index | PARTIAL | Live embedding-model evidence, persistence, larger-scale search evaluation | P1 | Extend |
 | AI-017 | Hybrid search / BM25 | BM25 with Unicode tokenization, add/replace/remove, ranked hits | PARTIAL | Hybrid fusion and evaluation | P2 | Extend |
 | AI-018 | Retrieval evaluation harness | None | MISSING | Recall/precision/MRR fixtures | P2 | Implement |
 | AI-019 | Tensor primitives | None | MISSING | Shape/dtype/strides/matmul or documented non-goal | P3 | Research |
@@ -267,6 +270,9 @@ Full detail: `RESEARCH/NAMING_AUDIT.md`.
    `vantyx ai doctor`, and `vantyx ai models`/`chat` against a compatible
    endpoint when configured.
 8. [x] Tests for every item, including offline loopback-server tests.
+9. [x] Embedding provider interface, batch limits, deterministic hash baseline,
+   bounded cache, OpenAI-compatible `/v1/embeddings`, and `vantyx ai embed`
+   (T-045, ADR-0017).
 
 Evidence: 2026-11-23 `cargo test` — 357 passed (218 library unit + 11 CLI unit +
 20 AI integration + 41 end-to-end + 67 native); `cargo clippy --all-targets --
@@ -282,6 +288,16 @@ verified identical output and recorded `map_ops` native 3.597 ms versus
 interpreter 121.728 ms, C 2.884 ms, and Rust 4.495 ms. GitHub Actions run
 45321718008 passed build, all 358 tests, clippy, release build, and differential
 examples on commit `f55c91c`.
+
+Re-verification after T-045 on 2026-11-24: `cargo test` — 383 passed (237
+library unit + 12 CLI unit + 25 AI integration + 41 end-to-end + 68 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched. Embedding tests cover offline determinism,
+normalization, batch limits, cache behavior, loopback `/v1/embeddings`, index
+and dimension validation, and `echo` rejection. Live embedding-model evidence
+remains blocked by the unavailable local/cloud inference environment; the hash
+provider is explicitly lexical, not semantic. The T-045 GitHub Actions run is
+recorded after the push.
 
 ### P1 — Core language recovery
 

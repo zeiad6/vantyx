@@ -90,7 +90,9 @@ without pretending all providers are identical.
 
 **Decision:** implement a provider abstraction with an OpenAI-compatible adapter
 and capability metadata. Do not claim feature parity; reject unsupported
-parameters instead of silently ignoring them.
+parameters instead of silently ignoring them. The same boundary carries
+embeddings through `/v1/embeddings`; an offline feature-hash provider exists for
+deterministic tests and is explicitly not a trained semantic model.
 
 ### 3. Local first, cloud opt-in
 

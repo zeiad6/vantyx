@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use vantyx::ai::{
-    ChatRequest, HttpTransport, Message, NetworkPolicy, OpenAiProvider, Provider,
+    ChatRequest, EmbeddingRequest, HttpTransport, Message, NetworkPolicy, OpenAiProvider, Provider,
     ProviderCapabilities,
 };
 
@@ -338,7 +338,148 @@ fn openai_capabilities_do_not_claim_unimplemented_streaming() {
     let capabilities = ProviderCapabilities::openai_compatible();
     assert!(capabilities.chat);
     assert!(!capabilities.streaming);
-    assert!(!capabilities.embeddings);
+    assert!(capabilities.embeddings);
+}
+
+#[test]
+fn openai_embedding_adapter_round_trips_over_loopback() {
+    let body = r#"{"model":"embed-demo","data":[{"index":1,"embedding":[0.0,1.0]},{"index":0,"embedding":[1.0,0.0]}],"usage":{"prompt_tokens":4,"total_tokens":4}}"#;
+    let (endpoint, handle) = serve_openai_once(body);
+    let transport = HttpTransport::new(NetworkPolicy::local_only());
+    let provider = OpenAiProvider::new(endpoint, Some("test-key".into()), Box::new(transport));
+    let mut request =
+        EmbeddingRequest::new("embed-demo", vec!["alpha".to_string(), "beta".to_string()]);
+    request.dimensions = Some(2);
+    let mut budget = vantyx::ai::Budget::default();
+    let response = provider.embed(&request, &mut budget).unwrap();
+    assert_eq!(response.vectors[0].values(), &[1.0, 0.0]);
+    assert_eq!(response.vectors[1].values(), &[0.0, 1.0]);
+    assert_eq!(response.usage.total_tokens, 4);
+    let captured = handle.join().unwrap();
+    assert!(captured.starts_with("POST /v1/embeddings HTTP/1.1"));
+    assert!(captured.contains("Authorization: Bearer test-key"));
+    assert!(captured.contains(r#""input":["alpha","beta"]"#));
+    assert!(captured.contains(r#""dimensions":2"#));
+}
+
+#[test]
+fn openai_embed_cli_uses_a_loopback_server() {
+    let body = r#"{"model":"embed-demo","data":[{"index":0,"embedding":[0.5,0.5,0.5,0.5]}],"usage":{"prompt_tokens":2,"total_tokens":2}}"#;
+    let (endpoint, handle) = serve_openai_once(body);
+    let run = vantyx(
+        &[
+            "ai",
+            "embed",
+            "--provider",
+            "openai",
+            "--model",
+            "embed-demo",
+            "--endpoint",
+            &endpoint,
+            "--dimensions",
+            "4",
+            "--json",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let value = vantyx::ai::json::parse(run.stdout.trim()).unwrap();
+    assert_eq!(value.get("provider").unwrap().as_str(), Some("openai"));
+    assert_eq!(value.get("dimensions").unwrap().as_u64(), Some(4));
+    assert_eq!(value.get("input_count").unwrap().as_u64(), Some(1));
+    assert_eq!(
+        value.get("vectors").unwrap().as_array().unwrap()[0]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    let captured = handle.join().unwrap();
+    assert!(captured.starts_with("POST /v1/embeddings HTTP/1.1"));
+    assert!(captured.contains(r#""model":"embed-demo""#));
+}
+
+#[test]
+fn mock_embed_cli_is_deterministic_and_offline() {
+    let first = vantyx(
+        &[
+            "ai",
+            "embed",
+            "--provider",
+            "mock",
+            "--dimensions",
+            "8",
+            "--json",
+            "hello world",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(first.status, 0, "{}", first.stderr);
+    let second = vantyx(
+        &[
+            "ai",
+            "embed",
+            "--provider",
+            "mock",
+            "--dimensions",
+            "8",
+            "--json",
+            "hello world",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(second.status, 0, "{}", second.stderr);
+    assert_eq!(first.stdout, second.stdout);
+    let value = vantyx::ai::json::parse(first.stdout.trim()).unwrap();
+    assert_eq!(value.get("provider").unwrap().as_str(), Some("hash"));
+    assert_eq!(value.get("dimensions").unwrap().as_u64(), Some(8));
+    assert_eq!(value.get("input_count").unwrap().as_u64(), Some(1));
+    let vector = value.get("vectors").unwrap().as_array().unwrap()[0]
+        .as_array()
+        .unwrap();
+    assert_eq!(vector.len(), 8);
+    let norm: f64 = vector
+        .iter()
+        .map(|value| {
+            let component = value.as_f64().unwrap();
+            component * component
+        })
+        .sum::<f64>()
+        .sqrt();
+    assert!((norm - 1.0).abs() < 1e-5);
+}
+
+#[test]
+fn mock_embed_cli_reads_a_batch_from_stdin() {
+    let run = vantyx(
+        &[
+            "ai",
+            "embed",
+            "--provider",
+            "hash",
+            "--dimensions",
+            "4",
+            "--json",
+            "-",
+        ],
+        Some("alpha\n\nbeta\n"),
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let value = vantyx::ai::json::parse(run.stdout.trim()).unwrap();
+    assert_eq!(value.get("input_count").unwrap().as_u64(), Some(2));
+    assert_eq!(value.get("vectors").unwrap().as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn echo_embed_provider_fails_clearly() {
+    let run = vantyx(&["ai", "embed", "--provider", "echo", "hello"], None, &[]);
+    assert_eq!(run.status, 64);
+    assert!(run.stderr.contains("has no embeddings"), "{}", run.stderr);
 }
 
 const PERSON_SCHEMA: &str = r#"{"type":"object","required":["name"],"properties":{"name":{"type":"string"},"age":{"type":"integer","minimum":0}},"additionalProperties":false}"#;

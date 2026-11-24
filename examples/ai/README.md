@@ -1,3 +1,9 @@
+# AI host examples
+
+- `embeddings.md` — offline hash embeddings, stdin batches, a local
+  OpenAI-compatible embedding server, and the bounded library cache.
+- The structured extraction walkthrough below.
+
 # Structured extraction example
 
 `vantyx ai extract` asks a provider for JSON and refuses to return it until the
