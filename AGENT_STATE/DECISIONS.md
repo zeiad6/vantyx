@@ -22,6 +22,17 @@ file records operational choices.
 - Defer streaming tool calls because the CLI has no tool-execution surface;
   implementing them now would be library-only.
 
+## 2026-11-24 — Native string character buffers
+
+- Single-byte ASCII characters returned by iteration or indexing share an
+  immutable static table instead of allocating a heap string per character.
+  Native strings are never mutated in place, and the runtime is single-threaded,
+  so the shared pointers preserve semantics.
+- Multibyte UTF-8 characters still allocate. Concatenation still copies into a
+  fresh exact-size buffer; no ownership or reclamation change is implied.
+- The measured `string_ops` improvement is a runtime optimization, not a claim
+  about general string performance.
+
 ## 2026-11-24 — Verification and status discipline
 
 - `VERIFIED` requires an observed command, date, and recorded evidence.

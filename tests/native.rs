@@ -713,6 +713,27 @@ fn string_unicode_indexing_and_iteration_match() {
 }
 
 #[test]
+fn string_ascii_indexing_iteration_and_concat_match() {
+    assert_same(
+        "string-ascii-cache",
+        "fn main():\n\
+         \x20   let s = \"abcXYZ019 !?,.-+\"\n\
+         \x20   print(len(s))\n\
+         \x20   var out = \"\"\n\
+         \x20   for c in s:\n\
+         \x20       out = out + c + \"|\"\n\
+         \x20   print(out)\n\
+         \x20   print(s[0], s[5], s[15])\n\
+         \x20   var reversed = \"\"\n\
+         \x20   var i = len(s) - 1\n\
+         \x20   while i >= 0:\n\
+         \x20       reversed = reversed + s[i]\n\
+         \x20       i = i - 1\n\
+         \x20   print(reversed)\n",
+    );
+}
+
+#[test]
 fn string_iteration_control_flow_matches() {
     assert_same(
         "string-iteration",

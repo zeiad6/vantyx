@@ -3,11 +3,13 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-055 — Shared ASCII character buffers for native string iteration and
+  indexing (2026-11-24; 464-test gate; `string_ops` 8.318 ms → 3.190 ms).
 - T-054 — Incremental RAG re-indexing with vector reuse and deletion pruning
-  (2026-11-24; 463-test gate; ADR-0024). Commit pending at checkpoint creation.
+  (2026-11-24; 463-test gate; ADR-0024; CI run 45376386743).
 - T-053 — Placeholder attribution correction and history rewrite
-  (2026-11-24; CI run 45365926013, 457 tests; REST contributor cache still
-  refreshing).
+  (2026-11-24; CI run 45365926013, 457 tests; REST endpoint now lists only
+  `zeiad6`).
 - T-052 — Streamed OpenAI-compatible text chat (2026-11-24; 457-test gate;
   ADR-0023).
 - T-051 — Integer range patterns (2026-11-24; 437-test gate; ADR-0022).

@@ -1241,7 +1241,7 @@ impl<'a> Emitter<'a> {
                     "int {bytes_name} = vantyx_utf8_char_len((const unsigned char)*{cursor_name});"
                 ));
                 self.line(&format!(
-                    "vantyx_str {local_name} = vantyx_strndup({cursor_name}, (size_t){bytes_name});"
+                    "vantyx_str {local_name} = vantyx_str_slice({cursor_name}, {bytes_name});"
                 ));
                 self.line(&format!("{cursor_name} += {bytes_name};"));
                 self.line("{");
@@ -2375,6 +2375,30 @@ static vantyx_str vantyx_strndup(const char* text, size_t length) {
     return copy;
 }
 
+/* Single-byte ASCII characters are immutable and extremely common in loops.
+   Return a pointer into a static table instead of allocating a 2-byte string
+   for every character. Native strings are never mutated in place, so sharing
+   these pointers is safe. */
+static char vantyx_ascii_char_table[128][2];
+static int vantyx_ascii_char_ready = 0;
+
+static vantyx_str vantyx_str_slice(const char* text, int bytes) {
+    if (bytes == 1) {
+        unsigned char byte = (unsigned char)text[0];
+        if (byte < 128) {
+            if (!vantyx_ascii_char_ready) {
+                for (int i = 0; i < 128; i++) {
+                    vantyx_ascii_char_table[i][0] = (char)i;
+                    vantyx_ascii_char_table[i][1] = 0;
+                }
+                vantyx_ascii_char_ready = 1;
+            }
+            return vantyx_ascii_char_table[byte];
+        }
+    }
+    return vantyx_strndup(text, (size_t)bytes);
+}
+
 static int vantyx_utf8_char_len(const unsigned char lead) {
     if (lead < 0x80) return 1;
     if ((lead & 0xE0) == 0xC0) return 2;
@@ -2411,7 +2435,7 @@ static vantyx_str vantyx_str_index(vantyx_str text, int64_t index, int line, int
         vantyx_rt_error("R0003", message, line, column);
     }
     int bytes = vantyx_utf8_char_len((const unsigned char)text[offset]);
-    return vantyx_strndup(text + offset, (size_t)bytes);
+    return vantyx_str_slice(text + offset, bytes);
 }
 
 static vantyx_str vantyx_str_concat(vantyx_str left, vantyx_str right) {

@@ -238,17 +238,19 @@ timing, one warm-up was discarded, and medians are over five runs.
 
 | Workload | Vantyx native | C `-O2` | Rust `-O` |
 | --- | ---: | ---: | ---: |
-| `arith_loop` | 5.910 ms | 4.944 ms | 6.430 ms |
-| `fib` | 3.376 ms | 3.483 ms | 3.518 ms |
-| `list_ops` | 5.540 ms | 6.013 ms | 5.764 ms |
-| `map_ops` | 3.597 ms | 2.884 ms | 4.495 ms |
-| `struct_ops` | 9.730 ms | 11.663 ms | 13.344 ms |
-| `string_ops` | 8.318 ms | 2.764 ms | 3.611 ms |
+| `arith_loop` | 2.342 ms | 5.101 ms | 6.071 ms |
+| `fib` | 3.510 ms | 3.002 ms | 3.619 ms |
+| `list_ops` | 6.097 ms | 4.462 ms | 5.037 ms |
+| `map_ops` | 3.353 ms | 3.064 ms | 3.881 ms |
+| `struct_ops` | 9.219 ms | 12.201 ms | 12.798 ms |
+| `string_ops` | 3.190 ms | 2.796 ms | 3.733 ms |
 
-`string_ops` is the clearest measured gap because Vantyx strings are immutable
-and concatenation allocates a fresh exact-size buffer. These are single-machine
-baseline numbers, not a competitive claim. The interpreter is intentionally the
-slow reference. Methodology, peak RSS, build time, binary size, and raw results:
+`string_ops` fell from 8.318 ms to 3.190 ms after single-byte ASCII string
+iteration stopped allocating a heap string per character (T-055); it now sits
+near C and Rust on this workload. Concatenation still allocates a fresh
+exact-size buffer. These are single-machine baseline numbers, not a competitive
+claim. The interpreter is intentionally the slow reference. Methodology, peak
+RSS, build time, binary size, and raw results:
 [docs/benchmarks.md](docs/benchmarks.md) and
 [`benchmarks/results/`](benchmarks/results/).
 

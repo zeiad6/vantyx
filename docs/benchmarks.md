@@ -95,36 +95,39 @@ native executable from `vantyx build`.
 
 | Workload | Vantyx interp | Vantyx native | Python | C | Rust |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `arith_loop` | 1422.623 | 5.910 | 455.966 | 4.944 | 6.430 |
-| `fib` | 181.901 | 3.376 | 53.608 | 3.483 | 3.518 |
-| `list_ops` | 480.670 | 5.540 | 186.734 | 6.013 | 5.764 |
-| `map_ops` | 121.728 | 3.597 | 42.253 | 2.884 | 4.495 |
-| `struct_ops` | 489.947 | 9.730 | 189.024 | 11.663 | 13.344 |
-| `string_ops` | 74.813 | 8.318 | 54.285 | 2.764 | 3.611 |
+| `arith_loop` | 688.659 | 2.342 | 419.057 | 5.101 | 6.071 |
+| `fib` | 179.172 | 3.510 | 53.524 | 3.002 | 3.619 |
+| `list_ops` | 446.043 | 6.097 | 169.327 | 4.462 | 5.037 |
+| `map_ops` | 121.265 | 3.353 | 40.583 | 3.064 | 3.881 |
+| `struct_ops` | 456.802 | 9.219 | 186.645 | 12.201 | 12.798 |
+| `string_ops` | 71.456 | 3.190 | 46.610 | 2.796 | 3.733 |
 
-For comparison, the 2026-11-22 `map_ops` medians before the hash index were:
-Vantyx interpreter 106.218 ms, Vantyx native 64.212 ms, Python 3208.396 ms,
-C 8.360 ms, Rust 9.044 ms. The Python number changed because the workload now
-uses `dict` instead of the deliberately naive linear implementation.
+For comparison, the 2026-11-24 pre-T-055 `string_ops` native median was
+8.318 ms; it fell to 3.190 ms after single-byte ASCII iteration and indexing
+stopped allocating a heap string per character. The 2026-11-22 `map_ops`
+medians before the hash index were: Vantyx interpreter 106.218 ms, Vantyx
+native 64.212 ms, Python 3208.396 ms, C 8.360 ms, Rust 9.044 ms. The Python
+number changed because the workload now uses `dict` instead of the deliberately
+naive linear implementation.
 
 Peak RSS and min/max spread are in the raw result files. Representative values:
 
 | Workload | Vantyx native RSS | Vantyx interp RSS | C RSS | Rust RSS |
 | --- | ---: | ---: | ---: | ---: |
-| `arith_loop` | 2.00 MiB | 3.52 MiB | 1.60 MiB | 2.11 MiB |
-| `list_ops` | 3.39 MiB | 14.29 MiB | 2.77 MiB | 3.31 MiB |
-| `struct_ops` | 5.14 MiB | 44.52 MiB | 4.65 MiB | 5.11 MiB |
+| `arith_loop` | 2.04 MiB | 3.64 MiB | 1.60 MiB | 2.02 MiB |
+| `list_ops` | 3.37 MiB | 13.92 MiB | 2.75 MiB | 3.37 MiB |
+| `struct_ops` | 5.16 MiB | 43.16 MiB | 4.65 MiB | 5.11 MiB |
 
 Build time and binary size:
 
 | Workload | Vantyx build s | C build s | Rust build s | Vantyx binary B | C binary B | Rust binary B |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `arith_loop` | 1.086 | 0.181 | 1.956 | 16,744 | 15,992 | 4,493,248 |
-| `fib` | 0.988 | 0.178 | 1.085 | 16,784 | 16,016 | 4,493,104 |
-| `list_ops` | 1.065 | 0.462 | 1.473 | 16,840 | 16,144 | 4,494,328 |
-| `map_ops` | 1.032 | 0.213 | 1.312 | 21,824 | 16,240 | 4,516,256 |
-| `struct_ops` | 0.765 | 0.263 | 1.106 | 16,832 | 16,144 | 4,494,736 |
-| `string_ops` | 0.620 | 0.179 | 1.339 | 16,784 | 16,192 | 4,494,072 |
+| `arith_loop` | 0.171 | 0.075 | 0.093 | 16,744 | 15,992 | 4,493,248 |
+| `fib` | 0.120 | 0.072 | 0.095 | 16,784 | 16,016 | 4,493,104 |
+| `list_ops` | 0.127 | 0.079 | 0.113 | 16,840 | 16,144 | 4,494,328 |
+| `map_ops` | 0.254 | 0.081 | 0.243 | 21,824 | 16,240 | 4,516,256 |
+| `struct_ops` | 0.136 | 0.078 | 0.116 | 16,832 | 16,144 | 4,494,736 |
+| `string_ops` | 0.139 | 0.078 | 0.117 | 16,880 | 16,192 | 4,494,072 |
 
 ## Interpretation
 
@@ -135,8 +138,10 @@ Build time and binary size:
   performance band. Do not read small differences (including cases where
   Vantyx is marginally ahead) as a language-level win; they are within
   measurement noise and reflect workload-specific code generation.
-  `string_ops` remains the clearest gap at ~3.0× slower than C because
-  immutable concatenation allocates a fresh exact-size string.
+  `string_ops` fell from 8.318 ms to 3.190 ms after single-byte ASCII
+  iteration and indexing stopped allocating a heap string per character
+  (T-055); it is now close to C's 2.796 ms. Immutable concatenation still
+  allocates a fresh exact-size string.
 - **Maps:** the scalar-key hash index (ADR-0016) cut `map_ops` from 64.212 ms
   to 3.597 ms. Native is now 1.25× slower than C's hash table and faster than
   the Rust `HashMap` result on this run. Structural keys still take the linear
