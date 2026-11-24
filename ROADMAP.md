@@ -71,8 +71,9 @@ Research evidence: [`docs/ai/AI_RESEARCH.md`](docs/ai/AI_RESEARCH.md).
 
 - Dependency-free AI host: strict JSON, JSON Schema subset, typed providers,
   capabilities, errors, token estimates, budgets, metrics, and HTTP boundary.
-- Mock/echo providers and an OpenAI-compatible non-streaming chat/models/
-  embeddings adapter with explicit `--allow-network` and environment-only keys.
+- Mock/echo providers and an OpenAI-compatible chat/models/embeddings adapter
+  with explicit `--allow-network` and environment-only keys; text chat streams
+  over SSE with incremental loopback HTTP and `curl` HTTPS transport.
 - Validated structured extraction with bounded repair (`vantyx ai extract`).
 - Embedding provider interface, deterministic lexical hash baseline, bounded
   FIFO cache, and batch/dimension limits (ADR-0017).
@@ -89,8 +90,8 @@ Research evidence: [`docs/ai/AI_RESEARCH.md`](docs/ai/AI_RESEARCH.md).
 1. **Live evidence:** one local and one cloud chat, plus one trained embedding
    model, recorded with setup, version, hardware, and output. Currently
    `BLOCKED` by unavailable servers/credentials.
-2. **Streaming:** adapter and CLI output/cancellation on top of the existing
-   bounded SSE parser.
+2. **Streaming follow-ups:** streaming tool calls and interactive cancellation
+   on top of the verified text-delta path.
 3. **Retrieval quality:** arbitrary metadata filters (source-prefix filtering ships), incremental re-indexing,
    deduplication/deletion, reranking, a licensed multi-document corpus, and
    latency/memory measurements.

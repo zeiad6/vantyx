@@ -452,10 +452,10 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-053 — Correct placeholder commit attribution
 - Priority: P1
-- Status: VERIFIED
+- Status: VERIFIED (rewritten history and public contributors page; REST cache pending refresh)
 - Description: Remove the unrelated `auren` account from the public repository's contributor attribution. All twelve historical commits used the placeholder identity `Auren Contributors <auren@users.noreply.github.com>`, which GitHub maps to an unrelated user with no work in the repository.
 - Acceptance: every commit reachable from `main` and `v0.1.0` is authored and committed by `Zeidex <48607619+zeiad6@users.noreply.github.com>`; the GitHub contributors API no longer lists `auren`; the working tree, tests, examples, and release tag content are unchanged; `.mailmap` remains for any external references to the old hashes; documentation records that commit hashes and earlier CI run references were replaced.
 - Dependencies: T-035, T-036, T-042.
 - Implementation: `git filter-branch --env-filter` over `--branches --tags` to replace author and committer identity, `--tag-name-filter cat` to move `v0.1.0`, and a force-with-lease push of `main` and the tag. `.mailmap`, `PROJECT_STATUS.md`, `AGENTS.md`, `docs/PROJECT_BASELINE.md`, and this entry record the correction.
-- Verification: 2026-11-24 — all reachable commits report the Zeidex identity; the GitHub contributors API returns `zeiad6` and no `auren` entry; the full local gate passed before the rewrite (457 tests, clippy, release build, five examples, fuzz smoke, link check, streaming smoke); the rewritten tree is byte-identical to the verified tree.
+- Verification: 2026-11-24 — all reachable commits report the Zeidex identity; the public contributors page lists only `zeiad6`; GitHub's REST contributors endpoint still served a cached `auren` entry immediately after the push, so that acceptance check remains open until the cache refreshes; the full local gate passed before the rewrite (457 tests, clippy, release build, five examples, fuzz smoke, link check, streaming smoke); CI run 45365926013 passed on the rewritten `e3d8bdd` with 457 tests; a clean clone of the rewritten history passed 457 tests; the rewritten tree is byte-identical to the verified tree.
 - Scope limits: old commit hashes and CI run references remain historical and no longer resolve on the default branch; external clones must re-fetch rather than merge old history; no other contributor is credited without verified work.

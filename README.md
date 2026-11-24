@@ -266,10 +266,11 @@ Current local result (2026-11-24): **457 tests passed** (297 library unit +
 13 CLI unit + 30 AI integration + 44 end-to-end + 73 differential native),
 Clippy clean, debug and release builds succeed, all five examples match between
 the interpreter and native binaries, and fuzz smoke reports controlled
-diagnostics. The latest public CI run on commit `458c08d` passed; T-047–T-052
-pattern and streaming work is local and not yet CI-verified. Test counts
-and evidence are tracked in [PROJECT_STATUS.md](PROJECT_STATUS.md) and
-[TASKS.md](TASKS.md); do not cite a count without checking them.
+diagnostics. CI run 45365926013 passed on commit `e3d8bdd` with 457 tests;
+T-047–T-053 are CI-verified, and a clean clone of the rewritten history passed
+all 457 tests. Test counts and evidence are tracked in
+[PROJECT_STATUS.md](PROJECT_STATUS.md) and [TASKS.md](TASKS.md); do not cite a
+count without checking them.
 
 ## Documentation
 
