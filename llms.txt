@@ -16,8 +16,8 @@ repository root.
 - **Status:** functional prototype; pre-1.0; not production-ready
 - **License:** MIT
 - **Implementation:** Rust 2024 edition, zero third-party crates
-- **AI surface:** `vantyx ai` host CLI (providers, doctor, models, chat, tokens);
-  offline by default, OpenAI-compatible HTTP, no bundled model
+- **AI surface:** `vantyx ai` host CLI (providers, doctor, models, chat, extract,
+  tokens); offline by default, OpenAI-compatible HTTP, no bundled model
 - **Semantic oracle:** the tree-walking interpreter
 - **Native backend:** emits GNU C11, invokes the system C compiler (`clang` by
   default, override with `VANTYX_CC`), and links only libc/libm
@@ -45,12 +45,13 @@ repository root.
 - Diagnostics with codes, source spans, and help text. Unsupported native
   constructs are rejected with `E0401`, never silently miscompiled.
 - Dependency-free AI host foundation: strict JSON, JSON Schema subset, provider
-  abstraction, mock/echo providers, token estimates, budgets, embeddings,
-  in-memory vector index, BM25, typed tools with capabilities, bounded agents,
-  redacted metrics, SSE parser, and an OpenAI-compatible non-streaming adapter.
-- `vantyx ai providers`, `doctor`, `models`, `chat`, and `tokens`; loopback HTTP
-  by default, remote HTTPS only with `--allow-network`, API keys only from an
-  environment variable.
+  abstraction, mock/echo providers, validated structured extraction with
+  bounded repair, token estimates, budgets, embeddings, in-memory vector index,
+  BM25, typed tools with capabilities, bounded agents, redacted metrics, SSE
+  parser, and an OpenAI-compatible non-streaming adapter.
+- `vantyx ai providers`, `doctor`, `models`, `chat`, `extract`, and `tokens`;
+  loopback HTTP by default, remote HTTPS only with `--allow-network`, API keys
+  only from an environment variable.
 
 ## What is not implemented
 
@@ -69,8 +70,9 @@ repository root.
 - Native support for `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads, or
   `match` on `Any` (rejected with `E0401`)
 - Language-level AI syntax (`from ai import Client`, `await`)
-- Streaming chat output, model download/removal, keyring storage, persistent
-  agent state, embedding providers, hybrid retrieval, or retrieval evaluation
+- Streaming chat output, server-side constrained decoding, model
+  download/removal, keyring storage, persistent agent state, embedding
+  providers, hybrid retrieval, or retrieval evaluation
 - Tensors, autodiff, SIMD, GPU, MCP, ONNX/GGUF embedding, or multi-agent
   orchestration
 - Live local-model or cloud-provider verification (the adapter is tested only
@@ -87,6 +89,9 @@ cargo build
 ./target/debug/vantyx repl
 ./target/debug/vantyx ai providers
 ./target/debug/vantyx ai chat --provider mock "hello"
+./target/debug/vantyx ai extract --provider mock --model demo \
+  --schema examples/ai/person.schema.json \
+  --response '{"name":"Ada","role":"engineer"}' "Extract the person"
 ./target/debug/vantyx ai tokens "hello world"
 ```
 

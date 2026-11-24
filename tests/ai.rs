@@ -340,3 +340,197 @@ fn openai_capabilities_do_not_claim_unimplemented_streaming() {
     assert!(!capabilities.streaming);
     assert!(!capabilities.embeddings);
 }
+
+const PERSON_SCHEMA: &str = r#"{"type":"object","required":["name"],"properties":{"name":{"type":"string"},"age":{"type":"integer","minimum":0}},"additionalProperties":false}"#;
+
+#[test]
+fn extract_validates_mock_output_offline() {
+    let run = vantyx(
+        &[
+            "ai",
+            "extract",
+            "--provider",
+            "mock",
+            "--model",
+            "demo",
+            "--schema",
+            PERSON_SCHEMA,
+            "--response",
+            r#"{"name":"Ada","age":36}"#,
+            "extract a person",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let value = vantyx::ai::json::parse(run.stdout.trim()).unwrap();
+    assert_eq!(value.get("name").unwrap().as_str(), Some("Ada"));
+    assert_eq!(value.get("age").unwrap().as_u64(), Some(36));
+}
+
+#[test]
+fn extract_repairs_invalid_output_within_the_limit() {
+    let run = vantyx(
+        &[
+            "ai",
+            "extract",
+            "--provider",
+            "mock",
+            "--model",
+            "demo",
+            "--schema",
+            PERSON_SCHEMA,
+            "--response",
+            "not json",
+            "--response",
+            r#"{"name":"Ada"}"#,
+            "--repair-attempts",
+            "1",
+            "--json",
+            "extract a person",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let envelope = vantyx::ai::json::parse(run.stdout.trim()).unwrap();
+    assert_eq!(envelope.get("attempts").unwrap().as_u64(), Some(2));
+    assert_eq!(
+        envelope.get("value").unwrap().get("name").unwrap().as_str(),
+        Some("Ada")
+    );
+}
+
+#[test]
+fn extract_fails_after_the_repair_limit_with_a_schema_error() {
+    let run = vantyx(
+        &[
+            "ai",
+            "extract",
+            "--provider",
+            "mock",
+            "--model",
+            "demo",
+            "--schema",
+            PERSON_SCHEMA,
+            "--response",
+            r#"{"name":42}"#,
+            "--response",
+            r#"{"name":false}"#,
+            "--repair-attempts",
+            "1",
+            "extract a person",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 1);
+    assert!(run.stderr.contains("AI_E_SCHEMA"), "{}", run.stderr);
+    assert!(run.stderr.contains("after 2 attempts"), "{}", run.stderr);
+}
+
+#[test]
+fn extract_reads_a_schema_file() {
+    let path = temp_path("schema.json");
+    std::fs::write(&path, PERSON_SCHEMA).unwrap();
+    let run = vantyx(
+        &[
+            "ai",
+            "extract",
+            "--provider",
+            "mock",
+            "--model",
+            "demo",
+            "--schema",
+            path.to_str().unwrap(),
+            "--response",
+            r#"{"name":"Ada"}"#,
+            "extract a person",
+        ],
+        None,
+        &[],
+    );
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let value = vantyx::ai::json::parse(run.stdout.trim()).unwrap();
+    assert_eq!(value.get("name").unwrap().as_str(), Some("Ada"));
+}
+
+#[test]
+fn extract_requires_a_schema_and_a_mock_fixture() {
+    let missing_schema = vantyx(
+        &[
+            "ai",
+            "extract",
+            "--provider",
+            "mock",
+            "--model",
+            "demo",
+            "hi",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(missing_schema.status, 64);
+    assert!(missing_schema.stderr.contains("--schema"));
+
+    let missing_response = vantyx(
+        &[
+            "ai",
+            "extract",
+            "--provider",
+            "mock",
+            "--model",
+            "demo",
+            "--schema",
+            PERSON_SCHEMA,
+            "hi",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(missing_response.status, 64);
+    assert!(missing_response.stderr.contains("--response"));
+}
+
+#[test]
+fn extract_validates_a_loopback_openai_response() {
+    let body = r#"{"model":"demo","choices":[{"message":{"role":"assistant","content":"{\"name\":\"Ada\",\"age\":36}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":6,"total_tokens":10}}"#;
+    let (endpoint, handle) = serve_openai_once(body);
+    let run = vantyx(
+        &[
+            "ai",
+            "extract",
+            "--provider",
+            "openai",
+            "--model",
+            "demo",
+            "--endpoint",
+            &endpoint,
+            "--schema",
+            PERSON_SCHEMA,
+            "--json",
+            "extract a person",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let envelope = vantyx::ai::json::parse(run.stdout.trim()).unwrap();
+    assert_eq!(
+        envelope.get("value").unwrap().get("name").unwrap().as_str(),
+        Some("Ada")
+    );
+    assert_eq!(
+        envelope
+            .get("usage")
+            .unwrap()
+            .get("total_tokens")
+            .unwrap()
+            .as_u64(),
+        Some(10)
+    );
+    let captured = handle.join().unwrap();
+    assert!(captured.starts_with("POST /v1/chat/completions HTTP/1.1"));
+    assert!(captured.contains(r#""response_format":{"type":"json_object"}"#));
+}

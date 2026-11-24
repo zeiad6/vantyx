@@ -49,9 +49,9 @@ Native lists, insertion-ordered maps, structs, enums, and UTF-8-aware string
 indexing/iteration are supported for statically typed code. The REPL persists
 bindings and declarations and provides line editing, history, Tab completion,
 and expression echo. The AI host foundation is offline and tested: strict JSON,
-JSON Schema validation, provider abstraction, token budgets, embeddings, BM25,
-typed tools, bounded agents, redacted metrics, and an OpenAI-compatible HTTP
-adapter. Language-level AI syntax is not implemented yet; `vantyx ai` is the
+JSON Schema validation, validated structured extraction with bounded repair,
+provider abstraction, token budgets, embeddings, BM25, typed tools, bounded
+agents, redacted metrics, and an OpenAI-compatible HTTP adapter. Language-level AI syntax is not implemented yet; `vantyx ai` is the
 supported surface.
 
 | Need | Vantyx today |
@@ -61,6 +61,7 @@ supported surface.
 | A native executable | Yes, for the statically typed subset |
 | Offline AI chat with a mock provider | Yes, through `vantyx ai` |
 | OpenAI-compatible local or cloud chat | Yes, via an explicit endpoint and `--allow-network` for remote HTTPS |
+| Validated structured extraction | Yes, `vantyx ai extract` with a JSON Schema and bounded repair |
 | Language-level `from ai import Client` | Not yet (needs modules and async) |
 | Bundled model, tokenizer, tensors, GPU | No |
 | Modules, generics, closures, async, FFI | Not yet |
@@ -104,6 +105,12 @@ default and never bundles or downloads a model.
 ./target/debug/vantyx ai chat --provider echo "hello"
 ./target/debug/vantyx ai chat --provider mock --json "hello"
 
+# Validated JSON extraction with a bounded repair loop (offline fixture)
+./target/debug/vantyx ai extract --provider mock --model demo \
+  --schema examples/ai/person.schema.json \
+  --response '{"name":"Ada","role":"engineer"}' \
+  "Extract the person"
+
 # A local OpenAI-compatible server (Ollama, llama.cpp, LM Studio, ...)
 ./target/debug/vantyx ai models --endpoint http://127.0.0.1:11434/v1
 ./target/debug/vantyx ai chat --provider openai --model qwen2.5:7b \
@@ -124,6 +131,9 @@ export MY_API_KEY=...
   status) with no prompts, responses, or tool arguments.
 - Token counts from `vantyx ai tokens` are labelled estimates, not a model
   tokenizer.
+- `vantyx ai extract` validates strict JSON against the documented schema
+  subset, repairs invalid output at most three times, and never returns
+  unvalidated model text. Server-side constrained decoding is not claimed.
 - Streaming, model download/removal, keyring storage, and live provider tests
   are not implemented. See [docs/ai/](docs/ai/) and
   [ADR-0015](docs/decisions/ADR-0015-ai-host-foundation.md).
@@ -199,7 +209,7 @@ general performance claim.
 | `src/ir.rs` | Typed, backend-neutral IR |
 | `src/codegen_c.rs` | GNU C11 native backend |
 | `src/repl.rs` | Zero-dependency REPL editor, history, and completion |
-| `src/ai/` | Dependency-free AI host: JSON, providers, schema, tools, agents, retrieval, HTTP |
+| `src/ai/` | Dependency-free AI host: JSON, providers, schema, extraction, tools, agents, retrieval, HTTP |
 | `src/ai_cli.rs` | `vantyx ai` commands |
 | `src/diagnostic.rs` | Source spans and rendered diagnostics |
 | `tests/e2e.rs` | End-to-end language tests |

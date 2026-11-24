@@ -43,8 +43,8 @@ Implemented in `src/ai/`:
 - [x] CLI: `vantyx ai providers`, `vantyx ai doctor`, `vantyx ai chat --provider mock`.
 - [x] Unit and integration tests; no network required.
 
-Verification (2026-11-23): `cargo test` passed offline with 340 tests (208
-library unit + 10 CLI unit + 14 AI integration + 41 end-to-end + 67 native);
+Verification (2026-11-23): `cargo test` passed offline with 357 tests (218
+library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 67 native);
 `cargo clippy --all-targets -- -D warnings` was clean. Mock chat, echo chat,
 stdin prompts, JSON output, metrics redaction, denied tool capabilities,
 cancellation, and a loopback OpenAI-compatible round trip run end-to-end.
@@ -79,14 +79,15 @@ recorded evidence; failure paths (401, 429, timeout) are tested.
 - [ ] Streaming CLI output and cancellation (parser exists; adapter and CLI do
       not stream yet).
 - [x] JSON Schema subset validation.
-- [ ] Typed extraction pipeline and CLI command.
+- [x] Typed extraction pipeline and `vantyx ai extract` command.
 - [ ] Server-native constrained decoding when advertised.
-- [ ] Bounded repair retries with validation paths.
+- [x] Bounded repair retries with validation paths.
 - [x] Token accounting and request limits (estimates and provider-reported
       usage; budgets enforce steps, tools, and tokens).
 
 Exit gate: streamed output matches non-streamed content; invalid JSON is rejected
-with a path; a repair retry is bounded and observable.
+with a path; a repair retry is bounded and observable. Local validation, path
+reporting, and bounded repair are implemented; streaming remains open.
 
 ## Phase AI-4 — Embeddings and retrieval 🚧
 

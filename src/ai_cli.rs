@@ -20,6 +20,8 @@ Usage:
   vantyx ai doctor [options]       Check provider configuration or reachability
   vantyx ai models [options]       List models from an OpenAI-compatible endpoint
   vantyx ai chat [options] [prompt] Chat with a provider
+  vantyx ai extract [options] [prompt]
+                                   Validate JSON output against a schema
   vantyx ai tokens [text]          Estimate tokens (not a model tokenizer)
 
 Options:
@@ -34,6 +36,9 @@ Options:
   --max-tokens <n>        Completion token limit
   --temperature <n>       Sampling temperature, 0 to 2
   --metrics <path>        Append redacted JSONL metrics (no prompts)
+  --schema <path|json>    JSON Schema for `extract` (file path or inline object)
+  --repair-attempts <n>   Repair attempts after invalid output (0-3; default 1)
+  --response <text>       Offline mock response for `extract`; may be repeated
   --json                  Print the response as JSON
   -                       Read the prompt from standard input
   -h, --help              Show this help
@@ -61,6 +66,9 @@ struct Options {
     messages: Vec<String>,
     positional: Vec<String>,
     metrics: Option<PathBuf>,
+    schema: Option<String>,
+    repair_attempts: Option<usize>,
+    responses: Vec<String>,
     json: bool,
     prompt_stdin: bool,
     help: bool,
@@ -81,6 +89,7 @@ pub fn run(args: &[String]) -> i32 {
         "doctor" => doctor(rest),
         "models" => models(rest),
         "chat" => chat(rest),
+        "extract" => extract_command(rest),
         "tokens" => tokens(rest),
         other => {
             eprintln!("error: unknown `vantyx ai` command `{other}`");
@@ -278,30 +287,10 @@ fn chat(args: &[String]) -> i32 {
         .model
         .clone()
         .unwrap_or_else(|| config.model.clone());
-    let mut messages = Vec::new();
-    if let Some(system) = &options.system {
-        messages.push(Message::system(system.clone()));
-    }
-    for message in &options.messages {
-        messages.push(Message::user(message.clone()));
-    }
-    if !options.positional.is_empty() {
-        messages.push(Message::user(options.positional.join(" ")));
-    }
-    if options.prompt_stdin || messages.is_empty() {
-        if !options.prompt_stdin && io::stdin().is_terminal() {
-            eprintln!("error: provide a prompt, `--message`, or `-` to read standard input");
-            return 64;
-        }
-        match read_stdin() {
-            Ok(text) if !text.trim().is_empty() => messages.push(Message::user(text)),
-            Ok(_) => {
-                eprintln!("error: standard input was empty");
-                return 64;
-            }
-            Err(code) => return code,
-        }
-    }
+    let messages = match build_messages(&options) {
+        Ok(messages) => messages,
+        Err(code) => return code,
+    };
 
     let provider = match build_provider(&config, &provider_name, &model) {
         Ok(provider) => provider,
@@ -359,6 +348,176 @@ fn chat(args: &[String]) -> i32 {
             report_error(&error)
         }
     }
+}
+
+fn extract_command(args: &[String]) -> i32 {
+    let options = match parse_options(args) {
+        Ok(options) => options,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return 64;
+        }
+    };
+    if options.help {
+        print!("{AI_USAGE}");
+        return 0;
+    }
+    let Some(schema_argument) = options.schema.as_deref() else {
+        eprintln!("error: `vantyx ai extract` requires --schema <path|json>");
+        eprintln!("help: pass a JSON Schema file or an inline JSON object");
+        return 64;
+    };
+    let schema = match load_schema(schema_argument) {
+        Ok(schema) => schema,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return 64;
+        }
+    };
+    let config = resolve_config(&options);
+    let provider_name = options
+        .provider
+        .clone()
+        .unwrap_or_else(|| config.provider.clone());
+    let model = options
+        .model
+        .clone()
+        .unwrap_or_else(|| config.model.clone());
+    let messages = match build_messages(&options) {
+        Ok(messages) => messages,
+        Err(code) => return code,
+    };
+    let provider: Box<dyn Provider> = match provider_name.as_str() {
+        "mock" => {
+            if options.responses.is_empty() {
+                eprintln!("error: the mock provider needs at least one --response for extraction");
+                eprintln!("help: use --provider openai for a real endpoint, or pass --response");
+                return 64;
+            }
+            let responses = options
+                .responses
+                .iter()
+                .map(|text| Ok(ChatResponse::text(&model, text.clone())))
+                .collect();
+            Box::new(MockProvider::new("mock", responses))
+        }
+        "echo" => Box::new(EchoProvider::new()),
+        "openai" => match build_openai(&config, &model) {
+            Ok(openai) => Box::new(openai),
+            Err(error) => return report_error(&error),
+        },
+        other => {
+            eprintln!("error: unknown provider `{other}`; expected mock, echo, or openai");
+            return 64;
+        }
+    };
+
+    let mut request = ChatRequest::new(model.clone(), messages);
+    request.temperature = options.temperature;
+    request.max_tokens = options.max_tokens;
+    request.timeout_ms = options.timeout_ms;
+    let repair_attempts = options.repair_attempts.unwrap_or(1);
+    let mut budget = Budget::default();
+    let started = Instant::now();
+    let metrics = options
+        .metrics
+        .as_ref()
+        .map_or_else(MetricsSink::disabled, MetricsSink::file);
+    match ai::extract(
+        provider.as_ref(),
+        request,
+        &schema,
+        &mut budget,
+        repair_attempts,
+    ) {
+        Ok(result) => {
+            if options.json {
+                println!("{}", result.to_json());
+            } else {
+                println!("{}", result.value.to_compact_string());
+            }
+            let event = MetricEvent::new(provider.id(), &model, "extract")
+                .success(started.elapsed().as_millis() as u64)
+                .usage(
+                    result.usage.prompt_tokens,
+                    result.usage.completion_tokens,
+                    result.usage.total_tokens,
+                )
+                .finish_reason(result.finish_reason.as_str());
+            if let Err(error) = metrics.record(&event) {
+                eprintln!("warning: {error}");
+            }
+            0
+        }
+        Err(error) => {
+            let event = MetricEvent::new(provider.id(), &model, "extract")
+                .failure(started.elapsed().as_millis() as u64, error.code.clone());
+            if let Err(metrics_error) = metrics.record(&event) {
+                eprintln!("warning: {metrics_error}");
+            }
+            report_error(&error)
+        }
+    }
+}
+
+fn build_messages(options: &Options) -> Result<Vec<Message>, i32> {
+    let mut messages = Vec::new();
+    if let Some(system) = &options.system {
+        messages.push(Message::system(system.clone()));
+    }
+    for message in &options.messages {
+        messages.push(Message::user(message.clone()));
+    }
+    if !options.positional.is_empty() {
+        messages.push(Message::user(options.positional.join(" ")));
+    }
+    if options.prompt_stdin || messages.is_empty() {
+        if !options.prompt_stdin && io::stdin().is_terminal() {
+            eprintln!("error: provide a prompt, `--message`, or `-` to read standard input");
+            return Err(64);
+        }
+        match read_stdin() {
+            Ok(text) if !text.trim().is_empty() => messages.push(Message::user(text)),
+            Ok(_) => {
+                eprintln!("error: standard input was empty");
+                return Err(64);
+            }
+            Err(code) => return Err(code),
+        }
+    }
+    Ok(messages)
+}
+
+fn load_schema(argument: &str) -> Result<ai::Json, String> {
+    const MAX_SCHEMA_FILE: u64 = 1024 * 1024;
+    let text = if argument.trim_start().starts_with('{') {
+        argument.to_string()
+    } else {
+        let path = PathBuf::from(argument);
+        let metadata = std::fs::metadata(&path)
+            .map_err(|error| format!("cannot read schema `{}`: {error}", path.display()))?;
+        if metadata.len() > MAX_SCHEMA_FILE {
+            return Err(format!(
+                "schema `{}` is {} bytes; the limit is {MAX_SCHEMA_FILE}",
+                path.display(),
+                metadata.len()
+            ));
+        }
+        std::fs::read_to_string(&path)
+            .map_err(|error| format!("cannot read schema `{}`: {error}", path.display()))?
+    };
+    if text.len() > MAX_SCHEMA_FILE as usize {
+        return Err(format!(
+            "schema is {} bytes; the limit is {MAX_SCHEMA_FILE}",
+            text.len()
+        ));
+    }
+    let value =
+        ai::json::parse(&text).map_err(|error| format!("schema is not valid JSON: {error}"))?;
+    if !matches!(value, ai::Json::Object(_)) {
+        return Err("schema must be a JSON object".to_string());
+    }
+    Ok(value)
 }
 
 fn tokens(args: &[String]) -> i32 {
@@ -496,6 +655,12 @@ fn report_error(error: &ai::AiError) -> i32 {
             "help: check that the local server is running, or set --endpoint to a reachable URL"
         );
     }
+    if error.code == ai::provider::AI_E_SCHEMA {
+        eprintln!("help: tighten the schema or prompt, or raise --repair-attempts (max 3)");
+    }
+    if error.code == ai::provider::AI_E_JSON {
+        eprintln!("help: use a model with JSON mode, or raise --repair-attempts (max 3)");
+    }
     1
 }
 
@@ -548,6 +713,25 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             "--metrics" => {
                 options.metrics = Some(PathBuf::from(take_value(flag, inline, args, &mut index)?));
             }
+            "--schema" => options.schema = Some(take_value(flag, inline, args, &mut index)?),
+            "--repair-attempts" => {
+                let value = take_value(flag, inline, args, &mut index)?;
+                options.repair_attempts = Some(
+                    value
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|value| *value <= ai::MAX_REPAIR_ATTEMPTS)
+                        .ok_or_else(|| {
+                            format!(
+                                "--repair-attempts requires an integer from 0 to {}",
+                                ai::MAX_REPAIR_ATTEMPTS
+                            )
+                        })?,
+                );
+            }
+            "--response" => options
+                .responses
+                .push(take_value(flag, inline, args, &mut index)?),
             "--timeout-ms" => {
                 let value = take_value(flag, inline, args, &mut index)?;
                 options.timeout_ms = Some(
@@ -637,6 +821,27 @@ mod tests {
         assert_eq!(options.temperature, Some(0.2));
         assert!(options.allow_network);
         assert!(options.json);
+    }
+
+    #[test]
+    fn parses_extract_options() {
+        let options = parse_options(&args(&[
+            "--provider",
+            "mock",
+            "--schema",
+            "schema.json",
+            "--repair-attempts",
+            "2",
+            "--response",
+            "{}",
+            "--response",
+            "{\"a\":1}",
+        ]))
+        .unwrap();
+        assert_eq!(options.schema.as_deref(), Some("schema.json"));
+        assert_eq!(options.repair_attempts, Some(2));
+        assert_eq!(options.responses.len(), 2);
+        assert!(parse_options(&args(&["--repair-attempts", "4"])).is_err());
     }
 
     #[test]

@@ -60,6 +60,7 @@ Rust API while language-level integration remains blocked.
 | `ai/http.rs` | Bounded HTTP transport (loopback std, HTTPS via curl) | Follow arbitrary redirects or exceed limits |
 | `ai/sse.rs` | Incremental server-sent-events parser | Buffer without bound |
 | `ai/tokens.rs` | Labelled token estimate and budget checks | Claim exact model tokenization |
+| `ai/extract.rs` | Strict JSON extraction, schema validation, bounded repair, usage accounting | Return unvalidated model output or exceed the repair limit |
 | `ai/embedding.rs` | Vector math, normalization, in-memory index | Hide O(n) search cost |
 | `ai/bm25.rs` | Deterministic lexical retrieval | Claim semantic retrieval |
 | `ai/rag.rs` (planned) | Chunking, retrieval, citations, grounding metadata | Claim grounding without retrieved sources |
@@ -150,11 +151,15 @@ model text
   → strict JSON parse
   → schema validation (subset)
   → typed conversion
-  → on failure: bounded repair retry (default 1)
+  → on failure: bounded repair retry (default 1, max 3)
   → on repeated failure: typed error with the validation path
 ```
 
-Constrained decoding is preferred when the server supports it. Local validation
+Implemented in `ai/extract.rs` and exposed as `vantyx ai extract`. Providers
+without `json_schema` or `json_object` are rejected; the OpenAI-compatible
+adapter currently sends `json_object`. Repair messages and invalid text are
+bounded, and every attempt consumes the shared budget. Server-native constrained
+decoding is preferred when available but is not claimed yet; local validation
 remains mandatory because server support varies and may be disabled.
 
 ## Embeddings and retrieval path

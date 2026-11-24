@@ -1,6 +1,6 @@
 # Project Status
 
-Updated: 2026-11-23/24 (Vantyx rename applied and published at https://github.com/zeiad6/vantyx with clean-clone CI; dependency-free AI host foundation and `vantyx ai` CLI verified offline; T-035 public repository, CI, and v0.1.0 pre-release; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums; T-031 bracketed-match diagnostic; T-028 sustainability addendum; documentation reconciled)
+Updated: 2026-11-23 (Vantyx rename applied and published at https://github.com/zeiad6/vantyx with clean-clone CI; dependency-free AI host foundation, `vantyx ai` CLI, and validated structured extraction verified offline; T-035 public repository, CI, and v0.1.0 pre-release; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums; T-031 bracketed-match diagnostic; T-028 sustainability addendum; documentation reconciled)
 
 ## Project overview
 
@@ -16,7 +16,7 @@ Updated: 2026-11-23/24 (Vantyx rename applied and published at https://github.co
 
 ## Current phase
 
-**Phase 6 — native compiler, in progress; AI phase AI-1 complete.** The front end (Phases 2–3), interpreter (Phase 4), and gradual type checker (Phase 5) are complete for the v0.1 language, including closed enums, exhaustive matching, scalar literal patterns, and guards. The typed IR and C backend (Phase 6) cover typed lists, insertion-ordered maps, structs, string indexing and iteration, and native enums with guarded `match`. Memory reclamation, a native map hash index, debug information, and benchmark-driven optimization remain open. The AI host foundation (AI-0 and AI-1) is implemented and verified offline: providers, JSON, schema validation, budgets, embeddings, BM25, tools, bounded agents, metrics, and an OpenAI-compatible HTTP adapter exposed through `vantyx ai`. Live local/cloud AI evidence, streaming, and language-level AI syntax remain open.
+**Phase 6 — native compiler, in progress; AI phase AI-1 complete.** The front end (Phases 2–3), interpreter (Phase 4), and gradual type checker (Phase 5) are complete for the v0.1 language, including closed enums, exhaustive matching, scalar literal patterns, and guards. The typed IR and C backend (Phase 6) cover typed lists, insertion-ordered maps, structs, string indexing and iteration, and native enums with guarded `match`. Memory reclamation, a native map hash index, debug information, and benchmark-driven optimization remain open. The AI host foundation (AI-0, AI-1, and the structured-output part of AI-3) is implemented and verified offline: providers, JSON, schema validation, validated structured extraction with bounded repair, budgets, embeddings, BM25, tools, bounded agents, metrics, and an OpenAI-compatible HTTP adapter exposed through `vantyx ai`. Live local/cloud AI evidence, streaming, server-side constrained decoding, and language-level AI syntax remain open.
 
 ## Implemented and verified
 
@@ -101,7 +101,7 @@ Every item below is exercised by the test suite or was manually verified through
 
 ## Partially implemented
 
-- **AI host** — the offline foundation and compatible-endpoint path are verified, but no live local model or cloud provider request has been recorded; streaming output, model pull/remove with integrity checks, keyring storage, persistent agent state, embedding providers, hybrid retrieval, ingestion/chunking, retrieval evaluation, and a dedicated prompt-injection corpus remain open. Language-level `from ai import Client` is blocked on modules (T-013) and async (T-017).
+- **AI host** — the offline foundation, compatible-endpoint path, and validated structured extraction are verified, but no live local model or cloud provider request has been recorded; streaming output, server-side constrained decoding, model pull/remove with integrity checks, keyring storage, persistent agent state, embedding providers, hybrid retrieval, ingestion/chunking, retrieval evaluation, and a dedicated prompt-injection corpus remain open. Language-level `from ai import Client` is blocked on modules (T-013) and async (T-017).
 
 - **Native backend subset** — `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, dynamic `match` on `Any`, unsupported loop forms, and string index assignment are rejected with `E0401`/`E0306`; native strings, structs, list buffers, map buffers, and enum values are leaked; no debug info. Map operations are O(n) (ADR-0010). Native enum layout and allocation policy are documented in ADR-0012.
 - **Enums and pattern matching** — closed enums, payloads, exhaustive matching, `Any` matching, scalar literal patterns, and guards are implemented in the interpreter and for statically typed values natively. Nested/or-patterns, float/interpolated-string patterns, generic enums, and explicit discriminants are not implemented (ADR-0011).
@@ -114,6 +114,7 @@ Every item below is exercised by the test suite or was manually verified through
 
 - Language-level AI syntax (`from ai import Client`, `await`) until modules and async exist
 - Streaming chat output and cancellation in the CLI
+- Server-side constrained decoding (local validation and bounded repair are implemented)
 - Model manager `info`/`pull`/`remove` with checksums, size, license, and provenance
 - Keyring-backed credential storage
 - Live local/cloud AI verification
@@ -144,7 +145,7 @@ Verified on 2026-11-23:
 | `cargo build` | success |
 | `cargo build --release` | success |
 | `cargo clippy --all-targets -- -D warnings` | success, zero warnings |
-| `cargo test` | **340 passed, 0 failed** (208 library unit + 10 CLI unit + 14 AI integration + 41 end-to-end + 67 native) |
+| `cargo test` | **357 passed, 0 failed** (218 library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 67 native) |
 | `vantyx run examples/*.vtx` | all 5 exit 0 with expected output |
 | `vantyx build examples/*.vtx` + run | all 5 exit 0 with output identical to `run` |
 | REPL pty smoke (`script`) | Tab completion (`pri` → `print`, `alp` → `alpha`), Up/Down history recall, Ctrl-C recovery, Ctrl-D exit 0, and persisted history all verified |
@@ -157,6 +158,8 @@ Verified on 2026-11-23:
 | Remote HTTPS without `--allow-network` | exit 1 with `AI_E_NETWORK_DISABLED` and help |
 | Loopback OpenAI-compatible adapter and CLI chat | request/response round trip verified by `tests/ai.rs`; no external network |
 | `--metrics` redaction test | JSONL contains usage and status only; prompt absent |
+| `vantyx ai extract` (mock fixture) | exit 0; returned schema-valid JSON; one invalid fixture repaired in 2 attempts; exhaustion exited 1 with `AI_E_SCHEMA` and "after 2 attempts" |
+| Loopback HTTP extraction | request contained `response_format=json_object`; validated response and usage envelope returned |
 | `python3 tools/fuzz_smoke.py --binary target/debug/vantyx` | 9 depth/limit cases + 400 random/mutated inputs, all controlled diagnostics |
 | Launch-material link check | 8 files checked; all relative links resolve |
 | Native `Any` rejection demo | `vantyx run` prints the value; `vantyx build` exits 1 with `E0401` and help |
@@ -182,7 +185,7 @@ Vantyx is published at **https://github.com/zeiad6/vantyx** (renamed from `zeiad
 
 ## Current task
 
-T-036 Vantyx rename — VERIFIED (code, docs, GitHub repository, and clean-clone CI). T-037 AI host foundation — VERIFIED. T-038 `vantyx ai` CLI — VERIFIED. T-039 OpenAI-compatible adapter — VERIFIED offline. T-040 live local/cloud verification — BLOCKED (no server or credentials). T-041 AI discovery and status synchronization — VERIFIED. T-042 GitHub repository rename and clean-clone CI — VERIFIED (https://github.com/zeiad6/vantyx; CI run 45317367818; clean clone passed 340 tests). T-035 public repository and launch kit — VERIFIED on the old repository name. T-029, T-030, T-031, T-032, and T-033 — VERIFIED.
+T-036 Vantyx rename — VERIFIED (code, docs, GitHub repository, and clean-clone CI). T-037 AI host foundation — VERIFIED. T-038 `vantyx ai` CLI — VERIFIED. T-039 OpenAI-compatible adapter — VERIFIED offline. T-040 live local/cloud verification — BLOCKED (no server or credentials). T-041 AI discovery and status synchronization — VERIFIED. T-042 GitHub repository rename and clean-clone CI — VERIFIED (https://github.com/zeiad6/vantyx; CI run 45317367818; clean clone passed 340 tests). T-043 validated structured extraction — VERIFIED locally. T-035 public repository and launch kit — VERIFIED on the old repository name. T-029, T-030, T-031, T-032, and T-033 — VERIFIED.
 
 ## Next tasks
 
@@ -195,4 +198,4 @@ T-036 Vantyx rename — VERIFIED (code, docs, GitHub repository, and clean-clone
 
 ## Last verification
 
-`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-23: 208 library unit + 10 CLI unit + 14 AI integration + 41 end-to-end + 67 native = 340 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. Manual AI CLI smokes verified providers, mock/echo chat, JSON output, token estimates, doctor, and network denial; loopback OpenAI-compatible chat is covered by integration tests. GitHub Actions run 45317367818 passed on commit `e425d04`, and a fresh clone of https://github.com/zeiad6/vantyx passed all 340 tests and all five example comparisons. Live local/cloud AI, the REPL pty smoke, fuzz smoke, and benchmarks were not re-run for this verification; their earlier recorded results remain valid for the unchanged subsystems.
+`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-23: 218 library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 67 native = 357 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. Manual AI CLI smokes verified providers, mock/echo chat, JSON output, token estimates, doctor, network denial, and structured extraction with a repaired fixture; loopback OpenAI-compatible chat and extraction are covered by integration tests. GitHub Actions run 45317367818 passed on commit `e425d04` with the earlier 340-test suite, and a fresh clone of https://github.com/zeiad6/vantyx passed those tests and all five example comparisons. The T-043 commit is verified locally; CI evidence will be recorded after push. Live local/cloud AI, the REPL pty smoke, fuzz smoke, and benchmarks were not re-run for this verification; their earlier recorded results remain valid for the unchanged subsystems.

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["name", "role"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "role": { "type": "string", "enum": ["engineer", "designer", "manager"] },
+    "years": { "type": "integer", "minimum": 0, "maximum": 80 },
+    "skills": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "additionalProperties": false
+}

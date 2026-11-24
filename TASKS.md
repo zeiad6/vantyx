@@ -333,3 +333,14 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Acceptance: the old URL redirects; the new URL serves the repository; CI passes build, 340 tests, clippy, release build, and differential examples; the v0.1.0 release and pinned issue remain reachable; no credentials are committed.
 - Dependencies: T-036, T-041.
 - Verification: 2026-11-23/24 — `gh repo view zeiad6/vantyx` reports the public repository at https://github.com/zeiad6/vantyx on `main`; `git push origin main` advanced `e4361b5..e425d04`; GitHub Actions run 45317367818 passed build, all 340 tests, clippy, release build, and differential examples; a clean `git clone` passed all 340 tests and all five interpreter/native comparisons. The old `auren` URL redirects to the new repository.
+
+### T-043 — Validated structured extraction
+- Priority: P1
+- Status: VERIFIED
+- Description: Add `vantyx ai extract` and `ai::extract` to request JSON, validate it against a caller-supplied JSON Schema subset, and repair invalid output within a hard attempt limit before returning it.
+- Acceptance: invalid JSON and schema mismatches are rejected; repair attempts are bounded (max 3) and charged to the shared budget; providers without JSON mode are rejected; schema and response sizes are capped at 1 MiB; output is strict JSON; offline mock and loopback HTTP paths are covered; no untrusted output is returned unvalidated.
+- Dependencies: T-037, T-038, T-039.
+- Implementation: `src/ai/extract.rs`; `vantyx ai extract` in `src/ai_cli.rs`; schema and walkthrough in `examples/ai/`.
+- Tests: 10 library unit tests (first-attempt success, JSON repair, schema repair, repair exhaustion, fenced JSON, missing JSON capability, invalid limits, non-object schemas, fence stripping, usage accumulation); 1 CLI option test; 6 integration tests (mock extraction, repair, exhaustion error, schema file, missing arguments, loopback HTTP extraction with `response_format=json_object`).
+- Verification: 2026-11-23 — `cargo test` 357 passed (218 library unit + 11 CLI unit + 20 AI integration + 41 e2e + 67 native); `cargo clippy --all-targets -- -D warnings` clean; manual `vantyx ai extract` with `examples/ai/person.schema.json` returned validated JSON and repaired one invalid fixture.
+- Scope limits: server-side JSON Schema and constrained decoding are not claimed; validation is strict JSON plus the documented subset; repair is capped at 3; returned values remain untrusted data for the caller.

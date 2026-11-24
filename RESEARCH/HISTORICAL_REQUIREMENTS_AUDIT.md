@@ -39,7 +39,7 @@ because a document says so; the table cites code or an observed command.
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | **340 passed**: 208 library unit, 10 CLI unit, 14 AI integration, 41 e2e, 67 native; clean clone and CI run 45317367818 also passed |
+| `cargo test` | **357 passed**: 218 library unit, 11 CLI unit, 20 AI integration, 41 e2e, 67 native; the earlier 340-test clean clone and CI run 45317367818 also passed |
 | `cargo build` / `--release` | both succeeded after the AI foundation and rename |
 | `cargo clippy --all-targets -- -D warnings` | clean, zero warnings |
 | Examples | all five interpreter/native outputs identical |
@@ -170,7 +170,7 @@ not exist yet.
 | AI-008 | Working local inference path | Compatible-endpoint path supports Ollama/llama.cpp/LM Studio; no installed server evidence | PARTIAL | Run against a real local server; add native Ollama discovery | P1 | Verify live |
 | AI-009 | Model manager CLI | `vantyx ai models` and `doctor` implemented; no info/pull/remove or integrity checks | PARTIAL | Add info/pull/remove with checksums, size, license, provenance | P2 | Implement |
 | AI-010 | Tokenization | Heuristic estimator explicitly labelled "not a model tokenizer" | PARTIAL | Model-specific tokenizer boundary when an engine is embedded | P2 | Research |
-| AI-011 | Structured output / JSON Schema | Strict JSON parser, depth/size limits, JSON Schema subset validator with tests | PARTIAL | Typed extraction command and bounded repair/retry policy | P1 | Implement |
+| AI-011 | Structured output / JSON Schema | Strict JSON parser, depth/size limits, JSON Schema subset validator, `ai::extract`, `vantyx ai extract`, bounded repair with usage accounting, and offline/loopback tests | COMPLETE | Server-side constrained decoding remains research | P1 | Maintain |
 | AI-012 | Tool calling with capabilities | Typed tool registry, capability sets, path roots, approval enum, timeouts, redacted logging | COMPLETE | Only read-only demo tools ship; add dangerous tools with approvals | P1 | Maintain |
 | AI-013 | Agent loop with hard limits | Bounded loop with step/tool/token/time limits and cancellation flag | PARTIAL | Persistent state and resume | P1 | Extend |
 | AI-014 | Multi-agent orchestration research | No evidence gathered; deliberately unbuilt | MISSING | Research only if a measurable use case appears | P3 | Defer |
@@ -266,8 +266,8 @@ Full detail: `RESEARCH/NAMING_AUDIT.md`.
    endpoint when configured.
 8. [x] Tests for every item, including offline loopback-server tests.
 
-Evidence: 2026-11-23 `cargo test` — 340 passed (208 library unit + 10 CLI unit +
-14 AI integration + 41 end-to-end + 67 native); `cargo clippy --all-targets --
+Evidence: 2026-11-23 `cargo test` — 357 passed (218 library unit + 11 CLI unit +
+20 AI integration + 41 end-to-end + 67 native); `cargo clippy --all-targets --
 -D warnings` clean; `cargo build --release` succeeded; all five examples matched
 interpreter/native output. Live local-model and cloud evidence is still missing
 because no server or credentials were available.
@@ -282,8 +282,7 @@ because no server or credentials were available.
 ### P2 — Ecosystem
 
 1. RAG ingestion and evaluation.
-2. Structured output validation and repair.
-3. Model manager with integrity checks.
+2. Model manager with integrity checks.
 4. Observability and budgets.
 5. Cross-platform CI.
 6. Standard library and formatter.

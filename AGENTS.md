@@ -57,7 +57,7 @@ python3 benchmarks/run.py --reps 5
 | `src/ir.rs` | Typed, backend-neutral IR; `E0401` boundary |
 | `src/codegen_c.rs` | GNU C11 backend and runtime helpers |
 | `src/repl.rs` | Zero-dependency REPL editor, history, and completion (ADR-0013) |
-| `src/ai/` | Dependency-free AI host: JSON, providers, schema, tools, agents, retrieval, HTTP |
+| `src/ai/` | Dependency-free AI host: JSON, providers, schema, extraction, tools, agents, retrieval, HTTP |
 | `src/ai_cli.rs` | `vantyx ai` commands |
 | `src/types.rs` | Semantic types and type-expression resolution |
 | `src/value.rs` | Interpreter values, display, equality |
@@ -69,7 +69,7 @@ python3 benchmarks/run.py --reps 5
 
 - Public repository: https://github.com/zeiad6/vantyx (MIT; renamed from
   `zeiad6/auren`; CI run 45317367818 green on `main`; clean clone verified).
-- `cargo test`: 340 passed (208 library unit + 10 CLI unit + 14 AI integration +
+- `cargo test`: 357 passed (218 library unit + 11 CLI unit + 20 AI integration +
   41 e2e + 67 native).
 - Clippy clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
@@ -78,14 +78,15 @@ python3 benchmarks/run.py --reps 5
 - Native rejects: `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads,
   `match` on `Any`, unannotated value-returning functions.
 - AI host support: offline mock/echo chat, OpenAI-compatible non-streaming chat
-  and model listing, strict JSON and JSON Schema subset, token estimates,
-  budgets, embeddings and in-memory vector index, BM25, typed tools with
-  capabilities, bounded agents, redacted metrics, and `vantyx ai`.
+  and model listing, strict JSON and JSON Schema subset, validated structured
+  extraction with bounded repair, token estimates, budgets, embeddings and
+  in-memory vector index, BM25, typed tools with capabilities, bounded agents,
+  redacted metrics, and `vantyx ai`.
 - Known gaps: no reclamation, O(n) native maps, no modules/generics/closures/
   async/FFI, block-shaped `match` cannot appear inside parentheses, REPL history
   recall is single-line and completion is top-level-only, no live local/cloud AI
-  evidence, no streaming/model manager/keyring, no language-level AI syntax, no
-  tensors or GPU support.
+  evidence, no streaming/constrained decoding/model manager/keyring, no
+  language-level AI syntax, no tensors or GPU support.
 
 ## Definition of done
 
