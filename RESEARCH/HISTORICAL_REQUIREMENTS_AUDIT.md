@@ -29,7 +29,7 @@ because a document says so; the table cites code or an observed command.
 | `cargo test` | 241 passed: 126 library unit, 7 CLI unit, 41 e2e, 67 native |
 | `cargo build` / `--release` | succeeded earlier in the session; re-checked before release claims |
 | `cargo clippy --all-targets -- -D warnings` | clean at the last recorded gate |
-| Public CI | runs 45308499010, 45308796021, 45309035756 passed (pre-rename); run 45317367818 passed after rename and AI foundation; run 45318733338 passed with structured extraction (357 tests) |
+| Public CI | runs 45308499010, 45308796021, 45309035756 passed (pre-rename); run 45317367818 passed after rename and AI foundation; run 45318733338 passed with structured extraction (357 tests); run 45321718008 passed with the map hash index (358 tests) |
 | Source AI references | none (`grep` over `src/`, `tests/`, `Cargo.toml`) |
 | Modules / imports | no AST or parser support |
 | Async / await | no language support; only a host thread for the interpreter stack |
@@ -279,7 +279,9 @@ library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 68 native);
 `cargo clippy --all-targets -- -D warnings` clean; debug and release builds
 succeeded; all five examples matched. `python3 benchmarks/run.py --reps 5`
 verified identical output and recorded `map_ops` native 3.597 ms versus
-interpreter 121.728 ms, C 2.884 ms, and Rust 4.495 ms.
+interpreter 121.728 ms, C 2.884 ms, and Rust 4.495 ms. GitHub Actions run
+45321718008 passed build, all 358 tests, clippy, release build, and differential
+examples on commit `f55c91c`.
 
 ### P1 — Core language recovery
 

@@ -1,6 +1,6 @@
 # Project Status
 
-Updated: 2026-11-24 (T-044 native scalar-key map hash index verified with differential tests and a re-measured benchmark; Vantyx rename published at https://github.com/zeiad6/vantyx with clean-clone CI; dependency-free AI host foundation, `vantyx ai` CLI, and validated structured extraction verified offline; T-035 public repository, CI, and v0.1.0 pre-release; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums; T-031 bracketed-match diagnostic; T-028 sustainability addendum)
+Updated: 2026-11-24 (T-044 native scalar-key map hash index verified with differential tests, a re-measured benchmark, and CI run 45321718008; Vantyx rename published at https://github.com/zeiad6/vantyx with clean-clone CI; dependency-free AI host foundation, `vantyx ai` CLI, and validated structured extraction verified offline; T-035 public repository, CI, and v0.1.0 pre-release; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums; T-031 bracketed-match diagnostic; T-028 sustainability addendum)
 
 ## Project overview
 
@@ -165,10 +165,11 @@ Verified on 2026-11-24 (language, native backend, and map index); AI and REPL ro
 | Native `Any` rejection demo | `vantyx run` prints the value; `vantyx build` exits 1 with `E0401` and help |
 | GitHub Actions CI (run 45317367818) | passed build, 340 tests, clippy, release build, and differential examples on commit `e425d04` (pre-T-043) |
 | GitHub Actions CI (run 45318733338) | passed build, 357 tests, clippy, release build, and differential examples on commit `2d991c6` |
+| GitHub Actions CI (run 45321718008) | passed build, 358 tests, clippy, release build, and differential examples on commit `f55c91c` |
 | Clean clone of `zeiad6/vantyx` | 340 tests passed; all five examples matched interpreter/native output |
 | `gh repo view zeiad6/vantyx` | public repository on `main`; description and AI topics set |
 
-Not re-run for this verification: the REPL pty smoke, fuzz smoke, live local/cloud AI, and GitHub Actions for the map-index commit. Their earlier recorded results remain valid for unchanged subsystems; CI evidence for T-044 is added after the run is observed.
+Not re-run for this verification: the REPL pty smoke, fuzz smoke, and live local/cloud AI. Their earlier recorded results remain valid for unchanged subsystems.
 
 Native tests require `clang` (or `VANTYX_CC`) and skip when no compiler is available.
 
@@ -186,7 +187,7 @@ Vantyx is published at **https://github.com/zeiad6/vantyx** (renamed from `zeiad
 
 ## Current task
 
-T-036 Vantyx rename — VERIFIED (code, docs, GitHub repository, and clean-clone CI). T-037 AI host foundation — VERIFIED. T-038 `vantyx ai` CLI — VERIFIED. T-039 OpenAI-compatible adapter — VERIFIED offline. T-040 live local/cloud verification — BLOCKED (no server or credentials). T-041 AI discovery and status synchronization — VERIFIED. T-042 GitHub repository rename and clean-clone CI — VERIFIED (https://github.com/zeiad6/vantyx; CI run 45317367818; clean clone passed 340 tests). T-043 validated structured extraction — VERIFIED locally. T-044 native scalar-key map hash index — VERIFIED locally. T-035 public repository and launch kit — VERIFIED on the old repository name. T-029, T-030, T-031, T-032, and T-033 — VERIFIED.
+T-036 Vantyx rename — VERIFIED (code, docs, GitHub repository, and clean-clone CI). T-037 AI host foundation — VERIFIED. T-038 `vantyx ai` CLI — VERIFIED. T-039 OpenAI-compatible adapter — VERIFIED offline. T-040 live local/cloud verification — BLOCKED (no server or credentials). T-041 AI discovery and status synchronization — VERIFIED. T-042 GitHub repository rename and clean-clone CI — VERIFIED (https://github.com/zeiad6/vantyx; CI run 45317367818; clean clone passed 340 tests). T-043 validated structured extraction — VERIFIED locally. T-044 native scalar-key map hash index — VERIFIED (CI run 45321718008). T-035 public repository and launch kit — VERIFIED on the old repository name. T-029, T-030, T-031, T-032, and T-033 — VERIFIED.
 
 ## Next tasks
 
@@ -199,4 +200,4 @@ T-036 Vantyx rename — VERIFIED (code, docs, GitHub repository, and clean-clone
 
 ## Last verification
 
-`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-24: 218 library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 68 native = 358 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. `python3 benchmarks/run.py --reps 5` verified identical output and wrote the 2026-11-24 baseline; `map_ops` native median fell to 3.597 ms. GitHub Actions run 45317367818 passed on commit `e425d04` with the earlier 340-test suite, a fresh clone of https://github.com/zeiad6/vantyx passed those tests and all five example comparisons, and run 45318733338 passed build, 357 tests, clippy, release build, and differential examples on T-043 commit `2d991c6`. Live local/cloud AI, the REPL pty smoke, and fuzz smoke were not re-run for this verification; their earlier recorded results remain valid for the unchanged subsystems.
+`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-24: 218 library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 68 native = 358 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. `python3 benchmarks/run.py --reps 5` verified identical output and wrote the 2026-11-24 baseline; `map_ops` native median fell to 3.597 ms. GitHub Actions run 45317367818 passed on commit `e425d04` with the earlier 340-test suite, a fresh clone of https://github.com/zeiad6/vantyx passed those tests and all five example comparisons, run 45318733338 passed build, 357 tests, clippy, release build, and differential examples on T-043 commit `2d991c6`, and run 45321718008 passed build, 358 tests, clippy, release build, and differential examples on T-044 commit `f55c91c`. Live local/cloud AI, the REPL pty smoke, and fuzz smoke were not re-run for this verification; their earlier recorded results remain valid for the unchanged subsystems.
