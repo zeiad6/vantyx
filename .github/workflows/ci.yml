@@ -40,6 +40,11 @@ jobs:
           VANTYX_CC: clang
         run: cargo test --locked
 
+      - name: Differential fuzz
+        env:
+          VANTYX_CC: clang
+        run: python3 tools/differential_fuzz.py --iterations 50 --seed 1
+
       - name: Streaming smoke
         run: python3 tools/streaming_smoke.py --binary target/debug/vantyx
 

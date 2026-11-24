@@ -35,11 +35,13 @@ cargo build
 cargo build --release
 cargo clippy --all-targets -- -D warnings
 cargo test
+python3 tools/differential_fuzz.py --iterations 100 --seed 1
 for f in examples/*.vtx; do ./target/debug/vantyx run "$f"; done
 ```
 
-Native tests require `clang` (or `VANTYX_CC`) and skip when unavailable.
-Optional, when the change touches parsing or performance:
+Native tests require `clang` (or `VANTYX_CC`) and skip when unavailable;
+the differential fuzzer skips the same way.
+Optional, when the change touches parsing, diagnostics, or performance:
 
 ```sh
 python3 tools/fuzz_smoke.py --binary target/debug/vantyx
@@ -78,13 +80,19 @@ python3 benchmarks/run.py --reps 5
   `0491c63` also passed run 45489360135). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 581 passed (326 library unit + 15 CLI unit + 32 AI integration +
-  90 e2e + 118 native).
+- `cargo test`: 584 passed (326 library unit + 15 CLI unit + 32 AI integration +
+  90 e2e + 121 native).
 - Clippy clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
+- Native condition and short-circuit lowering match the interpreter:
+  statement-expression conditions are parenthesized and `and`/`or` skip the
+  right operand when the left decides the result (T-070/T-071, ADR-0036).
+  `tools/differential_fuzz.py` found both defects and is part of the gate
+  (T-072).
 - Native support: scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key
   hash index, structs, enums, `match` with nested payload patterns, top-level
-  or-patterns, integer range patterns and guards, imported modules, basic
+  or-patterns, integer range patterns and guards, calls and short-circuit
+  expressions in `if`/`elif`/`while` conditions, imported modules, basic
   UTF-8 file I/O, file metadata probes, single-level directory operations,
   recursive directory creation and symlink-safe removal, lexical glob
   expansion, rename and byte-preserving file copy, recursive directory copy,

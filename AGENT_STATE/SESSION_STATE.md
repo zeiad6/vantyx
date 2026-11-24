@@ -4,11 +4,25 @@
 - Updated: 2026-11-24
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `4982ab3` (glob result-cap test portability; `e6ec597` contains T-058–T-069)
-- Remote: `origin/main` at `4982ab3`
+- Last commit: `dfaad9b` (CI verification for the status update); the
+  T-070–T-072 change set is pending commit
+- Remote: `origin/main` at `dfaad9b`
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
+
+T-070 — Parenthesize statement-expression conditions in the native backend.
+T-071 — Preserve short-circuit evaluation for `and`/`or` in the native
+backend. T-072 — Deterministic differential fuzzer. Status: VERIFIED locally;
+the change set is pending commit and CI. Both P0 defects were found by the new
+fuzzer: any call or effectful expression used directly as an `if`/`elif`/
+`while` condition produced invalid C (`if ({ ... })`), and `and`/`or` hoisted
+both operands so the skipped operand was evaluated. The fixes add one pair of
+parentheses only for statement expressions and lower effectful short-circuit
+operands through a lazy conditional. Three differential native tests cover
+calls in conditions, short-circuit call counts, and non-short-circuit
+left-to-right order. ADR-0036 records the contract. The fuzzer passes 100/100
+on seed 1 and 200/200 on seed 500; CI runs 50 iterations on seed 1.
 
 T-069 — Refuse destructive recursive-removal roots. Status: VERIFIED,
 committed in `e6ec597`, pushed, and CI-green (run 45488725812 on `4982ab3`).
@@ -82,10 +96,14 @@ T-058 — Basic UTF-8 file I/O builtins. Status: VERIFIED locally; committed, pu
 
 ## Working tree
 
-Clean at `4982ab3` plus the CI-status documentation update. The T-058–T-069
-change sets were committed in `e6ec597`; `4982ab3` fixed the glob result-cap
-test portability for ext4's per-inode hard-link limit. No generated binaries
-or credentials are tracked.
+Modified `src/codegen_c.rs`, `tests/native.rs`, `docs/language_specification.md`,
+`README.md`, `PROJECT_STATUS.md`, `AGENTS.md`, `TASKS.md`,
+`docs/PROJECT_BASELINE.md`, `.github/workflows/ci.yml`, and `AGENT_STATE/`;
+untracked `docs/decisions/ADR-0036-native-condition-parentheses-and-short-circuit.md`
+and `tools/differential_fuzz.py`. No generated binaries or credentials are
+tracked. The T-058–T-069 change sets were committed in `e6ec597`; `4982ab3`
+fixed the glob result-cap test portability for ext4's per-inode hard-link
+limit; `dfaad9b` recorded the last CI verification.
 
 ## Verified commands (2026-11-24)
 
@@ -93,7 +111,16 @@ or credentials are tracked.
 - `cargo build --release` — success
 - `cargo clippy --all-targets -- -D warnings` — clean
 - `cargo test` — 326 library unit + 15 CLI unit + 32 AI integration + 90 e2e +
-  118 native = 581 passed
+  121 native = 584 passed
+- `cargo test --test native conditions_with_calls_match` — 1 passed
+- `cargo test --test native short_circuit_operands_match` — 1 passed
+- `cargo test --test native effectful_binary_operands_keep_left_to_right_order`
+  — 1 passed
+- `python3 tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100
+  agree, 0 rejected by both engines
+- `python3 tools/differential_fuzz.py --iterations 200 --seed 500` — 200/200
+  agree, 0 rejected by both engines
+- `python3 -m py_compile tools/differential_fuzz.py` — success
 - `cargo test curl_` — 2 passed
 - `cargo test fs_safety` — 5 passed
 - `cargo test --test e2e recursive_removal` — 2 passed
@@ -119,12 +146,20 @@ or credentials are tracked.
 
 ## Next steps
 
-1. Retry the independent `qa-verifier` check for T-062–T-066 when subagent
+1. Commit the T-070–T-072 change set, push it, watch CI, and record the run ID
+   in `PROJECT_STATUS.md`, `AGENTS.md`, `AGENT_STATE/RECOVERY.md`, and the
+   checkpoint.
+2. Implement `vantyx lint` as the first half of T-019: `L0001` unused local
+   binding, `L0002` mutable binding never reassigned, and `L0003` unreachable
+   statement after `return`/`break`/`continue`; unit, CLI, and e2e tests;
+   `docs/linting.md`; then split the remaining formatter work into its own
+   tracked task.
+3. Retry the independent `qa-verifier` check for T-062–T-066 when subagent
    capacity returns.
 4. T-040 remains blocked on a local inference server/model; do not claim local
    evidence. The cloud path was re-verified at 20:59Z with 21/21 checks using
    `MY_API_KEY`, but access is not guaranteed; keep evidence sanitized.
-5. Select the next unblocked task. Candidate gaps: recoverable `Result`/`?`,
-   metadata objects or preservation, recursive move, native memory reclamation
-   design, REPL multi-line history/field completion, or immutable
-   concatenation/multibyte string iteration optimization.
+5. Later candidates: recoverable `Result`/`?`, metadata objects or
+   preservation, recursive move, native memory reclamation design, REPL
+   multi-line history/field completion, and immutable concatenation/multibyte
+   string iteration optimization.

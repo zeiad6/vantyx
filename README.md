@@ -489,11 +489,12 @@ cargo build
 cargo build --release
 cargo clippy --all-targets -- -D warnings
 cargo test
+python3 tools/differential_fuzz.py --iterations 100 --seed 1
 python3 tools/fuzz_smoke.py --binary target/debug/vantyx
 ```
 
-Current local result (2026-11-24): **581 tests passed** (326 library unit +
-15 CLI unit + 32 AI integration + 90 end-to-end + 118 differential native),
+Current local result (2026-11-24): **584 tests passed** (326 library unit +
+15 CLI unit + 32 AI integration + 90 end-to-end + 121 differential native),
 Clippy clean, debug and release builds succeed, all five examples match between
 the interpreter and native binaries, and fuzz smoke reports controlled
 diagnostics. The file, directory, recursive-directory, rename/copy,

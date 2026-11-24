@@ -146,8 +146,14 @@ impl<'a> Emitter<'a> {
     /// Wraps a rendered expression for a C condition. Expressions from
     /// `expr` are already parenthesized when needed; adding another pair
     /// around a comparison triggers clang's `-Wparentheses-equality`.
+    ///
+    /// GNU statement expressions are the exception: `({ ... })` is a complete
+    /// expression whose outer parentheses do not satisfy the `if`/`while`
+    /// grammar, so the whole thing needs one more pair around it.
     fn condition(rendered: &str) -> String {
-        if rendered.starts_with('(') && rendered.ends_with(')') {
+        if rendered.starts_with("({") {
+            format!("({rendered})")
+        } else if rendered.starts_with('(') && rendered.ends_with(')') {
             rendered.to_string()
         } else {
             format!("({rendered})")
@@ -1645,6 +1651,29 @@ impl<'a> Emitter<'a> {
         result_ty: &IrType,
         span: crate::span::Span,
     ) -> String {
+        // `and`/`or` must not evaluate the right operand when the left
+        // operand decides the result. Hoisting both operands into temporaries
+        // (as the general effectful-binary path does) would silently change
+        // semantics whenever the skipped operand has side effects.
+        if matches!(op, BinOp::And | BinOp::Or) {
+            let left_value = self.expr(lhs);
+            let right_value = self.expr(rhs);
+            if has_effects(rhs) {
+                let left_name = self.fresh("lhs");
+                let right_name = self.fresh("rhs");
+                let (true_branch, false_branch) = match op {
+                    BinOp::And => (right_value.as_str(), "false"),
+                    BinOp::Or => ("true", right_value.as_str()),
+                    _ => unreachable!(),
+                };
+                return format!(
+                    "({{ bool {left_name} = {left_value}; bool {right_name} = {left_name} ? {true_branch} : {false_branch}; {right_name}; }})"
+                );
+            }
+            let symbol = if op == BinOp::And { "&&" } else { "||" };
+            return format!("(({left_value}) {symbol} ({right_value}))");
+        }
+
         if has_effects(lhs) && has_effects(rhs) {
             let left_name = self.fresh("lhs");
             let right_name = self.fresh("rhs");

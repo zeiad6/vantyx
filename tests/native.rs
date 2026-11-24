@@ -1361,6 +1361,113 @@ main()
 }
 
 #[test]
+fn conditions_with_calls_match() {
+    // Regression: `if`/`elif`/`while` conditions that lower to a C statement
+    // expression (any call or short-circuit expression) were emitted without
+    // the extra parentheses the `if` grammar requires, so the generated C did
+    // not compile.
+    assert_same(
+        "conditions-with-calls",
+        r#"var calls: Int = 0
+
+fn ready() -> Bool:
+    calls += 1
+    return calls <= 2
+
+fn label() -> Str:
+    calls += 1
+    return "ready"
+
+fn main():
+    if ready():
+        print("if")
+    if calls == 1:
+        print("once")
+    if false:
+        print("no")
+    elif ready():
+        print("elif")
+    print(calls)
+    var i = 0
+    while ready() and i < 10:
+        i += 1
+    print(i)
+    print(calls)
+    if label() == "ready":
+        print("label")
+    print(calls)
+
+main()
+"#,
+    );
+}
+
+#[test]
+fn short_circuit_operands_match() {
+    // Regression: the native backend hoisted both operands of `and`/`or` into
+    // temporaries, evaluating the right operand even when the left operand
+    // decided the result. That silently changed observable side effects.
+    assert_same(
+        "short-circuit-operands",
+        r#"var calls: Int = 0
+
+fn yes() -> Bool:
+    calls += 1
+    return true
+
+fn no() -> Bool:
+    calls += 1
+    return false
+
+fn main():
+    print(false and yes())
+    print(calls)
+    print(true or yes())
+    print(calls)
+    print(true and no())
+    print(calls)
+    print(false or no())
+    print(calls)
+    print((no() and yes()) or yes())
+    print(calls)
+    if false and yes():
+        print("bad")
+    if true or yes():
+        print("good")
+    print(calls)
+    let verdict = match 1:
+        1 if false and yes(): "bad"
+        _: "ok"
+    print(verdict)
+    print(calls)
+
+main()
+"#,
+    );
+}
+
+#[test]
+fn effectful_binary_operands_keep_left_to_right_order() {
+    assert_same(
+        "effectful-binary-order",
+        r#"var log: Str = ""
+
+fn n(x: Int) -> Int:
+    log = log + str(x)
+    return x
+
+fn main():
+    print(n(1) * 10 + n(2))
+    print(log)
+    print(n(3) < n(4))
+    print(log)
+
+main()
+"#,
+    );
+}
+
+#[test]
 fn enums_in_structs_and_structs_in_payloads_match() {
     assert_same(
         "enum-struct-payloads",

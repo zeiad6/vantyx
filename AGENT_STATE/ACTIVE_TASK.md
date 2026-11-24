@@ -1,5 +1,50 @@
 # Active Task
 
+## T-070/T-071/T-072 — Native condition and short-circuit fixes plus differential fuzzer
+
+- Status: VERIFIED locally; commit and CI pending
+- Priority: P0 (T-070, T-071), P2 (T-072)
+- Dependencies: T-010, T-033, ADR-0008, ADR-0036
+
+### Implemented
+
+- `src/codegen_c.rs::condition`: wraps a rendered condition in one extra pair
+  of parentheses only when it starts with the GNU statement-expression prefix
+  `({`; ordinary comparisons keep their existing parenthesization and do not
+  trigger clang's `-Wparentheses-equality`.
+- `src/codegen_c.rs::binary_expr`: special-cases `and`/`or`. An effectful right
+  operand is evaluated lazily through a `bool` statement expression with a
+  conditional expression; an effect-free right operand uses ordinary
+  `&&`/`||`.
+- `tests/native.rs`: `conditions_with_calls_match`,
+  `short_circuit_operands_match`, and
+  `effectful_binary_operands_keep_left_to_right_order`.
+- `tools/differential_fuzz.py`: deterministic, standard-library-only
+  differential fuzzer with three typed program shapes, failure saving, and a
+  compiler-availability skip; `.github/workflows/ci.yml` runs 50 iterations on
+  seed 1.
+- ADR-0036 and synchronized specification, README, status, baseline, and task
+  documentation.
+
+### Evidence
+
+- `cargo test --test native conditions_with_calls_match` — 1 passed.
+- `cargo test --test native short_circuit_operands_match` — 1 passed.
+- `cargo test --test native effectful_binary_operands_keep_left_to_right_order`
+  — 1 passed.
+- Full gate: 584 tests (326 library + 15 CLI + 32 AI + 90 e2e + 121 native),
+  clippy clean, debug and release builds succeed.
+- `python3 tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100.
+- `python3 tools/differential_fuzz.py --iterations 200 --seed 500` — 200/200.
+- All five examples matched interpreter/native output; fuzz smoke produced
+  controlled diagnostics.
+
+### Remaining
+
+- Commit, push, and record the CI run.
+- The fuzzer has no shrinking, sanitizer integration, or coverage measurement.
+- The backend still depends on GNU C11 statement expressions.
+
 ## T-069 — Refuse destructive recursive-removal roots
 
 - Status: VERIFIED, committed, pushed, and CI-green

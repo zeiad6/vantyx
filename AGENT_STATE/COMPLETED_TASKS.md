@@ -8,6 +8,21 @@ CI run 45488725812 passed on `4982ab3` with 581 tests. The preceding run
 per inode; `4982ab3` spreads the links across four anchors. The status
 documentation commit `0491c63` also passed run 45489360135.
 
+- T-072 — Deterministic differential fuzzer (2026-11-24; 584-test gate;
+  `tools/differential_fuzz.py` generates three well-typed program shapes,
+  compares interpreter/native exit codes and stdout, saves failures, and skips
+  without a C compiler; 100/100 seed 1 and 200/200 seed 500; CI runs 50
+  iterations on seed 1; the tool found T-070 and T-071).
+- T-071 — Native short-circuit evaluation (2026-11-24; 584-test gate;
+  `and`/`or` no longer hoist and eagerly evaluate the right operand; call
+  counts match the interpreter across nested expressions, `if` conditions,
+  and match guards; `short_circuit_operands_match` and
+  `effectful_binary_operands_keep_left_to_right_order`; ADR-0036).
+- T-070 — Native statement-expression conditions (2026-11-24; 584-test gate;
+  `if`/`elif`/`while` conditions that lower to `({ ... })` are wrapped as
+  `(({ ... }))`, so calls in conditions build; comparisons keep their existing
+  parenthesization and stay free of `-Wparentheses-equality`;
+  `conditions_with_calls_match`; ADR-0036).
 - T-069 — Destructive recursive-removal roots refused (2026-11-24; 581-test
   gate; CI run 45488725812; `remove_dir_all` refuses `.`, `./`, `..`, `../`,
   final `.`/`..` components including `link/.` and `link/..`, and `/`/`//`/`///`

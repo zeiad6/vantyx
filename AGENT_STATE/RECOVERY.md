@@ -13,12 +13,19 @@
 
 ## Last recorded repository state (2026-11-24)
 
-- `main` and `origin/main` are at `4982ab3`; `e6ec597` contains the
-  T-058–T-069 change set and `4982ab3` fixes the glob result-cap test
-  portability.
+- `main` and `origin/main` are at `dfaad9b`; `e6ec597` contains the
+  T-058–T-069 change set, `4982ab3` fixes the glob result-cap test
+  portability, and `0491c63`/`dfaad9b` record CI verification.
+- The T-070–T-072 change set (native statement-expression conditions, native
+  `and`/`or` short-circuit evaluation, and `tools/differential_fuzz.py`) is
+  verified locally and pending commit. The local gate passed 584 tests
+  (326 library + 15 CLI + 32 AI + 90 e2e + 121 native), clippy clean, debug
+  and release builds, all five examples, 100/100 fuzz cases on seed 1, and
+  fuzz smoke.
 - CI run 45488725812 passed on `4982ab3` with 581 tests; the status
   documentation commit `0491c63` also passed run 45489360135.
-- The working tree is clean after the CI-status documentation commit.
+- If the T-070–T-072 commit is not present, inspect `git status --short`,
+  re-run the targeted tests, and commit rather than discarding the changes.
 
 ## If the network or a provider is unavailable
 

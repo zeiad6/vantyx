@@ -306,3 +306,21 @@ file records operational choices.
   argument evaluation is left to right, matching the interpreter.
 - No regex, case mapping, normalization, locale handling, grapheme
   segmentation, streaming API, or output-size cap is implied.
+
+## 2026-11-24 — Native condition and short-circuit corrections
+
+- Treat both defects as P0 correctness bugs, not documented backend limits:
+  the interpreter is the oracle, and ordinary programs must neither fail to
+  build nor silently change side effects.
+- Fix the condition wrapper inside `condition` rather than adding
+  unconditional parentheses at every `if`/`while` site. Wrapping only a
+  rendered `({ ... })` statement expression avoids clang's
+  `-Wparentheses-equality` warning on comparisons and keeps generated output
+  clean.
+- Lower an effectful `and`/`or` right operand through a lazy conditional
+  expression inside a statement expression; keep ordinary `&&`/`||` when the
+  right operand has no effects. Do not evaluate both operands eagerly.
+- Add a deterministic differential fuzzer instead of relying only on
+  hand-written cases. Keep it standard-library-only, seed-reproducible, and
+  wired into CI with a fixed seed; save failing programs for regression tests.
+- Record the contract in ADR-0036 and keep the `E0401` boundary unchanged.
