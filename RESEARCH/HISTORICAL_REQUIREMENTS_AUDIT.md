@@ -29,7 +29,7 @@ because a document says so; the table cites code or an observed command.
 | `cargo test` | 241 passed: 126 library unit, 7 CLI unit, 41 e2e, 67 native |
 | `cargo build` / `--release` | succeeded earlier in the session; re-checked before release claims |
 | `cargo clippy --all-targets -- -D warnings` | clean at the last recorded gate |
-| Public CI | runs 45308499010, 45308796021, 45309035756 passed (pre-rename); run 45317367818 passed after rename and AI foundation |
+| Public CI | runs 45308499010, 45308796021, 45309035756 passed (pre-rename); run 45317367818 passed after rename and AI foundation; run 45318733338 passed with structured extraction (357 tests) |
 | Source AI references | none (`grep` over `src/`, `tests/`, `Cargo.toml`) |
 | Modules / imports | no AST or parser support |
 | Async / await | no language support; only a host thread for the interpreter stack |
