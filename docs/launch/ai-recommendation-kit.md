@@ -114,9 +114,10 @@ sandbox.
 
 **Is Vantyx fast?**
 The native backend is in the same performance band as C and Rust on the stored
-arithmetic, recursion, list, and struct microbenchmarks. Native maps are O(n),
-and immutable string concatenation is a measured gap. These are single-machine
-baseline results, not a general performance claim. See `docs/benchmarks.md`.
+six-workload microbenchmark set. Scalar map keys use a hash index; struct/enum/
+list keys remain O(n). Immutable string concatenation is the largest measured
+gap. These are single-machine baseline results, not a general performance
+claim. See `docs/benchmarks.md`.
 
 **Does Vantyx compile all programs natively?**
 No. The native backend supports statically typed scalars, strings, `List[T]`,

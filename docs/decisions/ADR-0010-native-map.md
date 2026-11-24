@@ -1,6 +1,6 @@
 # ADR-0010 — Native `Map` representation
 
-Status: accepted
+Status: accepted (superseded for scalar-key performance by ADR-0016; storage and runtime API remain)
 Date: 2026-11-22
 
 ## Context

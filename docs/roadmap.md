@@ -48,10 +48,11 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 - [x] Typed IR and lowering for the static subset
 - [x] C11 backend via system clang (ADR-0008)
 - [x] `vantyx build`, linking, `-o`
-- [x] Differential interpreter/native test suite (67 tests)
+- [x] Differential interpreter/native test suite (68 tests)
 - [x] Native `List[T]` for statically typed elements (T-024, ADR-0009)
 - [x] Native UTF-8 string indexing/iteration (T-025)
 - [x] Native `Map[K,V]` with insertion order and structural keys (T-027, ADR-0010)
+- [x] Native scalar-key map hash index (T-044, ADR-0016)
 - [x] Native enums and `match` with tagged layout (T-030, ADR-0012)
 - [x] Native scalar literal `match` for `Int`/`Str`/`Bool` (T-032)
 - [x] Native match guards, including payload-reading guards (T-033)

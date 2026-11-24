@@ -51,9 +51,9 @@ For the supported subset:
 
 Known native limits:
 
-- Strings, structs, list buffers, map buffers, and enum values are intentionally leaked.
+- Strings, structs, list buffers, map buffers, scalar-key map indexes, and enum values are intentionally leaked.
 - `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, and unsupported loop forms are rejected with `E0401`.
-- Native map lookup and insertion are O(n) (ADR-0010).
+- Native scalar-key map lookup uses a fixed-seed hash index; adversarial key streams can degrade probing. Struct/enum/list keys remain O(n) (ADR-0016).
 - No debug information, stack traces, or source-level unwinding in native programs.
 
 ## CLI boundary

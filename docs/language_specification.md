@@ -387,8 +387,8 @@ Native backend guarantees (supported subset):
 
 Known limitations:
 - `Rc` reference cycles leak memory in the interpreter (no cycle collector yet);
-- native strings, structs, list buffers, and map buffers are intentionally leaked; native programs have no cycle collector;
-- native map operations are O(n) because storage is insertion-ordered parallel arrays (ADR-0010);
+- native strings, structs, list buffers, map buffers, and scalar-key map indexes are intentionally leaked; native programs have no cycle collector;
+- native maps use an insertion-ordered hash index for scalar keys (ADR-0016), but struct/enum/list/map keys still use O(n) structural equality;
 - collections are dynamically typed containers after construction in the interpreter; violations produce runtime errors, not memory unsafety;
 - resource exhaustion is bounded by explicit limits where implemented (range length, nesting depth, call depth) and otherwise by available memory;
 - no sandboxing; do not run untrusted code without OS-level isolation.

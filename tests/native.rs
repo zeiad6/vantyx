@@ -846,6 +846,39 @@ fn map_mutation_and_iteration_match() {
 }
 
 #[test]
+fn large_scalar_maps_match() {
+    assert_same(
+        "map-large",
+        "fn main():\n\
+         \x20   var numbers: Map[Int, Int] = {}\n\
+         \x20   var i = 0\n\
+         \x20   while i < 5000:\n\
+         \x20       numbers[i] = i * 3\n\
+         \x20       i = i + 1\n\
+         \x20   var total = 0\n\
+         \x20   i = 0\n\
+         \x20   while i < 5000:\n\
+         \x20       total = total + numbers[i]\n\
+         \x20       i = i + 1\n\
+         \x20   numbers[2500] = 1\n\
+         \x20   print(len(numbers), total, numbers[2500])\n\
+         \x20   print(keys(numbers)[0], keys(numbers)[2500], keys(numbers)[4999])\n\
+         \x20   var words: Map[Str, Int] = {}\n\
+         \x20   var j = 0\n\
+         \x20   while j < 1000:\n\
+         \x20       words[\"k{j}\"] = j\n\
+         \x20       j = j + 1\n\
+         \x20   print(len(words), words[\"k0\"], words[\"k999\"], contains(words, \"missing\"))\n\
+         \x20   var floats: Map[Float, Str] = {1.5: \"a\", 2.5: \"b\"}\n\
+         \x20   print(floats[1.5], contains(floats, 2.5), len(floats))\n\
+         \x20   var flags = {true: 1, false: 2}\n\
+         \x20   print(flags, flags[true], flags[false], keys(flags), values(flags))\n\
+         \x20   var zeros = {-0.0: \"neg\", 0.0: \"pos\"}\n\
+         \x20   print(zeros, len(zeros), zeros[0.0], contains(zeros, -0.0))\n",
+    );
+}
+
+#[test]
 fn map_of_struct_keys_matches() {
     assert_same(
         "map-struct-keys",

@@ -78,7 +78,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Status: VERIFIED (statically typed subset; ADR-0008)
 - Description: Lower checked AST to a typed IR; emit C or Cranelift/LLVM; link executable. C11 backend selected first via ADR-0008; Cranelift/LLVM deferred until benchmarks justify them.
 - Acceptance: `vantyx build examples/hello.vtx` produces a native executable with identical output to `run`.
-- Tests: `tests/native.rs` — 67 differential tests covering arithmetic, control flow, recursion, structs, enums, scalar literal patterns, match guards, globals, conversions, ranges, lists, maps, strings, equality (including cycles), float display, top-level code, runtime errors, and unsupported-construct rejection.
+- Tests: `tests/native.rs` — 68 differential tests covering arithmetic, control flow, recursion, structs, enums, scalar literal patterns, match guards, globals, conversions, ranges, lists, maps, strings, equality (including cycles), float display, top-level code, runtime errors, and unsupported-construct rejection.
 - Scope limits: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, dynamic `match` on `Any`, and unsupported loop forms are rejected with `E0401`. Native strings, structs, list buffers, map buffers, and enum values are leaked. A 256-frame call-depth guard exists (`R0012`).
 
 ### T-011 — Bytecode VM
@@ -140,9 +140,9 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Status: VERIFIED
 - Description: Equivalent workloads, documented methodology, raw results.
 - Acceptance: No performance claim without stored measurements.
-- Implementation: `benchmarks/` contains six workloads in `.vtx`, `.py`, `.c`, and `.rs`; `benchmarks/run.py` verifies identical stdout before timing, discards one warm-up, takes 5 measured runs, and measures peak RSS through `benchmarks/measure.c`. Raw results are in `benchmarks/results/2026-11-22.{json,md}`.
-- Verification: 2026-11-22 — all implementations produced identical output. Native vs interpreter medians: `arith_loop` 5.21 ms vs 1300.9 ms, `fib` 3.31 ms vs 167.5 ms, `list_ops` 4.66 ms vs 383.6 ms, `map_ops` 64.2 ms vs 106.2 ms, `struct_ops` 9.11 ms vs 405.1 ms, `string_ops` 7.72 ms vs 59.8 ms. Native is in the same band as C/Rust on arithmetic/recursion/list/struct; map and string allocation remain the measured gaps. Methodology and caveats: `docs/benchmarks.md`.
-- Scope limits: single machine, no CPU pinning; map workloads are linear arrays in every language; not a general language performance claim.
+- Implementation: `benchmarks/` contains six workloads in `.vtx`, `.py`, `.c`, and `.rs`; `benchmarks/run.py` verifies identical stdout before timing, discards one warm-up, takes 5 measured runs, and measures peak RSS through `benchmarks/measure.c`. Raw results are in `benchmarks/results/2026-11-22.{json,md}` and `benchmarks/results/2026-11-24.{json,md}`.
+- Verification: 2026-11-22 — all implementations produced identical output. Native vs interpreter medians: `arith_loop` 5.21 ms vs 1300.9 ms, `fib` 3.31 ms vs 167.5 ms, `list_ops` 4.66 ms vs 383.6 ms, `map_ops` 64.2 ms vs 106.2 ms, `struct_ops` 9.11 ms vs 405.1 ms, `string_ops` 7.72 ms vs 59.8 ms. Native was in the same band as C/Rust on arithmetic/recursion/list/struct; maps and string allocation were the measured gaps. Re-measured on 2026-11-24 after the map hash index (T-044): `map_ops` native 3.597 ms vs interpreter 121.728 ms, C 2.884 ms, and Rust 4.495 ms. Methodology and caveats: `docs/benchmarks.md`.
+- Scope limits: single machine, no CPU pinning; not a general language performance claim. C, Rust, and Python map workloads use their hash maps while the interpreter remains linear, so the map comparison is between algorithmically equivalent native implementations, not a claim about the interpreter.
 
 ### T-023 — Security audit
 - Priority: P2
@@ -180,14 +180,14 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-027 — Native `Map[K, V]` support
 - Priority: P1
-- Status: VERIFIED (ADR-0010)
+- Status: VERIFIED (ADR-0010, amended by ADR-0016)
 - Description: Extend the typed IR and C backend with insertion-ordered maps that preserve interpreter semantics for statically known key/value types. Cover literals, indexing (read/write/compound), `len`, `contains`, `keys`, `values`, key iteration, display, aliasing, structural keys, missing-key errors, and differential tests.
 - Dependencies: T-010, T-024; ADR for map representation.
 - Acceptance: `vantyx build` accepts typed maps and produces output identical to `vantyx run`, including insertion order, alias mutation, structural struct keys, and missing-key exit code 2. `Any`/untyped map types are rejected with `E0401`, never miscompiled.
 - Implementation: `IrType::Map`, `IrExprKind::Map`, `IrStmtKind::ForMap`, map index assignment and compound assignment; `VantyxMap` runtime with parallel key/value buffers, descriptor-driven equality, checked growth, cycle-safe display and equality; checker precision for `keys`/`values`/`contains`/`pop`.
 - Tests: `tests/native.rs` — map literals/builtins, mutation/iteration/aliasing, struct keys, nested-map equality, missing key, annotated empty map, map-of-lists struct fields, cyclic equality, untyped/`Any` rejection.
 - Verification: 2026-11-22 — 12 map-focused differential tests pass; full suite 166 passed; clippy clean; all examples build natively with matching output.
-- Scope limits: lookup/insertion are O(n); map buffers are intentionally leaked; keys are compared structurally, so mutating a key's contents after insertion can make it unreachable (documented in ADR-0010).
+- Scope limits: scalar-key lookup/insertion use an optional hash index (ADR-0016); struct/enum/list keys still use O(n) structural equality. Map buffers and the index are intentionally leaked; keys are compared structurally, so mutating a key's contents after insertion can make it unreachable (documented in ADR-0010 and ADR-0016).
 
 ### T-028 — Prior-art review and lessons
 - Priority: P2
@@ -344,3 +344,14 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Tests: 10 library unit tests (first-attempt success, JSON repair, schema repair, repair exhaustion, fenced JSON, missing JSON capability, invalid limits, non-object schemas, fence stripping, usage accumulation); 1 CLI option test; 6 integration tests (mock extraction, repair, exhaustion error, schema file, missing arguments, loopback HTTP extraction with `response_format=json_object`).
 - Verification: 2026-11-23/24 — `cargo test` 357 passed (218 library unit + 11 CLI unit + 20 AI integration + 41 e2e + 67 native); `cargo clippy --all-targets -- -D warnings` clean; manual `vantyx ai extract` with `examples/ai/person.schema.json` returned validated JSON and repaired one invalid fixture. GitHub Actions run 45318733338 passed build, all 357 tests, clippy, release build, and differential examples on commit `2d991c6`.
 - Scope limits: server-side JSON Schema and constrained decoding are not claimed; validation is strict JSON plus the documented subset; repair is capped at 3; returned values remain untrusted data for the caller.
+
+### T-044 — Native scalar-key map hash index
+- Priority: P1
+- Status: VERIFIED (ADR-0016)
+- Description: Replace linear scalar-key lookup in native maps with an insertion-order-preserving open-addressing index while keeping structural equality for non-scalar keys.
+- Acceptance: native output remains identical to the interpreter for integer, string, float, bool, and unit keys; insertion order, replacement in place, `keys`/`values`, display, equality, missing-key errors, aliasing, and structural-key fallback are unchanged; the measured `map_ops` gap closes without regressing other workloads; no new dependency.
+- Dependencies: T-027.
+- Implementation: `VantyxMap` gains `hashed`, `index_cap`, and `index`; `vantyx_map_hashable`, `vantyx_map_hash`, `vantyx_map_index_rehash`, `vantyx_map_index_reserve`, and `vantyx_map_index_insert`; `vantyx_map_find` probes the index for scalar descriptors and falls back to linear structural search otherwise. ADR-0016 amends ADR-0010.
+- Tests: `tests/native.rs` — new `large_scalar_maps_match` covers 5,000 integer keys, 1,000 string keys, float keys, replacement without reordering, `keys` ordering, and `contains`; existing struct-key, nested-map, equality, missing-key, iteration, and `Any` rejection tests cover the fallback and boundaries. The benchmark runner verifies identical output across Vantyx native, interpreter, Python, C, and Rust before timing.
+- Verification: 2026-11-24 — `cargo test` 358 passed (218 library unit + 11 CLI unit + 20 AI integration + 41 e2e + 68 native); `cargo clippy --all-targets -- -D warnings` clean; debug and release builds succeed; all five examples produce identical interpreter/native output. `python3 benchmarks/run.py --reps 5` produced `benchmarks/results/2026-11-24.{json,md}`: `map_ops` native median 3.597 ms (2026-11-22: 64.212 ms), interpreter 121.728 ms, C 2.884 ms, Rust 4.495 ms, Python 42.253 ms.
+- Scope limits: struct, enum, list, and map keys keep O(n) structural search; the fixed hash seed is not collision-resistant against adversarial key streams; the index adds roughly 16 bytes per entry at a 50% load factor; allocations remain intentionally leaked; single-machine microbenchmark only.

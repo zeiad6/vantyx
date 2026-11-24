@@ -39,7 +39,8 @@ because a document says so; the table cites code or an observed command.
 
 | Check | Observed result |
 | --- | --- |
-| `cargo test` | **357 passed**: 218 library unit, 11 CLI unit, 20 AI integration, 41 e2e, 67 native; the earlier 340-test clean clone and CI run 45317367818 also passed |
+| `cargo test` | **358 passed**: 218 library unit, 11 CLI unit, 20 AI integration, 41 e2e, 68 native (2026-11-24, after T-044); the earlier 357-test and 340-test runs also passed |
+| Map benchmark | `map_ops` native 3.597 ms, interpreter 121.728 ms, C 2.884 ms, Rust 4.495 ms (2026-11-24; `benchmarks/results/2026-11-24.*`) |
 | `cargo build` / `--release` | both succeeded after the AI foundation and rename |
 | `cargo clippy --all-targets -- -D warnings` | clean, zero warnings |
 | Examples | all five interpreter/native outputs identical |
@@ -85,7 +86,7 @@ through T-035; their documented subset limits remain real gaps, listed below.
 | T-007 | CLI | `src/main.rs`; `run/check/build/repl/version/help` | COMPLETE | AI subcommands do not exist | P0 | Extend |
 | T-008 | E2E suite | `tests/e2e.rs`, 41 tests | COMPLETE | — | P0 | Keep |
 | T-009 | REPL | `src/repl.rs`; persistence tests | COMPLETE | Multi-line recall, field completion (T-034) | P1 | Extend |
-| T-010 | IR + native backend | `src/ir.rs`, `src/codegen_c.rs`, 67 differential tests | COMPLETE (subset) | Reclamation, debug info, optimization, more types | P0 | Extend |
+| T-010 | IR + native backend | `src/ir.rs`, `src/codegen_c.rs`, 68 differential tests | COMPLETE (subset) | Reclamation, debug info, optimization, more types | P0 | Extend |
 | T-011 | Bytecode VM | None | MISSING | Entire VM and benchmark | P2 | Defer |
 | T-012 | Ownership / escape analysis | None | MISSING | Design, analysis, tests | P2 | Defer |
 | T-013 | Modules and imports | None | MISSING | Parser, checker, interpreter, native, tests | P1 | **Next core** |
@@ -102,7 +103,7 @@ through T-035; their documented subset limits remain real gaps, listed below.
 | T-024 | Native `List[T]` | IR + C runtime; differential tests | COMPLETE (subset) | Reclamation | P1 | Keep |
 | T-025 | Native string indexing/iteration | UTF-8 helpers; differential tests | COMPLETE | — | P1 | Keep |
 | T-026 | Documentation reconciliation | Docs updated; this audit adds a new pass | COMPLETE | Must be repeated after rename/AI | P1 | Repeat |
-| T-027 | Native `Map[K,V]` | Insertion-ordered arrays; differential tests | COMPLETE (subset) | O(n) lookup, reclamation | P1 | Extend |
+| T-027 | Native `Map[K,V]` | Insertion-ordered arrays + scalar-key hash index; differential tests | COMPLETE (subset) | Structural keys remain O(n); reclamation | P1 | Extend |
 | T-028 | Prior-art review | `docs/research/prior-art-lessons-2026.md` | COMPLETE | AI prior art is new work | P2 | Extend |
 | T-029 | REPL editing/history/echo | `src/repl.rs`, 7 CLI unit + e2e tests | COMPLETE | — | P3 | Keep |
 | T-030 | Native enums/match | Tagged C structs; differential tests | COMPLETE (subset) | Allocation benchmark | P2 | Extend |
@@ -111,12 +112,13 @@ through T-035; their documented subset limits remain real gaps, listed below.
 | T-033 | Match guards | Parser/checker/interp/IR/C; tests | COMPLETE | Guards cannot bind or mutate | P2 | Keep |
 | T-034 | REPL multi-line history/field completion | None | MISSING | Entire task | P4 | Defer |
 | T-035 | Public repository and launch kit | Public repo, CI, release, issue, `llms.txt` | COMPLETE | Rename to Vantyx; AI discovery update | P1 | Rename |
+| T-044 | Native scalar-key map hash index | `src/codegen_c.rs`; `large_scalar_maps_match`; 2026-11-24 benchmark | COMPLETE | Structural-key hashing; adversarial seed | P1 | Keep |
 
 ### Core partials that must not be described as finished
 
 | Area | What exists | What is still missing |
 | --- | --- | --- |
-| Native backend | Typed subset with lists, maps, structs, enums, strings, guards | Reclamation, cycle handling, O(1) maps, debug info, optimization, `Any` |
+| Native backend | Typed subset with lists, maps (scalar-key hash index), structs, enums, strings, guards | Reclamation, cycle handling, structural-key hashing, debug info, optimization, `Any` |
 | Pattern matching | Enum, wildcard, scalar literal, guards | Nested, or-patterns, ranges, floats, interpolated strings, generic enums |
 | REPL | Line editing, single-line history, top-level completion | Multi-line recall, field completion, local completion |
 | Memory | Interpreter `Rc` with cycles; native intentional leaks | Cycle collector or ownership/escape analysis; sandbox |
@@ -146,7 +148,7 @@ through T-035; their documented subset limits remain real gaps, listed below.
 | Stability policy / release process | PARTIAL | SemVer implied; v0.1.0 pre-release | P2 | Document |
 | Cross-platform CI | MISSING | Ubuntu-only workflow | P2 | Add matrix |
 | Regression/stress suites | PARTIAL | 241 tests; fuzz smoke is manual | P2 | CI fuzz job |
-| Native map hash index | MISSING | ADR-0010 revisit criterion | P2 | Benchmark first |
+| Native map hash index | COMPLETE for scalar keys (T-044, ADR-0016) | ADR-0010 revisit criterion | P1 | Keep; consider structural keys |
 | Enum allocation benchmark | MISSING | T-030 scope limit | P3 | Benchmark |
 | Nested/or-patterns | MISSING | Rejected by checker (`E0112`) | P2 | Implement |
 | `ROADMAP.md` at repository root | MISSING | Actual file is `docs/roadmap.md` | P3 | Add pointer or move |
@@ -271,6 +273,13 @@ Evidence: 2026-11-23 `cargo test` — 357 passed (218 library unit + 11 CLI unit
 -D warnings` clean; `cargo build --release` succeeded; all five examples matched
 interpreter/native output. Live local-model and cloud evidence is still missing
 because no server or credentials were available.
+
+Re-verification after T-044 on 2026-11-24: `cargo test` — 358 passed (218
+library unit + 11 CLI unit + 20 AI integration + 41 end-to-end + 68 native);
+`cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+succeeded; all five examples matched. `python3 benchmarks/run.py --reps 5`
+verified identical output and recorded `map_ops` native 3.597 ms versus
+interpreter 121.728 ms, C 2.884 ms, and Rust 4.495 ms.
 
 ### P1 — Core language recovery
 

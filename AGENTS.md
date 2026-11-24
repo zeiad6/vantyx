@@ -65,17 +65,18 @@ python3 benchmarks/run.py --reps 5
 | `tests/native.rs` | Differential interpreter vs native tests |
 | `tests/ai.rs` | Offline AI CLI and loopback HTTP integration tests |
 
-## Current verified baseline (2026-11-23)
+## Current verified baseline (2026-11-24)
 
 - Public repository: https://github.com/zeiad6/vantyx (MIT; renamed from
-  `zeiad6/auren`; CI run 45318733338 green on `main` with 357 tests; an earlier
-  clean clone verified).
-- `cargo test`: 357 passed (218 library unit + 11 CLI unit + 20 AI integration +
-  41 e2e + 67 native).
+  `zeiad6/auren`; CI run 45318733338 green on `main` with 357 tests before
+  T-044; an earlier clean clone verified).
+- `cargo test`: 358 passed (218 library unit + 11 CLI unit + 20 AI integration +
+  41 e2e + 68 native).
 - Clippy clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
-- Native support: scalars, strings, `List[T]`, `Map[K,V]`, structs, enums,
-  `match` with guards, checked arithmetic, bounds checks, structural equality.
+- Native support: scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key
+  hash index, structs, enums, `match` with guards, checked arithmetic, bounds
+  checks, structural equality.
 - Native rejects: `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads,
   `match` on `Any`, unannotated value-returning functions.
 - AI host support: offline mock/echo chat, OpenAI-compatible non-streaming chat
@@ -83,11 +84,12 @@ python3 benchmarks/run.py --reps 5
   extraction with bounded repair, token estimates, budgets, embeddings and
   in-memory vector index, BM25, typed tools with capabilities, bounded agents,
   redacted metrics, and `vantyx ai`.
-- Known gaps: no reclamation, O(n) native maps, no modules/generics/closures/
-  async/FFI, block-shaped `match` cannot appear inside parentheses, REPL history
-  recall is single-line and completion is top-level-only, no live local/cloud AI
-  evidence, no streaming/constrained decoding/model manager/keyring, no
-  language-level AI syntax, no tensors or GPU support.
+- Known gaps: no reclamation, O(n) structural-key native maps and a fixed hash
+  seed for scalar keys, no modules/generics/closures/async/FFI, block-shaped
+  `match` cannot appear inside parentheses, REPL history recall is single-line
+  and completion is top-level-only, no live local/cloud AI evidence, no
+  streaming/constrained decoding/model manager/keyring, no language-level AI
+  syntax, no tensors or GPU support.
 
 ## Definition of done
 

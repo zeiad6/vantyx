@@ -2163,6 +2163,9 @@ struct VantyxMap {
     const VantyxTypeDesc* value_desc;
     void* keys;
     void* values;
+    bool hashed;
+    int64_t index_cap;
+    int64_t* index;
 };
 
 static const VantyxTypeDesc vantyx_desc_unit = { VANTYX_T_UNIT, sizeof(vantyx_unit), NULL, NULL, NULL, NULL, NULL };
@@ -2749,7 +2752,61 @@ static vantyx_str vantyx_list_to_str(VantyxList* list) {
     return vantyx_list_display(list, 0);
 }
 
-// ---- maps (ADR-0010): insertion-ordered parallel arrays, linear search ----
+// ---- maps (ADR-0010, ADR-0016): insertion-ordered arrays with an optional
+// ---- open-addressing index for scalar keys. Struct, enum, and list keys keep
+// ---- the linear structural-equality path.
+
+static bool vantyx_map_hashable(const VantyxTypeDesc* desc) {
+    if (desc == NULL) return false;
+    switch (desc->kind) {
+        case VANTYX_T_UNIT:
+        case VANTYX_T_INT:
+        case VANTYX_T_FLOAT:
+        case VANTYX_T_BOOL:
+        case VANTYX_T_STR:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static uint64_t vantyx_map_mix(uint64_t value) {
+    value ^= value >> 30;
+    value *= UINT64_C(0xbf58476d1ce4e5b9);
+    value ^= value >> 27;
+    value *= UINT64_C(0x94d049bb133111eb);
+    value ^= value >> 31;
+    return value;
+}
+
+static uint64_t vantyx_map_hash(const void* key, const VantyxTypeDesc* desc) {
+    switch (desc->kind) {
+        case VANTYX_T_UNIT:
+            return vantyx_map_mix(0);
+        case VANTYX_T_INT:
+            return vantyx_map_mix((uint64_t)*(const int64_t*)key);
+        case VANTYX_T_FLOAT: {
+            double value = *(const double*)key;
+            uint64_t bits = 0;
+            // Match `==`: -0.0 and 0.0 are the same key.
+            if (value != 0.0) memcpy(&bits, &value, sizeof bits);
+            return vantyx_map_mix(bits);
+        }
+        case VANTYX_T_BOOL:
+            return vantyx_map_mix(*(const bool*)key ? 1u : 0u);
+        case VANTYX_T_STR: {
+            const unsigned char* text = (const unsigned char*)*(const vantyx_str*)key;
+            uint64_t hash = UINT64_C(1469598103934665603);
+            while (*text != 0) {
+                hash ^= (uint64_t)*text++;
+                hash *= UINT64_C(1099511628211);
+            }
+            return vantyx_map_mix(hash);
+        }
+        default:
+            return 0;
+    }
+}
 
 static VantyxMap* vantyx_map_new(int64_t key_size, int64_t value_size,
                                const VantyxTypeDesc* key_desc,
@@ -2763,6 +2820,9 @@ static VantyxMap* vantyx_map_new(int64_t key_size, int64_t value_size,
     map->value_desc = value_desc;
     map->keys = NULL;
     map->values = NULL;
+    map->hashed = vantyx_map_hashable(key_desc);
+    map->index_cap = 0;
+    map->index = NULL;
     return map;
 }
 
@@ -2793,7 +2853,64 @@ static void vantyx_map_reserve(VantyxMap* map, int64_t needed, int line, int col
     map->cap = cap;
 }
 
+static void vantyx_map_index_rehash(VantyxMap* map, int64_t cap, int line, int column) {
+    if (cap < 8) cap = 8;
+    if ((uint64_t)cap > (uint64_t)SIZE_MAX / sizeof(int64_t)) {
+        vantyx_rt_error("R0004", "map index allocation is too large", line, column);
+    }
+    int64_t* table = (int64_t*)calloc((size_t)cap, sizeof(int64_t));
+    if (table == NULL) {
+        fputs("error: out of memory\n", stderr);
+        exit(2);
+    }
+    int64_t* old = map->index;
+    map->index = table;
+    map->index_cap = cap;
+    for (int64_t entry = 0; entry < map->len; entry++) {
+        const void* key = (const char*)map->keys + entry * map->key_size;
+        int64_t mask = cap - 1;
+        int64_t slot = (int64_t)(vantyx_map_hash(key, map->key_desc) & (uint64_t)mask);
+        while (map->index[slot] != 0) slot = (slot + 1) & mask;
+        map->index[slot] = entry + 1;
+    }
+    free(old);
+}
+
+static void vantyx_map_index_reserve(VantyxMap* map, int64_t needed, int line, int column) {
+    if (!map->hashed) return;
+    // Keep the load factor at or below 50% so linear probing stays short.
+    if (map->index_cap > 0 && map->index_cap / 2 >= needed) return;
+    int64_t cap = map->index_cap < 8 ? 8 : map->index_cap;
+    while (cap / 2 < needed) {
+        if (cap > INT64_MAX / 2) {
+            vantyx_rt_error("R0004", "map index capacity overflow", line, column);
+        }
+        cap *= 2;
+    }
+    vantyx_map_index_rehash(map, cap, line, column);
+}
+
+static void vantyx_map_index_insert(VantyxMap* map, int64_t entry) {
+    const void* key = (const char*)map->keys + entry * map->key_size;
+    int64_t mask = map->index_cap - 1;
+    int64_t slot = (int64_t)(vantyx_map_hash(key, map->key_desc) & (uint64_t)mask);
+    while (map->index[slot] != 0) slot = (slot + 1) & mask;
+    map->index[slot] = entry + 1;
+}
+
 static int64_t vantyx_map_find(VantyxMap* map, const void* key) {
+    if (map->hashed && map->index_cap > 0) {
+        int64_t mask = map->index_cap - 1;
+        int64_t slot = (int64_t)(vantyx_map_hash(key, map->key_desc) & (uint64_t)mask);
+        for (;;) {
+            int64_t stored = map->index[slot];
+            if (stored == 0) return -1;
+            int64_t index = stored - 1;
+            const void* candidate = (const char*)map->keys + index * map->key_size;
+            if (vantyx_value_equals(candidate, key, map->key_desc, 0)) return index;
+            slot = (slot + 1) & mask;
+        }
+    }
     for (int64_t index = 0; index < map->len; index++) {
         const void* candidate = (const char*)map->keys + index * map->key_size;
         if (vantyx_value_equals(candidate, key, map->key_desc, 0)) return index;
@@ -2826,8 +2943,10 @@ static void vantyx_map_set_raw(VantyxMap* map, const void* key, const void* valu
         return;
     }
     vantyx_map_reserve(map, map->len + 1, line, column);
+    vantyx_map_index_reserve(map, map->len + 1, line, column);
     memcpy((char*)map->keys + map->len * map->key_size, key, (size_t)map->key_size);
     memcpy((char*)map->values + map->len * map->value_size, value, (size_t)map->value_size);
+    if (map->hashed) vantyx_map_index_insert(map, map->len);
     map->len++;
 }
 

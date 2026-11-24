@@ -8,9 +8,11 @@ Methodology:
   * Wall time includes process startup (fork/exec) for every implementation.
   * `vantyx-interp` includes parsing and type checking on every run, matching
     `vantyx run`; `vantyx-native` is a prebuilt executable.
-  * Map workloads use linear key arrays in every language because Vantyx's
-    native and interpreter maps are insertion-ordered linear scans (ADR-0010).
-    This keeps the algorithmic work equivalent.
+  * Native Vantyx maps use an insertion-ordered hash index for scalar keys
+    (ADR-0016); struct/enum/list keys still use structural linear search. The
+    interpreter remains a linear reference. C, Rust, and Python map workloads
+    use their standard hash maps, so native comparisons are algorithmic peers;
+    the interpreter is intentionally the slow reference.
   * Peak RSS is collected with wait4(2) through a tiny C helper, so the
     Python harness's own resident set does not mask the child's peak.
 
@@ -51,7 +53,7 @@ DESCRIPTIONS = {
     "arith_loop": "1,000,000 checked Int loop iterations with multiply/modulo/add",
     "fib": "recursive fib(24), 46,368",
     "list_ops": "150,000 list appends, indexed mutation, and sum",
-    "map_ops": "3,000 linear-map inserts and 3,000 lookups",
+    "map_ops": "3,000 map inserts and 3,000 lookups (native/C/Rust/Python hash; interpreter linear)",
     "struct_ops": "80,000 struct allocations, field mutations, and sum",
     "string_ops": "15 string doublings (65,536 chars) and character scan",
 }
@@ -302,9 +304,11 @@ def markdown(report: dict, workloads: list[str]) -> str:
         "- `vantyx-interp` re-parses and type-checks the source on every run, as",
         "  `vantyx run` does; `vantyx-native` is a prebuilt executable.",
         "- `vantyx-native` build time includes invoking clang with `-O2`.",
-        "- Map workloads use linear key arrays in every language, matching",
-        "  Vantyx's insertion-ordered linear map (ADR-0010). They are not a",
-        "  comparison against hash-table implementations.",
+        "- Native Vantyx maps use an insertion-ordered scalar-key hash index",
+        "  (ADR-0016); struct/enum/list keys keep structural linear search. The",
+        "  interpreter remains a linear reference. C, Rust, and Python use hash",
+        "  maps, so native map comparisons are algorithmic peers; the interpreter",
+        "  is intentionally the slow reference.",
         "- String workloads allocate immutable concatenation results; native",
         "  allocations are intentionally not reclaimed.",
         "- These numbers are a single-machine baseline, not a competitive claim.",
@@ -331,7 +335,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    vantyx = Path(args.vtx).resolve()
+    vantyx = Path(args.vantyx).resolve()
     if not vantyx.is_file():
         print(f"error: vantyx binary not found: {vantyx}", file=sys.stderr)
         print("hint: run `cargo build --release` first", file=sys.stderr)

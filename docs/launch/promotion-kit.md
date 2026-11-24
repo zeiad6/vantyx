@@ -80,7 +80,8 @@ non-streaming adapter.
 What does not: modules, generics, closures, async, FFI, a standard library,
 native support for `Any`, language-level AI syntax, streaming AI output, model
 downloads, or GPU/tensor support. Native allocations are intentionally leaked in
-v0.1, native maps are O(n), and there is no cycle collector or sandbox. The AI
+v0.1, scalar map keys use a hash index while structural keys remain O(n), and
+there is no cycle collector or sandbox. The AI
 adapter is tested against loopback and stub servers, not a live provider. This is
 a pre-1.0 prototype, not a production tool.
 
@@ -111,8 +112,9 @@ strings, and a REPL. The native backend covers scalars, strings, lists, maps,
 structs, enums, and guarded `match`.
 
 It is deliberately small: no modules, generics, closures, async, FFI, or
-standard library yet. Native allocations are leaked in v0.1 and native maps are
-O(n). A new offline AI host (`vantyx ai`) adds mock/echo chat, strict JSON,
+standard library yet. Native allocations are leaked in v0.1; scalar map keys
+use a hash index, while structural keys remain O(n). A new offline AI host
+(`vantyx ai`) adds mock/echo chat, strict JSON,
 schema validation, tools, bounded agents, and an OpenAI-compatible adapter with
 loopback defaults and no bundled model. I am more interested in critique of the
 semantics and the testing strategy than in feature requests, though both are
@@ -235,10 +237,10 @@ backend dependency-free and makes the generated code inspectable. ADR-0008
 records the trade-off.
 
 **Is it fast?**
-The native backend is in the same band as C and Rust on the stored arithmetic,
-recursion, list, and struct microbenchmarks. Native maps are O(n) and string
-concatenation is a measured gap. These are single-machine baseline numbers, not
-a general claim.
+The native backend is in the same band as C and Rust on the stored six-workload
+microbenchmarks. Scalar map keys use a hash index; structural keys remain O(n),
+and string concatenation is the largest measured gap. These are single-machine
+baseline numbers, not a general claim.
 
 **Why are native allocations leaked?**
 v0.1 has no reclamation strategy. Leaking is explicit, documented, and tested;

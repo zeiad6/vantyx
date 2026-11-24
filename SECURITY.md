@@ -45,7 +45,8 @@ These are documented design limits, not vulnerabilities:
 
 - Native allocations are intentionally leaked in v0.1. There is no reclamation
   and no cycle collector.
-- Native map lookup is O(n).
+- Native scalar-key map lookup uses a fixed-seed hash index; adversarial key
+  streams can degrade probing. Struct/enum/list keys use O(n) structural search.
 - The native backend supports a statically typed subset. `Any`, `List[Any]`,
   maps with non-inferable types, `Any` enum payloads, and `match` on `Any` are
   rejected with `E0401`.

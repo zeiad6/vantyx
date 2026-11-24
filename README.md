@@ -19,7 +19,8 @@ fn main():
 
 > **Status: functional prototype.** Vantyx is not production-ready. The native
 > backend supports a subset, native allocations are intentionally leaked in
-> v0.1, native maps are O(n), and there is no cycle collector or sandbox. See
+> v0.1, scalar map keys use a hash index while struct/enum/list keys remain
+> O(n), and there is no cycle collector or sandbox. See
 > [PROJECT_STATUS.md](PROJECT_STATUS.md) for the verified state and exact limits.
 
 ## Why Vantyx
@@ -45,8 +46,9 @@ Vantyx is a **functional prototype**. The lexer, parser, gradual type checker,
 tree-walking interpreter, typed IR, and native C11 backend are implemented and
 tested. Closed enums with payloads, exhaustive `match`, scalar literal patterns
 for `Int`/`Str`/`Bool`, and `Bool`-checked match guards work in both engines.
-Native lists, insertion-ordered maps, structs, enums, and UTF-8-aware string
-indexing/iteration are supported for statically typed code. The REPL persists
+Native lists, insertion-ordered maps with a scalar-key hash index, structs,
+enums, and UTF-8-aware string indexing/iteration are supported for statically
+typed code. The REPL persists
 bindings and declarations and provides line editing, history, Tab completion,
 and expression echo. The AI host foundation is offline and tested: strict JSON,
 JSON Schema validation, validated structured extraction with bounded repair,
@@ -66,11 +68,12 @@ supported surface.
 | Bundled model, tokenizer, tensors, GPU | No |
 | Modules, generics, closures, async, FFI | Not yet |
 | Production reliability or a stable ABI | No |
-| Fast native maps or automatic reclamation | No |
+| Fast scalar-key native maps | Yes, through an insertion-ordered hash index; struct/enum/list keys remain O(n) |
+| Automatic memory reclamation | No |
 
 A reproducible benchmark baseline guides optimization. Memory reclamation,
-native map indexing, pattern-matching extensions, and optimization are the next
-major gaps.
+immutable string concatenation, pattern-matching extensions, and broader
+optimization are the next major gaps.
 
 ## Quick start
 
@@ -168,9 +171,10 @@ python3 benchmarks/run.py --reps 5
 
 The runner checks that all implementations print identical output, then times
 Vantyx (interpreter and native), Python, C, and Rust on six equivalent workloads.
-On the 2026-11-22 single-machine baseline, the native backend was in the same
-performance band as C/Rust on arithmetic, recursion, list, and struct workloads;
-map operations and immutable string concatenation were the measured gaps. See
+On the 2026-11-24 single-machine baseline, the native backend was in the same
+performance band as C/Rust on all six workloads. The scalar-key map hash index
+cut `map_ops` from 64.2 ms to 3.6 ms (C: 2.9 ms); immutable string concatenation
+remains the largest measured gap at 8.3 ms versus C's 2.8 ms. See
 [docs/benchmarks.md](docs/benchmarks.md) for methodology, caveats, and raw
 results under `benchmarks/results/`. These are baseline measurements, not a
 general performance claim.

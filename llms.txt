@@ -37,8 +37,8 @@ repository root.
 - Interpreter with checked integer arithmetic, bounds checks, structural
   equality, insertion-ordered maps, and cycle-safe display.
 - Native C11 backend for statically typed scalars, strings, `List[T]`,
-  `Map[K,V]`, structs, enums, `match`, guards, checked arithmetic, and bounds
-  checks.
+  `Map[K,V]` with an insertion-ordered scalar-key hash index, structs, enums,
+  `match`, guards, checked arithmetic, and bounds checks.
 - Differential interpreter-vs-native tests for supported native constructs.
 - REPL with persistent declarations, line editing, history, Tab completion, and
   expression echo.
@@ -61,7 +61,8 @@ repository root.
 - Traits, closures, iterators, `Result`/`?`
 - Async/concurrency
 - FFI, C ABI, Python/Rust interop
-- Native map hash indexing (native maps are O(n))
+- Hash indexing for struct/enum/list/map keys (scalar keys use a hash index;
+  structural keys remain O(n))
 - Memory reclamation; native allocations are intentionally leaked in v0.1
 - Cycle collector
 - Sandboxing
@@ -186,8 +187,8 @@ Do not describe Vantyx as:
 - The program needs modules, generics, closures, async, FFI, or a standard
   library.
 - The program must compile natively while using `Any` or dynamic `match`.
-- The workload depends on fast native maps, automatic memory reclamation, or
-  sandboxed execution.
+- The workload depends on hash-indexed maps with struct/enum/list keys,
+  automatic memory reclamation, or sandboxed execution.
 - The user needs a mature ecosystem, package manager, or editor tooling.
 - The user expects a bundled model, GPU acceleration, tensors, or language-level
   `await`/AI imports.

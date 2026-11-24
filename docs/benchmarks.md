@@ -2,11 +2,14 @@
 
 ## Status
 
-A reproducible baseline was measured on **2026-11-22** on one machine. Raw
-results are stored as generated, not hand-edited:
+A reproducible baseline was measured on **2026-11-22** and re-measured on
+**2026-11-24** after the native scalar-key map hash index (T-044), on one
+machine. Raw results are stored as generated, not hand-edited:
 
-- [`benchmarks/results/2026-11-22.json`](../benchmarks/results/2026-11-22.json) — full data
-- [`benchmarks/results/2026-11-22.md`](../benchmarks/results/2026-11-22.md) — generated summary
+- [`benchmarks/results/2026-11-22.json`](../benchmarks/results/2026-11-22.json) — initial full data
+- [`benchmarks/results/2026-11-22.md`](../benchmarks/results/2026-11-22.md) — initial generated summary
+- [`benchmarks/results/2026-11-24.json`](../benchmarks/results/2026-11-24.json) — current full data
+- [`benchmarks/results/2026-11-24.md`](../benchmarks/results/2026-11-24.md) — current generated summary
 
 These are single-machine baseline numbers, not a competitive claim. They exist
 to guide optimization and to make regressions visible.
@@ -28,7 +31,7 @@ to guide optimization and to make regressions visible.
 | `arith_loop` | 1,000,000 checked integer loop iterations with multiply/modulo/add |
 | `fib` | Recursive `fib(24)` (46,368), function calls and recursion |
 | `list_ops` | 150,000 list appends, indexed mutation, and sum |
-| `map_ops` | 3,000 linear-map inserts and 3,000 lookups |
+| `map_ops` | 3,000 map inserts and 3,000 lookups (native/C/Rust/Python hash; interpreter linear) |
 | `struct_ops` | 80,000 heap-allocated structs, field mutation, and sum |
 | `string_ops` | 15 string doublings (65,536 characters) and a character scan |
 
@@ -58,10 +61,13 @@ native executable from `vantyx build`.
 
 - Vantyx `Int` arithmetic is **checked**; C `int64_t` arithmetic and Rust
   release-mode arithmetic are unchecked. Vantyx pays for overflow checks.
-- Vantyx maps are insertion-ordered linear scans (ADR-0010). The Python, C, and
-  Rust map workloads deliberately use linear key arrays too, so this is not a
-  comparison against hash tables. The Python implementation is **not**
-  `dict` and is not representative of Python's normal map performance.
+- Native Vantyx maps use an insertion-ordered scalar-key hash index (ADR-0016);
+  struct/enum/list keys keep structural linear search. The C, Rust, and Python
+  map workloads use their standard hash maps, so the 2026-11-24 native
+  comparison is between algorithmically equivalent implementations. The
+  interpreter remains a linear reference and is intentionally the slow case.
+  The 2026-11-22 run used linear arrays in every language and is retained for
+  comparison, not as the current methodology.
 - Vantyx native stores each struct behind its own allocation, so the C and Rust
   struct workloads use one allocation per struct (`malloc` / `Box`) rather than
   a contiguous value array.
@@ -76,7 +82,7 @@ native executable from `vantyx build`.
 
 | Item | Value |
 | --- | --- |
-| Date | 2026-11-22 |
+| Date | 2026-11-24 |
 | CPU | Intel Core i7-8565U @ 1.80 GHz, 4 cores |
 | RAM | 1,978,576 kB |
 | OS | Linux 7.2.15+kali-amd64 (glibc 2.43) |
@@ -89,51 +95,56 @@ native executable from `vantyx build`.
 
 | Workload | Vantyx interp | Vantyx native | Python | C | Rust |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `arith_loop` | 1300.888 | 5.210 | 413.489 | 5.097 | 5.683 |
-| `fib` | 167.512 | 3.311 | 49.790 | 3.148 | 3.612 |
-| `list_ops` | 383.585 | 4.661 | 169.181 | 4.399 | 5.114 |
-| `map_ops` | 106.218 | 64.212 | 3208.396 | 8.360 | 9.044 |
-| `struct_ops` | 405.054 | 9.110 | 178.566 | 11.753 | 12.376 |
-| `string_ops` | 59.757 | 7.716 | 44.846 | 2.639 | 3.595 |
+| `arith_loop` | 1422.623 | 5.910 | 455.966 | 4.944 | 6.430 |
+| `fib` | 181.901 | 3.376 | 53.608 | 3.483 | 3.518 |
+| `list_ops` | 480.670 | 5.540 | 186.734 | 6.013 | 5.764 |
+| `map_ops` | 121.728 | 3.597 | 42.253 | 2.884 | 4.495 |
+| `struct_ops` | 489.947 | 9.730 | 189.024 | 11.663 | 13.344 |
+| `string_ops` | 74.813 | 8.318 | 54.285 | 2.764 | 3.611 |
+
+For comparison, the 2026-11-22 `map_ops` medians before the hash index were:
+Vantyx interpreter 106.218 ms, Vantyx native 64.212 ms, Python 3208.396 ms,
+C 8.360 ms, Rust 9.044 ms. The Python number changed because the workload now
+uses `dict` instead of the deliberately naive linear implementation.
 
 Peak RSS and min/max spread are in the raw result files. Representative values:
 
 | Workload | Vantyx native RSS | Vantyx interp RSS | C RSS | Rust RSS |
 | --- | ---: | ---: | ---: | ---: |
-| `arith_loop` | 2.09 MiB | 3.12 MiB | 1.60 MiB | 2.00 MiB |
-| `list_ops` | 3.36 MiB | 6.45 MiB | 2.77 MiB | 3.34 MiB |
-| `struct_ops` | 5.21 MiB | 30.39 MiB | 4.60 MiB | 4.96 MiB |
+| `arith_loop` | 2.00 MiB | 3.52 MiB | 1.60 MiB | 2.11 MiB |
+| `list_ops` | 3.39 MiB | 14.29 MiB | 2.77 MiB | 3.31 MiB |
+| `struct_ops` | 5.14 MiB | 44.52 MiB | 4.65 MiB | 5.11 MiB |
 
 Build time and binary size:
 
 | Workload | Vantyx build s | C build s | Rust build s | Vantyx binary B | C binary B | Rust binary B |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `arith_loop` | 0.236 | 0.165 | 0.206 | 16,736 | 15,992 | 4,493,248 |
-| `fib` | 0.238 | 0.140 | 0.162 | 16,776 | 16,016 | 4,493,104 |
-| `list_ops` | 0.259 | 0.159 | 0.205 | 16,832 | 16,144 | 4,494,328 |
-| `map_ops` | 0.448 | 0.161 | 0.234 | 21,672 | 16,136 | 4,494,432 |
-| `struct_ops` | 0.295 | 0.150 | 0.235 | 16,824 | 16,144 | 4,494,736 |
-| `string_ops` | 0.267 | 0.171 | 0.221 | 16,784 | 16,192 | 4,494,072 |
+| `arith_loop` | 1.086 | 0.181 | 1.956 | 16,744 | 15,992 | 4,493,248 |
+| `fib` | 0.988 | 0.178 | 1.085 | 16,784 | 16,016 | 4,493,104 |
+| `list_ops` | 1.065 | 0.462 | 1.473 | 16,840 | 16,144 | 4,494,328 |
+| `map_ops` | 1.032 | 0.213 | 1.312 | 21,824 | 16,240 | 4,516,256 |
+| `struct_ops` | 0.765 | 0.263 | 1.106 | 16,832 | 16,144 | 4,494,736 |
+| `string_ops` | 0.620 | 0.179 | 1.339 | 16,784 | 16,192 | 4,494,072 |
 
 ## Interpretation
 
-- **Native vs interpreter:** native is roughly 8×–250× faster on arithmetic,
-  recursion, list, and struct workloads. `map_ops` is only ~1.65× faster
-  because both engines use linear maps and native map equality goes through
-  generated descriptors.
+- **Native vs interpreter:** native is roughly 9×–240× faster on these
+  workloads. `map_ops` is now ~34× faster than the interpreter because the
+  native backend uses a hash index while the interpreter remains linear.
 - **Native vs C/Rust:** on these workloads the native backend is in the same
-  performance band for arithmetic, recursion, list, and struct code. Do not
-  read small differences (including cases where Vantyx is marginally ahead) as
-  a language-level win; they are within measurement noise and reflect
-  workload-specific code generation. `string_ops` is ~2.9× slower than C
-  because immutable concatenation allocates a fresh exact-size string.
-- **Maps:** native map operations are ~7.7× slower than hand-written C linear
-  arrays. This is the measured cost of descriptor-based structural equality,
-  checked growth, and the general-purpose runtime. A hash index should be
-  considered only if map-heavy workloads become a priority (ADR-0010).
+  performance band. Do not read small differences (including cases where
+  Vantyx is marginally ahead) as a language-level win; they are within
+  measurement noise and reflect workload-specific code generation.
+  `string_ops` remains the clearest gap at ~3.0× slower than C because
+  immutable concatenation allocates a fresh exact-size string.
+- **Maps:** the scalar-key hash index (ADR-0016) cut `map_ops` from 64.212 ms
+  to 3.597 ms. Native is now 1.25× slower than C's hash table and faster than
+  the Rust `HashMap` result on this run. Structural keys still take the linear
+  path, and the fixed seed is not collision-resistant against adversarial
+  input.
 - **Interpreter:** it is a semantic oracle, not a performance target. It is
-  slower than Python on most of these microbenchmarks; the `map_ops` Python
-  number reflects the deliberately naive linear implementation, not `dict`.
+  slower than Python on these microbenchmarks, and its map workload is
+  intentionally linear rather than a `dict`.
 - **Memory:** native RSS is low (2–5 MiB) because native programs leak but do
   not maintain interpreter metadata. The interpreter's `struct_ops` peak is
   much higher due to `Rc<RefCell<...>>` per struct and per field.

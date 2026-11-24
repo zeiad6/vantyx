@@ -1,0 +1,528 @@
+{
+  "generated_at": "2026-11-24T03:29:43+00:00",
+  "repetitions": 5,
+  "warmup_runs": 1,
+  "environment": {
+    "platform": "Linux-7.2.15+kali-amd64-x86_64-with-glibc2.43",
+    "cpu": "Intel(R) Core(TM) i7-8565U CPU @ 1.80GHz",
+    "cores": 4,
+    "memory": "1978600 kB",
+    "python": "3.14.10",
+    "clang": "Debian clang version 21.1.8 (13)",
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+    "vantyx": "vantyx 0.1.0"
+  },
+  "descriptions": {
+    "arith_loop": "1,000,000 checked Int loop iterations with multiply/modulo/add",
+    "fib": "recursive fib(24), 46,368",
+    "list_ops": "150,000 list appends, indexed mutation, and sum",
+    "map_ops": "3,000 map inserts and 3,000 lookups (native/C/Rust/Python hash; interpreter linear)",
+    "struct_ops": "80,000 struct allocations, field mutations, and sum",
+    "string_ops": "15 string doublings (65,536 chars) and character scan"
+  },
+  "results": {
+    "arith_loop": {
+      "vantyx-interp": {
+        "times_ms": [
+          1442.96,
+          1386.755,
+          1468.375,
+          1422.623,
+          1384.214
+        ],
+        "median_ms": 1422.623,
+        "min_ms": 1384.214,
+        "max_ms": 1468.375,
+        "peak_rss_mib": 3.52,
+        "exit_code": 0
+      },
+      "vantyx-native": {
+        "times_ms": [
+          6.791,
+          8.718,
+          5.075,
+          5.91,
+          5.093
+        ],
+        "median_ms": 5.91,
+        "min_ms": 5.075,
+        "max_ms": 8.718,
+        "peak_rss_mib": 2.0,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          455.966,
+          505.1,
+          425.599,
+          475.902,
+          444.815
+        ],
+        "median_ms": 455.966,
+        "min_ms": 425.599,
+        "max_ms": 505.1,
+        "peak_rss_mib": 11.87,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          4.9,
+          6.811,
+          4.944,
+          6.815,
+          4.855
+        ],
+        "median_ms": 4.944,
+        "min_ms": 4.855,
+        "max_ms": 6.815,
+        "peak_rss_mib": 1.6,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          5.626,
+          6.665,
+          6.818,
+          5.606,
+          6.43
+        ],
+        "median_ms": 6.43,
+        "min_ms": 5.606,
+        "max_ms": 6.818,
+        "peak_rss_mib": 2.11,
+        "exit_code": 0
+      }
+    },
+    "fib": {
+      "vantyx-interp": {
+        "times_ms": [
+          181.901,
+          183.883,
+          184.328,
+          181.074,
+          181.057
+        ],
+        "median_ms": 181.901,
+        "min_ms": 181.057,
+        "max_ms": 184.328,
+        "peak_rss_mib": 3.64,
+        "exit_code": 0
+      },
+      "vantyx-native": {
+        "times_ms": [
+          3.34,
+          3.355,
+          3.376,
+          4.001,
+          3.476
+        ],
+        "median_ms": 3.376,
+        "min_ms": 3.34,
+        "max_ms": 4.001,
+        "peak_rss_mib": 2.09,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          53.608,
+          55.692,
+          52.908,
+          53.344,
+          55.911
+        ],
+        "median_ms": 53.608,
+        "min_ms": 52.908,
+        "max_ms": 55.911,
+        "peak_rss_mib": 11.75,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          3.483,
+          4.399,
+          3.409,
+          3.007,
+          4.274
+        ],
+        "median_ms": 3.483,
+        "min_ms": 3.007,
+        "max_ms": 4.399,
+        "peak_rss_mib": 1.6,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          3.468,
+          4.771,
+          3.47,
+          3.518,
+          4.71
+        ],
+        "median_ms": 3.518,
+        "min_ms": 3.468,
+        "max_ms": 4.771,
+        "peak_rss_mib": 2.11,
+        "exit_code": 0
+      }
+    },
+    "list_ops": {
+      "vantyx-interp": {
+        "times_ms": [
+          493.125,
+          509.169,
+          480.67,
+          464.557,
+          473.536
+        ],
+        "median_ms": 480.67,
+        "min_ms": 464.557,
+        "max_ms": 509.169,
+        "peak_rss_mib": 14.29,
+        "exit_code": 0
+      },
+      "vantyx-native": {
+        "times_ms": [
+          6.541,
+          4.757,
+          5.54,
+          6.549,
+          5.39
+        ],
+        "median_ms": 5.54,
+        "min_ms": 4.757,
+        "max_ms": 6.549,
+        "peak_rss_mib": 3.39,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          196.71,
+          194.022,
+          179.202,
+          183.755,
+          186.734
+        ],
+        "median_ms": 186.734,
+        "min_ms": 179.202,
+        "max_ms": 196.71,
+        "peak_rss_mib": 17.63,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          6.105,
+          4.309,
+          6.222,
+          4.794,
+          6.013
+        ],
+        "median_ms": 6.013,
+        "min_ms": 4.309,
+        "max_ms": 6.222,
+        "peak_rss_mib": 2.77,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          5.764,
+          5.328,
+          5.817,
+          5.234,
+          9.307
+        ],
+        "median_ms": 5.764,
+        "min_ms": 5.234,
+        "max_ms": 9.307,
+        "peak_rss_mib": 3.31,
+        "exit_code": 0
+      }
+    },
+    "map_ops": {
+      "vantyx-interp": {
+        "times_ms": [
+          121.728,
+          129.557,
+          119.995,
+          120.453,
+          127.169
+        ],
+        "median_ms": 121.728,
+        "min_ms": 119.995,
+        "max_ms": 129.557,
+        "peak_rss_mib": 3.68,
+        "exit_code": 0
+      },
+      "vantyx-native": {
+        "times_ms": [
+          3.597,
+          3.914,
+          3.322,
+          3.622,
+          3.178
+        ],
+        "median_ms": 3.597,
+        "min_ms": 3.178,
+        "max_ms": 3.914,
+        "peak_rss_mib": 2.29,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          40.827,
+          45.528,
+          42.78,
+          41.177,
+          42.253
+        ],
+        "median_ms": 42.253,
+        "min_ms": 40.827,
+        "max_ms": 45.528,
+        "peak_rss_mib": 12.06,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          2.858,
+          4.306,
+          2.742,
+          2.884,
+          3.329
+        ],
+        "median_ms": 2.884,
+        "min_ms": 2.742,
+        "max_ms": 4.306,
+        "peak_rss_mib": 1.73,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          4.495,
+          7.01,
+          4.318,
+          4.374,
+          4.496
+        ],
+        "median_ms": 4.495,
+        "min_ms": 4.318,
+        "max_ms": 7.01,
+        "peak_rss_mib": 2.37,
+        "exit_code": 0
+      }
+    },
+    "struct_ops": {
+      "vantyx-interp": {
+        "times_ms": [
+          473.351,
+          494.857,
+          489.947,
+          506.098,
+          469.101
+        ],
+        "median_ms": 489.947,
+        "min_ms": 469.101,
+        "max_ms": 506.098,
+        "peak_rss_mib": 44.52,
+        "exit_code": 0
+      },
+      "vantyx-native": {
+        "times_ms": [
+          9.965,
+          8.946,
+          8.797,
+          9.73,
+          10.171
+        ],
+        "median_ms": 9.73,
+        "min_ms": 8.797,
+        "max_ms": 10.171,
+        "peak_rss_mib": 5.14,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          192.604,
+          188.168,
+          189.024,
+          186.323,
+          200.146
+        ],
+        "median_ms": 189.024,
+        "min_ms": 186.323,
+        "max_ms": 200.146,
+        "peak_rss_mib": 20.99,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          11.663,
+          11.169,
+          11.656,
+          11.8,
+          11.706
+        ],
+        "median_ms": 11.663,
+        "min_ms": 11.169,
+        "max_ms": 11.8,
+        "peak_rss_mib": 4.65,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          13.344,
+          13.396,
+          14.006,
+          13.076,
+          12.997
+        ],
+        "median_ms": 13.344,
+        "min_ms": 12.997,
+        "max_ms": 14.006,
+        "peak_rss_mib": 5.11,
+        "exit_code": 0
+      }
+    },
+    "string_ops": {
+      "vantyx-interp": {
+        "times_ms": [
+          76.184,
+          80.299,
+          74.7,
+          74.813,
+          73.282
+        ],
+        "median_ms": 74.813,
+        "min_ms": 73.282,
+        "max_ms": 80.299,
+        "peak_rss_mib": 9.63,
+        "exit_code": 0
+      },
+      "vantyx-native": {
+        "times_ms": [
+          8.138,
+          8.318,
+          7.42,
+          9.152,
+          9.348
+        ],
+        "median_ms": 8.318,
+        "min_ms": 7.42,
+        "max_ms": 9.348,
+        "peak_rss_mib": 4.21,
+        "exit_code": 0
+      },
+      "python": {
+        "times_ms": [
+          54.285,
+          55.722,
+          51.406,
+          56.141,
+          47.199
+        ],
+        "median_ms": 54.285,
+        "min_ms": 47.199,
+        "max_ms": 56.141,
+        "peak_rss_mib": 11.94,
+        "exit_code": 0
+      },
+      "c": {
+        "times_ms": [
+          2.641,
+          2.762,
+          2.764,
+          4.187,
+          2.805
+        ],
+        "median_ms": 2.764,
+        "min_ms": 2.641,
+        "max_ms": 4.187,
+        "peak_rss_mib": 1.64,
+        "exit_code": 0
+      },
+      "rust": {
+        "times_ms": [
+          3.611,
+          3.476,
+          4.423,
+          3.43,
+          3.645
+        ],
+        "median_ms": 3.611,
+        "min_ms": 3.43,
+        "max_ms": 4.423,
+        "peak_rss_mib": 2.34,
+        "exit_code": 0
+      }
+    }
+  },
+  "builds": {
+    "arith_loop": {
+      "vantyx-native": 1.0864984889994957,
+      "c": 0.18102944299971568,
+      "rust": 1.9557555749997846
+    },
+    "fib": {
+      "vantyx-native": 0.9879654760006815,
+      "c": 0.17815698300000804,
+      "rust": 1.084864729000401
+    },
+    "list_ops": {
+      "vantyx-native": 1.0649736790001043,
+      "c": 0.4620075849998102,
+      "rust": 1.4731445389988949
+    },
+    "map_ops": {
+      "vantyx-native": 1.0321144330009702,
+      "c": 0.21281160100079433,
+      "rust": 1.3120854240005428
+    },
+    "struct_ops": {
+      "vantyx-native": 0.7652208309991693,
+      "c": 0.26302224999926693,
+      "rust": 1.1055494899992482
+    },
+    "string_ops": {
+      "vantyx-native": 0.6195546399994782,
+      "c": 0.17911342600018543,
+      "rust": 1.338920958000017
+    }
+  },
+  "sizes": {
+    "arith_loop": {
+      "vantyx-source": 147,
+      "vantyx-native": 16744,
+      "c": 15992,
+      "rust": 4493248
+    },
+    "fib": {
+      "vantyx-source": 120,
+      "vantyx-native": 16784,
+      "c": 16016,
+      "rust": 4493104
+    },
+    "list_ops": {
+      "vantyx-source": 263,
+      "vantyx-native": 16840,
+      "c": 16144,
+      "rust": 4494328
+    },
+    "map_ops": {
+      "vantyx-source": 234,
+      "vantyx-native": 21824,
+      "c": 16240,
+      "rust": 4516256
+    },
+    "struct_ops": {
+      "vantyx-source": 363,
+      "vantyx-native": 16832,
+      "c": 16144,
+      "rust": 4494736
+    },
+    "string_ops": {
+      "vantyx-source": 224,
+      "vantyx-native": 16784,
+      "c": 16192,
+      "rust": 4494072
+    }
+  },
+  "verification": "all implementations produced identical stdout"
+}

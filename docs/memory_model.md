@@ -36,14 +36,14 @@
 ## Native backend (v0.1 subset)
 
 - Native values are unboxed C values: `int64_t`, `double`, `bool`, `const char*`, pointers to heap-allocated structs, `VantyxList*` for lists, `VantyxMap*` for maps, and `Vantyx_e_<Enum>*` for enums.
-- Strings, structs, list buffers, map buffers, and enum values are allocated with `malloc`/`realloc` and **never freed**. Native programs are short-lived CLI processes; this is a documented limitation, not a memory-safety claim.
+- Strings, structs, list buffers, map key/value buffers, scalar-key map indexes, and enum values are allocated with `malloc`/`calloc`/`realloc` and **never freed**. Native programs are short-lived CLI processes; this is a documented limitation, not a memory-safety claim.
 - Struct assignment aliases the same heap object, matching the interpreter's reference semantics. List and map assignment aliases the same header; growth reallocates only the element buffer, so aliases stay valid. Enum values are immutable; assigning an enum aliases the same tagged struct, which is observationally equivalent because payload slots cannot be reassigned.
-- Native lists use typed contiguous storage plus generated element descriptors (ADR-0009). Native maps use insertion-ordered parallel key/value buffers plus generated key/value descriptors (ADR-0010). Native enums use a tagged struct with a union of per-variant payload structs plus generated display/equality callbacks (ADR-0012). Scalar elements are unboxed; structs, enums, and nested collections are stored as pointers.
+- Native lists use typed contiguous storage plus generated element descriptors (ADR-0009). Native maps use insertion-ordered parallel key/value buffers plus generated key/value descriptors (ADR-0010); scalar keys additionally use an open-addressing index of entry positions at a 50% load factor (ADR-0016), while struct/enum/list keys keep linear structural search. Native enums use a tagged struct with a union of per-variant payload structs plus generated display/equality callbacks (ADR-0012). Scalar elements are unboxed; structs, enums, and nested collections are stored as pointers.
 - `List[Any]`, `Map[Any, *]`, `Any` enum payloads, and `match` on `Any` are rejected with `E0401`. String indexing and iteration return newly allocated one-character strings, matching the interpreter's value semantics.
 - Integer arithmetic, list/string indices, and map capacity growth are checked; missing map keys raise `R0008`; allocation failure terminates with a runtime error.
 - List, map, struct, and enum display detect cycles through mutable containers. Structural equality tracks visited container pairs, so two distinct cycles compare coinductively, matching the interpreter.
 - Native calls are limited to depth 256 (`R0012`), preventing runaway recursion from exhausting the C stack.
-- Future reclamation must preserve reference semantics and document its allocation policy in an ADR before implementation. Native map performance can be revisited under ADR-0010's criteria.
+- Future reclamation must preserve reference semantics and document its allocation policy in an ADR before implementation. The scalar-key map index (ADR-0016) adds roughly 16 bytes per entry at its 50% load factor; structural-key hashing remains a documented follow-up, not an implemented feature.
 
 ## Planned evolution
 
