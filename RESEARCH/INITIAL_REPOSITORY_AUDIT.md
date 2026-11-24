@@ -32,7 +32,7 @@ second `research/` tree with duplicate content.
 | Builds | `cargo build` and `cargo build --release` succeed |
 | Lints | `cargo clippy --all-targets -- -D warnings` clean |
 | Formatting | **`cargo fmt --check` fails** with 224 diff locations (pre-existing; see gap G-01) |
-| Differential fuzzer | `tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100 agree |
+| Differential fuzzer | `tools/differential_fuzz.py --iterations 160 --seed 1` — 160/160 agree; also 160/160 on seeds 500 and 1000 with eight program shapes |
 | Fuzz smoke | 9 depth/limit cases and 400 random/mutated inputs with controlled diagnostics |
 | Examples | All five `examples/*.vtx` match interpreter and native output |
 | CI | Run 45496041422 green on `5e1092f` with 613 tests; run 45493833079 green on `a4fe86b` with 584 tests |
@@ -93,10 +93,13 @@ hide semantic changes.
 
 ### G-02 — Differential coverage is narrow (P1)
 
-The fuzzer has three typed program grammars and no shrinking or sanitizer
-integration. It found two real P0 defects, which justifies expanding it:
-functions with parameters/returns, strings and interpolation, nested
-collections, match expressions, and effect ordering. A green fuzzer run is
+The fuzzer now has eight typed program grammars (scalars/control flow,
+collections, pattern matching, nested aliasing, typed functions, strings,
+numerics, and runtime-error agreement), but it still has no shrinking,
+sanitizer integration, or coverage measurement. It found two real P0 defects.
+The expansion also found a test-quality bug: the collection generator used
+`xs[-1]`, an invalid negative index, so that program stopped at its first
+index and never exercised the remaining statements. A green fuzzer run is
 evidence, not proof.
 
 ### G-03 — Native memory is intentionally leaked (P1)

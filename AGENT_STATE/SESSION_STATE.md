@@ -4,9 +4,9 @@
 - Updated: 2026-11-24
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `5e1092f` (static linter and reachability-aware returns); CI run
-  45496041422 passed on it
-- Remote: `origin/main` at `5e1092f`
+- Last commit: `806a822` (initial repository audit and T-073 CI record); the
+  T-072 fuzzer expansion is pending commit
+- Remote: `origin/main` at `5e1092f`; `806a822` is local and one commit ahead
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
@@ -23,19 +23,32 @@ produced a false "not all paths return" error. `block_returns` now walks
 reachable statements and stops at the first terminator. ADR-0037 records both
 decisions.
 
+T-072 — Deterministic differential fuzzer expansion. Status: VERIFIED
+locally; commit, push, and CI pending. The fuzzer now has eight program
+shapes: scalar expressions and control flow, collections/structs/enums,
+guarded/range/or-pattern matching, nested collections with aliasing and
+mutation, typed functions with early returns and recursion, string
+escapes/interpolation/UTF-8 builtins, numeric formatting/conversions, and
+runtime-error agreement. It passed 160/160 on each of seeds 1, 500, and 1000
+with 0 programs rejected by both engines, and CI now runs 80 iterations on
+seed 1. The expansion found a test-quality bug: the collection generator used
+`xs[-1]`, an invalid negative index, so that program stopped at its first index
+and never exercised the remaining 20+ statements; it now uses
+`xs[len(xs) - 1]`. Empty `replace` patterns were also removed because they are
+runtime errors, and the expression generator bounds `**` bases so programs do
+not overflow early.
+
 T-070 — Parenthesize statement-expression conditions in the native backend.
 T-071 — Preserve short-circuit evaluation for `and`/`or` in the native
-backend. T-072 — Deterministic differential fuzzer. Status: VERIFIED,
-committed in `a4fe86b`, pushed, and CI-green (run 45493833079). Both P0 defects
-were found by the new fuzzer: any call or effectful expression used directly as
-an `if`/`elif`/`while` condition produced invalid C (`if ({ ... })`), and
-`and`/`or` hoisted both operands so the skipped operand was evaluated. The
-fixes add one pair of parentheses only for statement expressions and lower
-effectful short-circuit operands through a lazy conditional. Three differential
-native tests cover calls in conditions, short-circuit call counts, and
-non-short-circuit left-to-right order. ADR-0036 records the contract. The
-fuzzer passes 100/100 on seed 1 and 200/200 on seed 500; CI runs 50 iterations
-on seed 1.
+backend. Status: VERIFIED, committed in `a4fe86b`, pushed, and CI-green (run
+45493833079). Both P0 defects were found by the fuzzer: any call or effectful
+expression used directly as an `if`/`elif`/`while` condition produced invalid C
+(`if ({ ... })`), and `and`/`or` hoisted both operands so the skipped operand
+was evaluated. The fixes add one pair of parentheses only for statement
+expressions and lower effectful short-circuit operands through a lazy
+conditional. Three differential native tests cover calls in conditions,
+short-circuit call counts, and non-short-circuit left-to-right order. ADR-0036
+records the contract.
 
 T-069 — Refuse destructive recursive-removal roots. Status: VERIFIED,
 committed in `e6ec597`, pushed, and CI-green (run 45488725812 on `4982ab3`).

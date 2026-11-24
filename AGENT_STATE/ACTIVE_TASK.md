@@ -1,8 +1,49 @@
 # Active Task
 
+## T-072 — Differential fuzzer expansion
+
+- Status: VERIFIED locally; commit, push, and CI pending
+- Priority: P2 (tooling)
+- Dependencies: T-008, T-010, ADR-0036
+
+### Implemented
+
+- `tools/differential_fuzz.py` now has eight program shapes: scalar
+  expressions/control flow, collections/structs/enums, guarded/range/or-pattern
+  matching, nested collections with aliasing, typed functions with early
+  returns/recursion/calls in conditions, string escapes/interpolation/UTF-8
+  builtins, numeric formatting/conversions, and runtime-error agreement.
+- The expansion fixed a coverage bug: the collection generator used `xs[-1]`,
+  which is an invalid negative index, so every collection program stopped
+  there and never ran its remaining statements. It now uses
+  `xs[len(xs) - 1]`.
+- Empty `replace` patterns were removed from the expression and string
+  generators because they are runtime errors; the expression generator also
+  bounds `**` bases so programs do not overflow early.
+- `.github/workflows/ci.yml` runs 80 iterations on seed 1 (was 50).
+- The fuzzer docstring documents the eight shapes and the coverage principle.
+
+### Evidence
+
+- `python3 tools/differential_fuzz.py --iterations 160 --seed 1` — 160/160.
+- `python3 tools/differential_fuzz.py --iterations 160 --seed 500` — 160/160.
+- `python3 tools/differential_fuzz.py --iterations 160 --seed 1000` — 160/160.
+- `python3 -m py_compile tools/differential_fuzz.py` — success.
+- Targeted probes confirmed interpreter/native agreement for nested
+  collections, struct/enum aliasing, argument evaluation order, float map keys
+  (`NaN`, `-0.0`), mutable structural keys, string escapes/interpolation, and
+  runtime-error exit codes.
+
+### Remaining
+
+- Commit, push, and record the CI run.
+- No shrinking, sanitizer integration, or coverage measurement; the error-path
+  generator compares exit code and the stdout prefix, not diagnostic text.
+
 ## T-073/T-074 — Static linter plus reachability-aware return checking
 
-- Status: VERIFIED locally; commit and CI pending
+- Status: VERIFIED, committed in `5e1092f`, pushed, and CI-green (run
+  45496041422)
 - Priority: P2 (T-073), P1 (T-074)
 - Dependencies: T-003, T-005, T-007, T-019, ADR-0037
 
@@ -40,7 +81,6 @@
 
 ### Remaining
 
-- Commit, push, and record the CI run.
 - No suppression attributes, configuration, machine-readable output, or
   automatic fixes; `L0003` does not analyze all-terminating `if`/`match`.
 - The formatter remains open (the lexer discards comments).

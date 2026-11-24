@@ -90,7 +90,10 @@ python3 benchmarks/run.py --reps 5
   statement-expression conditions are parenthesized and `and`/`or` skip the
   right operand when the left decides the result (T-070/T-071, ADR-0036).
   `tools/differential_fuzz.py` found both defects and is part of the gate
-  (T-072).
+  (T-072). It now generates eight program shapes (scalars/control flow,
+  collections, pattern matching, nested aliasing, typed functions, strings,
+  numerics, and runtime-error agreement); 160/160 cases agreed on each of
+  seeds 1, 500, and 1000. CI runs 80 iterations on seed 1.
 - Tooling: `vantyx lint` reports `L0001` unused binding, `L0002` `var` never
   reassigned, and `L0003` unreachable statement, with compile errors still
   exiting `1` and lint-only findings exiting `0` (T-073, ADR-0037). The

@@ -4,25 +4,26 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-073/T-074 — Commit and push the static linter and reachability-aware return
-  checking; watch CI and record the run ID. Local gate: 613 tests, clippy clean,
-  release build, examples, 100/100 fuzz cases.
+- T-072 — Commit and push the expanded differential fuzzer (eight program
+  shapes, 160/160 on seeds 1, 500, and 1000, CI at 80 iterations); watch CI and
+  record the run ID. Also include the local audit commit `806a822`.
 
 ## Ready
 
-- Differential fuzzer expansion — Add more typed program shapes (functions with
-  parameters/returns, strings and interpolation, nested collections, match
-  expressions) and run multiple seeds; fix any mismatch found.
+- Differential-fuzzer follow-ups — Deterministic shrinking for failing
+  programs, optional sanitizer runs, and coverage measurement. Add each only
+  with a bounded, reproducible contract.
 - T-019b — Comment-preserving formatter. The lexer discards comments today, so
   this needs a lossless syntax representation and a separate ADR before code.
 - Linter follow-ups — Suppression/configuration, unused parameters and loop
   variables, all-terminating `if`/`match` reachability, and a deny mode. Add
   each only with a stable contract and tests.
+- Repository-wide rustfmt baseline — `cargo fmt --check` currently reports 224
+  pre-existing diff locations. Do this as a dedicated mechanical commit with a
+  CI check, separate from semantic changes.
 - T-070/T-071 follow-up — Consider replacing GNU statement expressions with a
   statement prelude only if benchmarks and review justify the larger codegen
   change; do not start without evidence.
-- Differential fuzzer follow-up — Add shrinking and optional sanitizer runs
-  when they can be made deterministic and bounded.
 
 ## Blocked
 
@@ -32,7 +33,7 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
   and re-verified at 20:59Z, but access is not guaranteed.
 - T-017 — Async/concurrency and language-level AI syntax. Blocked on an async
   design; host-side AI remains available through the CLI and Rust API.
-- GPU, tensor, SIMD, autodiff, and training evidence — Blocked on verified
+- GPU, tensor, SIMD, autodiff, and training evidence — Blocked on available
   hardware and a reproducible backend.
 - Independent `qa-verifier` verification — Blocked by the subagent provider's
   free usage limit.

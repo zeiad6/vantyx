@@ -21,11 +21,15 @@ documentation commit `0491c63` also passed run 45489360135.
   statement; underscore names, parameters, loop variables, and match bindings
   ignored; lint-only findings exit `0`, compile errors exit `1`; 19 unit tests
   and four e2e tests; `docs/linting.md`, specification §14, ADR-0037).
-- T-072 — Deterministic differential fuzzer (2026-11-24; 584-test gate;
-  `tools/differential_fuzz.py` generates three well-typed program shapes,
-  compares interpreter/native exit codes and stdout, saves failures, and skips
-  without a C compiler; 100/100 seed 1 and 200/200 seed 500; CI runs 50
-  iterations on seed 1; the tool found T-070 and T-071).
+- T-072 — Deterministic differential fuzzer, expanded (2026-11-24; 613-test
+  gate; `tools/differential_fuzz.py` now generates eight program shapes:
+  scalars/control flow, collections, pattern matching, nested aliasing, typed
+  functions, strings, numerics, and runtime-error agreement; 160/160 on each of
+  seeds 1, 500, and 1000; CI runs 80 iterations on seed 1; the tool found
+  T-070 and T-071). The expansion found that the collection generator used
+  `xs[-1]`, an invalid negative index, so every collection program stopped at
+  its first index; it now uses `xs[len(xs) - 1]`. Empty `replace` patterns were
+  removed because they are runtime errors.
 - T-071 — Native short-circuit evaluation (2026-11-24; 584-test gate;
   `and`/`or` no longer hoist and eagerly evaluate the right operand; call
   counts match the interpreter across nested expressions, `if` conditions,

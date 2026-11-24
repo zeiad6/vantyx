@@ -2,9 +2,17 @@
 """Deterministic differential fuzzer for the Vantyx interpreter and native backend.
 
 The interpreter is the semantic oracle. This tool generates well-typed
-programs from a fixed grammar, runs each one through `vantyx run` and
+programs from fixed grammars, runs each one through `vantyx run` and
 `vantyx build`, and compares the exit code and stdout. A mismatch is a
 failure; the program is printed and can be saved for a regression test.
+
+The eight program shapes cover scalar expressions and control flow,
+collections/structs/enums, guarded/range/or-pattern matching, nested
+collections with aliasing, typed functions with early returns and recursion,
+string escapes/interpolation/UTF-8 builtins, numeric formatting and
+conversions, and runtime-error agreement. Every generated program is designed
+to run to completion or fail at the same point in both engines; a program that
+only prints its prefix before a runtime error has little differential value.
 
 The generator is deterministic for a given seed, so CI failures are
 reproducible:
@@ -25,7 +33,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-INT_LITERALS = ["0", "1", "2", "3", "7", "-1", "-7", "42", "1000000007"]
+INT_LITERALS = ["0", "1", "2", "3", "7", "-1", "-7", "42", "1000"]
 FLOAT_LITERALS = ["0.0", "1.0", "-1.0", "1.5", "0.1", "1e300", "5e-324", "3.14159"]
 STR_LITERALS = ['"a"', '"hello"', '"héllo"', '""', '"x y z"', '"é👋"']
 
@@ -37,7 +45,8 @@ def int_expr(rng: random.Random, depth: int) -> str:
     if op in ("//", "%"):
         return f"({int_expr(rng, depth - 1)} {op} {rng.choice(['1', '2', '3', '7', '-3'])})"
     if op == "**":
-        return f"({int_expr(rng, depth - 1)} ** {rng.choice(['0', '1', '2', '3'])})"
+        base = rng.choice(["0", "1", "2", "3", "7", "-1", "-2", "42"])
+        return f"({base} ** {rng.choice(['0', '1', '2', '3'])})"
     return f"({int_expr(rng, depth - 1)} {op} {int_expr(rng, depth - 1)})"
 
 
@@ -87,7 +96,7 @@ def str_expr(rng: random.Random, depth: int) -> str:
     if kind == 3:
         return (
             f"replace({str_expr(rng, depth - 1)}, "
-            f"{rng.choice(['\"a\"', '\"l\"', '\"\"', '\"é\"'])}, "
+            f"{rng.choice(['\"a\"', '\"l\"', '\"é\"'])}, "
             f"{rng.choice(['\"X\"', '\"\"', '\"-\"'])})"
         )
     if kind == 4:
@@ -196,7 +205,7 @@ fn main():
     push(xs, {rng.randint(-5, 9)})
     print(xs)
     print(len(xs))
-    print(xs[-1])
+    print(xs[len(xs) - 1])
     print(contains(xs, {values[0]}))
     print(pop(xs))
     print(xs)
@@ -280,7 +289,325 @@ main()
 """
 
 
-GENERATORS = [expression_program, collection_program, match_program]
+SAFE_INTS = ["-9", "-7", "-3", "-1", "0", "1", "2", "3", "5", "7", "9", "11", "42"]
+SAFE_WORDS = ['"a"', '"hello"', '"héllo"', '"é👋"', '"x y"', '""', '"banana"']
+
+
+def nested_program(rng: random.Random) -> str:
+    """Nested lists, maps, structs, and enums with aliasing and mutation."""
+    first = [rng.randint(-9, 9) for _ in range(rng.randint(0, 4))]
+    second = [rng.randint(-9, 9) for _ in range(rng.randint(0, 4))]
+    key_low = rng.randint(-5, 2)
+    key_high = key_low + rng.randint(1, 4)
+    text_key = rng.choice(['"alpha"', '"beta"', '"é"'])
+    map_value = rng.randint(-9, 9)
+    box_values = [rng.randint(-9, 9) for _ in range(rng.randint(1, 4))]
+    index = rng.randrange(len(box_values))
+    return f"""struct Box:
+    items: List[Int]
+    label: Str
+
+enum Tree:
+    Leaf(value: Int)
+    Branch(items: List[Int], tag: Str)
+
+fn total(b: Box) -> Int:
+    var sum = 0
+    for item in b.items:
+        sum += item
+    return sum
+
+fn grow(b: Box, amount: Int):
+    push(b.items, amount)
+
+fn size(t: Tree) -> Int:
+    return match t:
+        Leaf(value): value
+        Branch(items, tag): len(items) + len(tag)
+
+fn main():
+    let rows: List[List[Int]] = [[{", ".join(map(str, first))}], [{", ".join(map(str, second))}], []]
+    push(rows[2], {rng.randint(-9, 9)})
+    rows[0][0] = {rng.randint(-9, 9)}
+    print(rows)
+    print(len(rows))
+    print(len(rows[0]))
+    print(rows[2][0])
+    let m: Map[Str, List[Int]] = {{"a": [1], "b": []}}
+    push(m["b"], {rng.randint(-9, 9)})
+    m["c"] = rows[2]
+    print(m)
+    print(keys(m))
+    print(len(m["b"]))
+    let by_int: Map[Int, Str] = {{{key_low}: "low", {key_high}: "high"}}
+    by_int[{key_low}] = "LOW"
+    by_int[{key_high + 1}] = "new"
+    print(by_int)
+    print(keys(by_int))
+    let boxes: List[Box] = [Box([{", ".join(map(str, box_values))}], {text_key})]
+    grow(boxes[0], {rng.randint(-9, 9)})
+    boxes[0].items[{index}] += 1
+    print(boxes)
+    print(total(boxes[0]))
+    print(boxes[0].items[{index}])
+    let copy = boxes[0]
+    copy.label = "copied"
+    print(boxes[0].label)
+    print(copy.label)
+    let trees: List[Tree] = [Leaf({map_value}), Branch([{", ".join(map(str, box_values))}], {text_key})]
+    for tree in trees:
+        print(tree)
+        print(size(tree))
+    print(rows == rows)
+    print(boxes[0] == boxes[0])
+    print(rows[0] == rows[0])
+    let deep: List[Map[Str, Int]] = [{{"k": {map_value}}}, {{}}]
+    deep[1]["n"] = {rng.randint(-9, 9)}
+    print(deep)
+    print(len(deep))
+
+main()
+"""
+
+
+def functions_program(rng: random.Random) -> str:
+    """Typed parameters, early returns, recursion, and calls in conditions."""
+    a = rng.choice(["0", "1", "3", "5", "8", "11", "14"])
+    b = rng.choice(["1", "2", "3", "5", "7", "9"])
+    n = rng.randint(0, 12)
+    lo = rng.randint(-5, 2)
+    hi = lo + rng.randint(0, 6)
+    value = rng.randint(-9, 9)
+    return f"""fn gcd(a: Int, b: Int) -> Int:
+    var x = a
+    var y = b
+    while y != 0:
+        let next = x % y
+        x = y
+        y = next
+    return abs(x)
+
+fn fib(n: Int) -> Int:
+    if n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+fn clamp(n: Int, low: Int, high: Int) -> Int:
+    if n < low:
+        return low
+    elif n > high:
+        return high
+    return n
+
+fn classify(n: Int) -> Str:
+    if n < 0:
+        return "negative"
+    elif n == 0:
+        return "zero"
+    elif n < 10:
+        return "small"
+    else:
+        return "large"
+
+fn is_even(n: Int) -> Bool:
+    return n % 2 == 0
+
+fn pick(flag: Bool, left: Int, right: Int) -> Int:
+    if flag:
+        return left
+    return right
+
+fn sum_squares(n: Int) -> Int:
+    var total = 0
+    var i = 1
+    while i <= n:
+        total += i * i
+        i += 1
+    return total
+
+fn count_down(n: Int) -> Int:
+    var steps = 0
+    for i in range(n + 1):
+        if i == 2:
+            continue
+        steps += 1
+    return steps
+
+fn main():
+    print(gcd({a}, {b}))
+    print(fib({n}))
+    print(clamp({value}, {lo}, {hi}))
+    print(classify({value}))
+    print(classify({rng.randint(-9, 20)}))
+    print(is_even({rng.randint(-9, 9)}))
+    print(pick({rng.choice(["true", "false"])}, {value}, {value + rng.randint(-3, 3)}))
+    print(sum_squares({rng.randint(0, 9)}))
+    print(count_down({rng.randint(0, 6)}))
+    print(clamp(fib(6), 2, 7))
+    print(gcd(fib(7), clamp({value}, 1, 9)))
+    let k = {rng.randint(-5, 12)}
+    if is_even(k) and k > 2:
+        print("even-large")
+    elif is_even(k) or k < 0:
+        print("even-or-negative")
+    else:
+        print("odd-positive")
+    let m = {rng.randint(-5, 12)}
+    if not is_even(m) and m > 0:
+        print("odd-positive")
+    else:
+        print("other")
+    print(sum_squares(fib(5)))
+
+main()
+"""
+
+
+def string_program(rng: random.Random) -> str:
+    """Escapes, interpolation, indexing, and UTF-8 text builtins."""
+    word = rng.choice(SAFE_WORDS)
+    other = rng.choice(SAFE_WORDS)
+    separator = rng.choice(['" "', '","', '"l"', '""', '"é"'])
+    joiner = rng.choice(['"-"', '""', '" | "'])
+    old = rng.choice(['"a"', '"l"', '"é"', '"na"'])
+    new = rng.choice(['"X"', '""', '"-"', '"é"'])
+    prefix = rng.choice(['"h"', '"é"', '""', '"a"'])
+    suffix = rng.choice(['"o"', '"👋"', '""', '"a"'])
+    index_word = rng.choice(['"hello"', '"héllo"', '"é👋"', '"banana"'])
+    index = rng.randrange(len(index_word.strip('"')))
+    number = rng.randint(-9, 99)
+    return f"""fn describe(text: Str, count: Int) -> Str:
+    return "text={{text}} count={{count}}"
+
+fn main():
+    let word: Str = {word}
+    let other: Str = {other}
+    let number: Int = {number}
+    print("value={{word}} len={{len(word)}}")
+    print("brace={{{{literal}}}}")
+    print("tab\\there")
+    print("line\\nbreak")
+    print("quote=\\" slash=\\\\")
+    print(word + other)
+    print(replace({word}, {old}, {new}))
+    print(trim("  padded  "))
+    print(split({word}, {separator}))
+    print(join(split({word}, {separator}), {joiner}))
+    print(starts_with({word}, {prefix}))
+    print(ends_with({word}, {suffix}))
+    print({index_word}[{index}])
+    print(len({index_word}))
+    print(describe({word}, {number}))
+    print("nested={{describe(word, number)}}")
+    print({word} == {other})
+    print({word} != {other})
+    print({word} < {other})
+    print({word} > {other})
+    print("literal {{{{braces}}}} and {number}")
+    print(join([{word}, {other}], {joiner}))
+    print(split("a,b,,c", ","))
+    print(replace("banana", "na", "X"))
+
+main()
+"""
+
+
+def numeric_program(rng: random.Random) -> str:
+    """Checked integer arithmetic, float formatting, and conversions."""
+    values = [rng.choice(SAFE_INTS) for _ in range(6)]
+    divisor = rng.choice(["1", "2", "3", "7", "-2", "-3", "-7"])
+    base = rng.choice(["-3", "-2", "0", "1", "2", "3", "5"])
+    exponent = rng.choice(["0", "1", "2", "3", "4"])
+    float_literals = ["0.0", "1.0", "-1.0", "1.5", "0.1", "1e300", "5e-324", "3.14159", "2.5"]
+    float_a = rng.choice(float_literals)
+    float_b = rng.choice(float_literals)
+    nonneg = rng.choice(["0.0", "2.25", "4.0", "9.0", "1e300"])
+    bounded = rng.choice(["0.0", "2.25", "4.0", "-3.5", "3.14159", "-0.5"])
+    integral = rng.choice(["0.0", "1.0", "-1.0", "7.0", "-7.0", "42.0"])
+    lines = [
+        "fn square(n: Int) -> Int:",
+        "    return n * n",
+        "",
+        "fn main():",
+    ]
+    for value in values:
+        kind = rng.randrange(10)
+        if kind == 0:
+            lines.append(f"    print(({value} + {rng.choice(SAFE_INTS)}) * {rng.choice(SAFE_INTS)})")
+        elif kind == 1:
+            lines.append(f"    print({value} // {divisor})")
+        elif kind == 2:
+            lines.append(f"    print({value} % {divisor})")
+        elif kind == 3:
+            lines.append(f"    print({base} ** {exponent})")
+        elif kind == 4:
+            lines.append(f"    print(min({value}, {rng.choice(SAFE_INTS)}))")
+        elif kind == 5:
+            lines.append(f"    print(max({value}, {rng.choice(SAFE_INTS)}))")
+        elif kind == 6:
+            lines.append(f"    print(abs({value}))")
+        elif kind == 7:
+            lines.append(f"    print(square({value}))")
+        elif kind == 8:
+            lines.append(f"    print(float({value}) / {rng.choice(['1.0', '2.0', '-3.0', '0.5'])})")
+        else:
+            lines.append(f"    print({value} {rng.choice(['<', '<=', '>', '>=', '==', '!='])} {rng.choice(SAFE_INTS)})")
+    lines.extend(
+        [
+            f"    print({float_a})",
+            f"    print({float_a} + {float_b})",
+            f"    print({float_a} * {float_b})",
+            f"    print({float_a} {rng.choice(['<', '<=', '>', '>=', '==', '!='])} {float_b})",
+            f"    print(sqrt({nonneg}))",
+            f"    print(floor({bounded}))",
+            f"    print(ceil({bounded}))",
+            f"    print(int({integral}))",
+            f"    print(float({rng.choice(SAFE_INTS)}))",
+            f"    print(1.0 / 3.0)",
+            f"    print(0.1 + 0.2)",
+        ]
+    )
+    return "\n".join(lines) + "\n\nmain()\n"
+
+
+def error_program(rng: random.Random) -> str:
+    """Runtime-error agreement: both engines must fail at the same point."""
+    cases = [
+        "    print(xs[9])",
+        '    print("ab"[5])',
+        "    print(xs[-1])",
+        '    print(m["missing"])',
+        "    print(1 // 0)",
+        "    print(1 % 0)",
+        "    print(9223372036854775807 + 1)",
+        "    print(-(-9223372036854775807 - 1))",
+        "    print(int(1.5))",
+        "    print(sqrt(-1.0))",
+        "    let empty: List[Int] = []\n    print(pop(empty))",
+        "    assert(false)",
+    ]
+    return f"""fn main():
+    print("start")
+    let xs: List[Int] = [1, 2, 3]
+    let m: Map[Str, Int] = {{"a": 1}}
+    print(len(xs))
+    print(m["a"])
+{cases[rng.randrange(len(cases))]}
+
+main()
+"""
+
+
+GENERATORS = [
+    expression_program,
+    collection_program,
+    match_program,
+    nested_program,
+    functions_program,
+    string_program,
+    numeric_program,
+    error_program,
+]
 
 
 def compiler_available(compiler: str) -> bool:
