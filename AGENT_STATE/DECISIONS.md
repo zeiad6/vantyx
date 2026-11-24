@@ -4,6 +4,16 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-24 — CI portability for the glob result-cap test
+
+- The differential test originally created 100,001 hard links to one anchor.
+  ext4 caps hard links per inode at 65,000, so the test failed on the CI runner
+  before reaching the glob cap.
+- Keep the end-to-end cap coverage but spread the links across four anchors,
+  producing more than 100,000 candidates while keeping each inode below the
+  limit.
+- Record the failed run and the fix rather than weakening the cap assertion.
+
 ## 2026-11-24 — T-067 cloud re-verification with `MY_API_KEY`
 
 - Reuse `tools/live_ai_check.py` and pass `--api-key-env MY_API_KEY` so the key

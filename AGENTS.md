@@ -72,7 +72,9 @@ python3 benchmarks/run.py --reps 5
 
 - Public repository: https://github.com/zeiad6/vantyx (MIT; renamed from
   `zeiad6/auren`; CI run 45365926013 green on `e3d8bdd` with 457 tests; a clean
-  clone of the rewritten history passed 457 tests). The
+  clone of the rewritten history passed 457 tests; the latest CI run
+  45488725812 passed on `4982ab3` with 581 tests after run 45488152955 failed
+  only a nonportable hard-link test that `4982ab3` fixed). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 581 passed (326 library unit + 15 CLI unit + 32 AI integration +

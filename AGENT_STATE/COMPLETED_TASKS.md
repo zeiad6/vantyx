@@ -3,23 +3,27 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+CI run 45488725812 passed on `4982ab3` with 581 tests. The preceding run
+45488152955 failed only the glob result-cap test because ext4 caps hard links
+per inode; `4982ab3` spreads the links across four anchors.
+
 - T-069 — Destructive recursive-removal roots refused (2026-11-24; 581-test
-  gate; `remove_dir_all` refuses `.`, `./`, `..`, `../`, final `.`/`..`
-  components including `link/.` and `link/..`, and `/`/`//`/`///` with
-  `R0015` before any filesystem access in both engines; ordinary roots such
-  as `tree`, `./tree`, and `/tmp/tree` remain accepted; five unit tests, two
-  e2e tests, two differential native tests; the prior destructive-dot test
+  gate; CI run 45488725812; `remove_dir_all` refuses `.`, `./`, `..`, `../`,
+  final `.`/`..` components including `link/.` and `link/..`, and `/`/`//`/`///`
+  with `R0015` before any filesystem access in both engines; ordinary roots
+  such as `tree`, `./tree`, and `/tmp/tree` remain accepted; five unit tests,
+  two e2e tests, two differential native tests; the prior destructive-dot test
   was replaced; ADR-0035 amends ADR-0031).
-- T-068 — Curl timeout error mapping (2026-11-24; 573-test gate; curl exit 28
-  maps to retryable `AI_E_TIMEOUT` on buffered and streaming HTTPS paths,
-  while exit 7 remains `AI_E_CONNECT`; two unit tests; T-067 evidence in
-  `docs/ai/LIVE_VERIFICATION.md`).
+- T-068 — Curl timeout error mapping (2026-11-24; 573-test gate; CI run
+  45488725812; curl exit 28 maps to retryable `AI_E_TIMEOUT` on buffered and
+  streaming HTTPS paths, while exit 7 remains `AI_E_CONNECT`; two unit tests;
+  T-067 evidence in `docs/ai/LIVE_VERIFICATION.md`).
 - T-067 — Live cloud OpenAI-compatible verification (2026-11-24; 581-test
-  gate; Gemini discovery, chat, streaming, validated extraction, 768-dimension
-  embeddings, semantic RAG/search, and retrieval evaluation; 16-check
-  loopback failure harness; re-verified at 20:59Z with 21/21 checks using
-  `MY_API_KEY` after a transient 503; an earlier retry was rejected with HTTP
-  400 `User location is not supported`; no key stored).
+  gate; CI run 45488725812; Gemini discovery, chat, streaming, validated
+  extraction, 768-dimension embeddings, semantic RAG/search, and retrieval
+  evaluation; 16-check loopback failure harness; re-verified at 20:59Z with
+  21/21 checks using `MY_API_KEY` after a transient 503; an earlier retry was
+  rejected with HTTP 400 `User location is not supported`; no key stored).
 - T-066 — Recursive directory copy (2026-11-24; 571-test gate; `copy_dir_all`
   with new-target semantics, resolved self-containment, raw-name/byte
   copying, inner-link and special-file rejection, 100,000-entry / 128-depth

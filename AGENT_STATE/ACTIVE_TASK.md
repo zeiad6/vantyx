@@ -2,7 +2,7 @@
 
 ## T-069 — Refuse destructive recursive-removal roots
 
-- Status: VERIFIED; commit pending
+- Status: VERIFIED, committed, pushed, and CI-green
 - Priority: P0
 - Dependencies: T-063, ADR-0031, ADR-0035
 
@@ -26,19 +26,22 @@
 - `cargo test --test native recursive_removal` — 2 passed.
 - Full gate: 581 tests (326 library + 15 CLI + 32 AI + 90 e2e + 118 native),
   clippy clean, debug and release builds succeed.
+- CI run 45488725812 is green on `4982ab3` with 581 tests.
 - All five examples matched interpreter/native output; fuzz smoke produced
   controlled diagnostics.
 
 ### Remaining
 
-- Commit, push, and confirm CI when authorized.
+- CI run 45488725812 is green on `4982ab3`; run 45488152955 failed only the
+  glob result-cap test because ext4 caps hard links per inode, fixed by
+  spreading links across four anchors.
 - Retry independent QA verification when subagent capacity is available.
 - The check is lexical: intermediate links, `link/sub`, check-then-act races,
   Windows `\` spellings, and the absence of a sandbox remain documented limits.
 
 ## T-068 — Curl timeout error mapping
 
-- Status: VERIFIED; commit pending
+- Status: VERIFIED, committed, pushed, and CI-green
 - Priority: P1
 - Dependencies: T-039, T-052
 
@@ -62,7 +65,8 @@
 
 ## T-067 — Live cloud OpenAI-compatible verification
 
-- Status: VERIFIED for the cloud path and re-verified at 20:59Z; commit pending
+- Status: VERIFIED for the cloud path and re-verified at 20:59Z; committed,
+  pushed, and CI-green
 - Priority: P1
 - Dependencies: T-038, T-039, T-043, T-045, T-046, T-052
 
@@ -94,7 +98,7 @@
 
 ## T-066 — Recursive directory copy
 
-- Status: VERIFIED locally; commit pending
+- Status: VERIFIED locally; committed, pushed, and CI-green
 - Priority: P1
 - Dependencies: T-058, T-059, T-061, T-063, ADR-0034
 
@@ -118,7 +122,7 @@
 
 ### Remaining
 
-- Commit, push, and confirm CI when authorized.
+- CI run 45488725812 is green on `4982ab3`.
 - Retry independent QA verification when subagent capacity is available.
 - T-040 remains blocked for the local-model half: no Ollama/llama.cpp server or
   model is installed.

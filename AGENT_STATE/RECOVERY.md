@@ -11,6 +11,14 @@
 5. Continue from the last verified checkpoint in
    `AGENT_STATE/CHECKPOINTS/`.
 
+## Last recorded repository state (2026-11-24)
+
+- `main` and `origin/main` are at `4982ab3`; `e6ec597` contains the
+  T-058–T-069 change set and `4982ab3` fixes the glob result-cap test
+  portability.
+- CI run 45488725812 passed on `4982ab3` with 581 tests.
+- The working tree is clean after the CI-status documentation commit.
+
 ## If the network or a provider is unavailable
 
 1. Keep all local work; do not reset the tree.

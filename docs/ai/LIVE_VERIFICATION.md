@@ -151,4 +151,5 @@ retrieval-evaluation paths have real provider evidence, including a 21/21
 re-verification on 2026-11-24 at 20:59Z. The 401/429/timeout failure paths have a
 reproducible harness. The task is not fully closed: local-model evidence is
 still missing, and cloud access can change or be rejected by provider
-geography.
+geography. The evidence was committed in `e6ec597`; CI run 45488725812 passed
+on `4982ab3` with 581 tests.
