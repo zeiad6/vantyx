@@ -1,27 +1,29 @@
-//! Command-line interface for Auren.
+//! Command-line interface for Vantyx.
 
+mod ai_cli;
 mod repl;
 
-use auren::diagnostic::Severity;
-use auren::{compile, compile_with_options, render_runtime_error};
 use repl::{Editor, ReadOutcome};
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::Command;
+use vantyx::diagnostic::Severity;
+use vantyx::{compile, compile_with_options, render_runtime_error};
 
 const USAGE: &str = "\
-Auren 0.1.0 - a safe, gradually typed language
+Vantyx 0.1.0 - a safe, gradually typed language
 
 Usage:
-  auren run <file.auren>      Compile and execute a program
-  auren check <file.auren>    Compile without executing
-  auren build <file.auren>    Compile to a native executable with a C compiler
-  auren build <file> -o <out> Choose the executable path
-  auren repl                  Start an interactive session
-  auren version               Print the version
-  auren help                  Show this help
+  vantyx run <file.vtx>      Compile and execute a program
+  vantyx check <file.vtx>    Compile without executing
+  vantyx build <file.vtx>    Compile to a native executable with a C compiler
+  vantyx build <file> -o <out> Choose the executable path
+  vantyx repl                  Start an interactive session
+  vantyx ai <command>          AI host tools (see `vantyx ai --help`)
+  vantyx version               Print the version
+  vantyx help                  Show this help
 
 Use `-` as the file name to read from standard input.
 Exit codes: 0 success, 1 compile error, 2 runtime error, 64 usage error.
@@ -43,7 +45,7 @@ fn run_cli() -> i32 {
             0
         }
         [command] if command == "version" || command == "--version" || command == "-V" => {
-            println!("auren {}", env!("CARGO_PKG_VERSION"));
+            println!("vantyx {}", env!("CARGO_PKG_VERSION"));
             0
         }
         [command, file] if command == "run" => run_file(file),
@@ -53,6 +55,7 @@ fn run_cli() -> i32 {
             build_file(file, Some(output))
         }
         [command] if command == "repl" => start_repl(),
+        [command, rest @ ..] if command == "ai" => ai_cli::run(rest),
         _ => {
             eprintln!("error: unknown command or wrong number of arguments");
             eprintln!();
@@ -84,11 +87,7 @@ fn read_source(path: &str) -> Result<String, i32> {
 }
 
 fn display_name(path: &str) -> &str {
-    if path == "-" {
-        "<stdin>"
-    } else {
-        path
-    }
+    if path == "-" { "<stdin>" } else { path }
 }
 
 /// A `Send` writer that locks stdout per operation. The interpreter runs on a
@@ -124,7 +123,7 @@ fn run_file(path: &str) -> i32 {
     };
 
     let mut out = StdoutWriter;
-    match auren::interp::run(program, model, &mut out) {
+    match vantyx::interp::run(program, model, &mut out) {
         Ok(()) => {
             if let Err(error) = out.flush() {
                 eprintln!("error: failed to flush output: {error}");
@@ -149,11 +148,7 @@ fn check_file(path: &str) -> i32 {
     if !result.diagnostics.is_empty() {
         eprint!("{}", result.render(name, &source));
     }
-    if result.has_errors() {
-        1
-    } else {
-        0
-    }
+    if result.has_errors() { 1 } else { 0 }
 }
 
 fn build_file(path: &str, output: Option<&str>) -> i32 {
@@ -174,11 +169,11 @@ fn build_file(path: &str, output: Option<&str>) -> i32 {
         return 1;
     };
 
-    let ir = match auren::ir::build(program, model) {
+    let ir = match vantyx::ir::build(program, model) {
         Ok(ir) => ir,
         Err(error) => {
             let mut diagnostic =
-                auren::diagnostic::Diagnostic::error(error.code, error.message, error.span);
+                vantyx::diagnostic::Diagnostic::error(error.code, error.message, error.span);
             if let Some(help) = error.help {
                 diagnostic = diagnostic.with_help(help);
             }
@@ -191,7 +186,7 @@ fn build_file(path: &str, output: Option<&str>) -> i32 {
         Some(path) => PathBuf::from(path),
         None => {
             if path == "-" {
-                eprintln!("error: `auren build -` requires `-o <output>`");
+                eprintln!("error: `vantyx build -` requires `-o <output>`");
                 return 64;
             }
             let mut path = PathBuf::from(path);
@@ -204,13 +199,13 @@ fn build_file(path: &str, output: Option<&str>) -> i32 {
         }
     };
 
-    let c_source = auren::codegen_c::emit(&ir, name, &source);
+    let c_source = vantyx::codegen_c::emit(&ir, name, &source);
     let temp = match write_generated_c(&c_source) {
         Ok(path) => path,
         Err(code) => return code,
     };
 
-    let compiler = env::var("AUREN_CC").unwrap_or_else(|_| "clang".to_string());
+    let compiler = env::var("VANTYX_CC").unwrap_or_else(|_| "clang".to_string());
     let status = Command::new(&compiler)
         .arg("-std=gnu11")
         .arg("-O2")
@@ -232,7 +227,7 @@ fn build_file(path: &str, output: Option<&str>) -> i32 {
         }
         Err(error) => {
             eprintln!("error: cannot run C compiler `{compiler}`: {error}");
-            eprintln!("help: install clang, or set AUREN_CC to a C compiler");
+            eprintln!("help: install clang, or set VANTYX_CC to a C compiler");
             let _ = fs::remove_file(&temp);
             1
         }
@@ -255,10 +250,8 @@ fn write_generated_c(source: &str) -> Result<PathBuf, i32> {
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     for attempt in 0..64 {
-        let path = env::temp_dir().join(format!(
-            "auren-{}-{stamp}-{attempt}.c",
-            std::process::id()
-        ));
+        let path =
+            env::temp_dir().join(format!("vantyx-{}-{stamp}-{attempt}.c", std::process::id()));
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -322,14 +315,12 @@ fn execute_snippet(state: &mut ReplState, entry: &str, out: &mut (dyn Write + Se
         .items
         .iter()
         .filter(|item| match item {
-            auren::ast::Item::Stmt(stmt) => stmt.span.start < offset,
+            vantyx::ast::Item::Stmt(stmt) => stmt.span.start < offset,
             _ => false,
         })
         .count();
     let auto_main = state.source.is_empty();
-    if let Err(error) =
-        auren::interp::run_repl(program, model, prefix, auto_main, out)
-    {
+    if let Err(error) = vantyx::interp::run_repl(program, model, prefix, auto_main, out) {
         eprint!("{}", render_runtime_error(&error, "<repl>", &source));
         return;
     }
@@ -345,8 +336,8 @@ struct ReplState {
     names: Vec<String>,
 }
 
-fn collect_names(state: &mut ReplState, program: &auren::ast::Program, offset: u32) {
-    use auren::ast::{Item, StmtKind};
+fn collect_names(state: &mut ReplState, program: &vantyx::ast::Program, offset: u32) {
+    use vantyx::ast::{Item, StmtKind};
     for item in &program.items {
         match item {
             Item::Fn(decl) if decl.span.start >= offset => state.names.push(decl.name.clone()),
@@ -379,10 +370,7 @@ fn handle_meta(command: &str, state: &ReplState, editor: &Editor, out: &mut dyn 
             let _ = writeln!(out, "  :history    List saved and session history");
             let _ = writeln!(out, "  :names      List visible bindings and declarations");
             let _ = writeln!(out, "  :quit       Exit (also `exit` or Ctrl-D)");
-            let _ = writeln!(
-                out,
-                "Tab completes keywords, builtins, and visible names."
-            );
+            let _ = writeln!(out, "Tab completes keywords, builtins, and visible names.");
             let _ = writeln!(
                 out,
                 "Up/Down recall history; Ctrl-A/E, Ctrl-U/K/W, and Ctrl-L edit."
@@ -416,7 +404,7 @@ fn start_repl() -> i32 {
     let mut editor = Editor::new(repl::default_history_path());
     let mut state = ReplState::default();
 
-    let _ = writeln!(out, "Auren {} REPL", env!("CARGO_PKG_VERSION"));
+    let _ = writeln!(out, "Vantyx {} REPL", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(
         out,
         "Tab completes on a terminal; up/down recall history; `:help` lists commands."

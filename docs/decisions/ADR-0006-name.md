@@ -1,7 +1,10 @@
 # ADR-0006: Language name — Auren
 
-- Status: Accepted
+- Status: Superseded by [ADR-0014](ADR-0014-rename-vantyx.md)
 - Date: 2026-11-21
+- Note: The project was renamed to **Vantyx** on 2026-11-23. This ADR is kept
+  as history; see ADR-0014 and `RESEARCH/NAMING_AUDIT.md` for the decision and
+  the migration mapping.
 
 ## Context
 The language needs an identity distinct from Python and Rust. Candidate names were checked for collisions with existing programming languages.

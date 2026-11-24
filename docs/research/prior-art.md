@@ -1,6 +1,6 @@
 # Prior Art and Research Notes
 
-Date: 2026-11-21. Sources were fetched directly because the web-search API was unavailable. These notes record what informed Auren's v0.1 design; they are not benchmark claims.
+Date: 2026-11-21. Sources were fetched directly because the web-search API was unavailable. These notes record what informed Vantyx's v0.1 design; they are not benchmark claims.
 
 ## Mojo — ownership and argument conventions
 
@@ -12,7 +12,7 @@ Observed:
 - Argument exclusivity for mutable references prevents aliasing surprises and enables optimization.
 - Small scalars are passed in registers; ownership is checked by a lifetime checker.
 
-Borrowed for Auren:
+Borrowed for Vantyx:
 - Ownership should be **opt-in and ergonomic**, not mandatory for scripts.
 - Mutability should be explicit at API boundaries.
 - The long-term plan includes borrow/lifetime checking as an advanced layer.
@@ -34,7 +34,7 @@ Borrowed:
 - Native compilation is a design target from the start, not an afterthought.
 
 Rejected:
-- Pure functional paradigm; Auren is multi-paradigm and imperative-friendly.
+- Pure functional paradigm; Vantyx is multi-paradigm and imperative-friendly.
 
 ## Hylo (formerly Val) — mutable value semantics
 
@@ -49,7 +49,7 @@ Borrowed:
 - The idea that value semantics can be both safe and fast.
 
 Rejected for now:
-- Full value semantics with projections is a large semantic commitment; Auren v0.1 uses reference semantics for collections and documents the tradeoff.
+- Full value semantics with projections is a large semantic commitment; Vantyx v0.1 uses reference semantics for collections and documents the tradeoff.
 
 ## Vale — generational references and gradual memory safety
 
@@ -61,7 +61,7 @@ Observed:
 - Emphasizes memory-safety approach tradeoffs.
 
 Borrowed:
-- Memory-safety strategy is a spectrum; Auren should offer a simple default and an advanced deterministic mode.
+- Memory-safety strategy is a spectrum; Vantyx should offer a simple default and an advanced deterministic mode.
 - FFI safety is part of language design, not an afterthought.
 
 Rejected:
@@ -75,7 +75,7 @@ Observed:
 - Cranelift is fast to compile, written in Rust, avoids UB in its IR, targets x86-64/aarch64/s390x/riscv64, used by Wasmtime; codegen ~10x faster than LLVM-based systems in cited work, with runtime often close but not equal to heavily optimizing compilers.
 - LLVM/MLIR offer stronger optimization and broader targets at much greater complexity and build cost.
 
-Decision for Auren: start with a small C backend for native executables (uses system clang, fast to build on a 1 GiB machine), keep IR backend-agnostic, and evaluate Cranelift for JIT/fast debug builds and LLVM for release optimization when benchmarks justify the dependency. No backend is claimed until implemented.
+Decision for Vantyx: start with a small C backend for native executables (uses system clang, fast to build on a 1 GiB machine), keep IR backend-agnostic, and evaluate Cranelift for JIT/fast debug builds and LLVM for release optimization when benchmarks justify the dependency. No backend is claimed until implemented.
 
 ## Other influences
 
@@ -88,4 +88,4 @@ Decision for Auren: start with a small C backend for native executables (uses sy
 
 ## Naming
 
-"Kestrel" and "Vesper" were rejected after finding active programming languages with those names. "Auren" has no known programming-language collision (only unrelated brands), so it was selected for this project. This is an engineering uniqueness check, not legal trademark advice.
+"Kestrel" and "Vesper" were rejected after finding active programming languages with those names. "Vantyx" has no known programming-language collision (only unrelated brands), so it was selected for this project. This is an engineering uniqueness check, not legal trademark advice.

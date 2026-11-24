@@ -1,4 +1,4 @@
-//! Auren types and type-expression resolution.
+//! Vantyx types and type-expression resolution.
 
 use crate::ast::TypeExpr;
 use crate::span::Span;
@@ -42,9 +42,7 @@ impl Type {
             | (Type::Str, Type::Str)
             | (Type::Unit, Type::Unit) => true,
             (Type::List(a), Type::List(b)) => a.assignable_to(b),
-            (Type::Map(ak, av), Type::Map(bk, bv)) => {
-                ak.assignable_to(bk) && av.assignable_to(bv)
-            }
+            (Type::Map(ak, av), Type::Map(bk, bv)) => ak.assignable_to(bk) && av.assignable_to(bv),
             (Type::Struct(a), Type::Struct(b)) => a == b,
             (Type::Enum(a), Type::Enum(b)) => a == b,
             _ => false,

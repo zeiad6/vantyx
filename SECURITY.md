@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Auren is pre-1.0. Only the latest `0.1.x` source tree is supported. There are no
+Vantyx is pre-1.0. Only the latest `0.1.x` source tree is supported. There are no
 long-term-support branches yet.
 
 ## Reporting a vulnerability
@@ -11,7 +11,7 @@ Please use the repository's **Security** tab and open a private advisory. Do not
 open a public issue for a vulnerability. Include:
 
 - affected command (`run`, `check`, `build`, `repl`),
-- Auren source and the exact invocation,
+- Vantyx source and the exact invocation,
 - platform, Rust version, and C compiler version,
 - impact and a minimal reproduction,
 - whether the issue is interpreter-only, native-only, or both.
@@ -49,10 +49,10 @@ These are documented design limits, not vulnerabilities:
 - The native backend supports a statically typed subset. `Any`, `List[Any]`,
   maps with non-inferable types, `Any` enum payloads, and `match` on `Any` are
   rejected with `E0401`.
-- Auren programs are not sandboxed. Running an untrusted program is equivalent
+- Vantyx programs are not sandboxed. Running an untrusted program is equivalent
   to running untrusted native code.
 - REPL history is plain text. It is created with mode 0600 on Unix, but it can
-  contain secrets. Set `AUREN_HISTORY=off` to disable persistence.
+  contain secrets. Set `VANTYX_HISTORY=off` to disable persistence.
 - The REPL invokes `/bin/stty` or `/usr/bin/stty` from fixed paths for raw-mode
   editing and falls back to canonical input on failure.
 

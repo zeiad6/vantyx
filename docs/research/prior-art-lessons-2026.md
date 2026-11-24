@@ -2,11 +2,11 @@
 
 Status: complete for T-028; sustainability addendum added 2026-11-23
 Access date: 2026-11-22 (design review), 2026-11-23 (sustainability addendum)
-Author: Auren compiler team
+Author: Vantyx compiler team
 
 ## Purpose
 
-This review records what Auren should copy from mature language projects, what
+This review records what Vantyx should copy from mature language projects, what
 it should avoid, and which questions are deliberately deferred. It is a design
 input, not a survey of every feature. The immediate consumer is ADR-0011
 (enums and pattern matching) and task T-014. Later tasks are linked where a
@@ -20,12 +20,12 @@ lesson is relevant.
   integration returned HTTP 402), so the list below is intentionally limited
   to primary pages that were fetched and checked for HTTP 200.
 - No third-party benchmark was run for this review. Performance statements are
-  therefore about documented design intent, not measurements. Auren's own
+  therefore about documented design intent, not measurements. Vantyx's own
   numbers remain in `docs/benchmarks.md`.
 - Gleam's documentation is rendered by JavaScript; only the underlying page
   availability and well-known language behavior are cited. No fine-grained
   claim depends on text that could not be extracted.
-- "Adopt / avoid / revisit" decisions are engineering judgments for Auren. They
+- "Adopt / avoid / revisit" decisions are engineering judgments for Vantyx. They
   are not claims that the source language is wrong for its own goals.
 
 ## Sources checked
@@ -78,8 +78,8 @@ hatch. PEP 634 defines structural pattern matching as a runtime construct; a
 `match` statement is not required to be exhaustive, and a non-matching value
 simply falls through.
 
-Lesson for Auren: optional annotations are useful, but `Any` must not silently
-disable safety. Auren already validates `Any -> T` assignments at runtime
+Lesson for Vantyx: optional annotations are useful, but `Any` must not silently
+disable safety. Vantyx already validates `Any -> T` assignments at runtime
 (`R0005`). For matching, a closed enum is checked statically (`E0316`), while a
 match on `Any` warns (`W0004`) and raises `R0014` if no arm matches. This keeps
 Python's ergonomics without making missing cases invisible.
@@ -90,9 +90,9 @@ Rust enums carry payloads, and `match` must cover every variant unless a
 wildcard is present. The compiler rejects a missing arm. This turns "add a new
 variant" into a compile-time search for every decision point.
 
-Lesson for Auren: adopt closed enums, payload variants, and static
+Lesson for Vantyx: adopt closed enums, payload variants, and static
 exhaustiveness. Do not adopt Rust's ownership and borrowing syntax in the
-simple mode yet; Auren's documented v0.1 model is reference semantics
+simple mode yet; Vantyx's documented v0.1 model is reference semantics
 (ADR-0005). Ownership analysis remains a later, opt-in direction (T-012).
 
 ### Go: simplicity is valuable, but missing sum types is expensive
@@ -102,7 +102,7 @@ promise. Its type system historically relied on constants, interfaces, and
 sentinel values rather than payload-carrying sum types. Adding a feature later
 is constrained by compatibility.
 
-Lesson for Auren: define enums now, before a standard library and user code
+Lesson for Vantyx: define enums now, before a standard library and user code
 depend on sentinel conventions. Keep the syntax small: one declaration form,
 one pattern form, and no nested patterns in the first version. Also learn from
 Go's compatibility discipline: adding a variant to a closed enum is a breaking
@@ -114,8 +114,8 @@ Swift enums support associated values, and `switch` over an enum must be
 exhaustive. Swift also has to handle non-frozen enums from other modules with
 `@unknown default`, because a library can add cases later.
 
-Lesson for Auren: payload variants and exhaustive switching are the right
-default. Auren has no modules yet (T-013), so every enum is closed and adding a
+Lesson for Vantyx: payload variants and exhaustive switching are the right
+default. Vantyx has no modules yet (T-013), so every enum is closed and adding a
 variant is source-breaking. When modules arrive, the design must decide between
 closed and extensible enums; do not leave this implicit. The current
 pre-release syntax intentionally has no `@unknown` equivalent.
@@ -126,7 +126,7 @@ Zig documents explicit allocators and error unions; allocation and failure are
 visible in signatures and call sites. This makes cost and failure modes
 auditable.
 
-Lesson for Auren: the native backend must not hide unsupported semantics.
+Lesson for Vantyx: the native backend must not hide unsupported semantics.
 The T-030 follow-up initially rejected native enums and `match` with `E0401`
 and a help message pointing at the interpreter; that gap is now closed for
 statically typed enums, scalar literal patterns, and match guards. Remaining unsupported
@@ -140,7 +140,7 @@ Roc documents tag unions and exhaustive `when`; Gleam documents custom types
 and exhaustive `case`. Both make "no value" a variant rather than a null
 pointer, and both force every consumer to handle it.
 
-Lesson for Auren: use `Option`-style user enums rather than adding implicit
+Lesson for Vantyx: use `Option`-style user enums rather than adding implicit
 null. Do not add a nullable type until a dedicated ADR justifies it. Exhaustive
 matching is the safety mechanism that makes the pattern useful.
 
@@ -150,8 +150,8 @@ Nim documents selectable memory-management strategies (ARC/ORC and earlier
 modes); Crystal combines a Ruby-like surface with union types and its own
 runtime model.
 
-Lesson for Auren: multiple memory modes multiply semantics and testing cost.
-Auren should expose one documented model per execution engine and add opt-in
+Lesson for Vantyx: multiple memory modes multiply semantics and testing cost.
+Vantyx should expose one documented model per execution engine and add opt-in
 controls only with evidence. The interpreter uses reference-counted values and
 documented cycle leaks; the native backend uses explicit allocation and
 documented leaks. Do not claim general memory safety beyond those boundaries.
@@ -161,7 +161,7 @@ documented leaks. Do not claim general memory safety beyond those boundaries.
 Koka's book documents effect typing as a central feature. It is a coherent
 design, but it changes inference, function types, and the runtime.
 
-Lesson for Auren: keep effect tracking on the revisit list. Do not add effect
+Lesson for Vantyx: keep effect tracking on the revisit list. Do not add effect
 syntax while enums, generics, and modules are still being built. A future ADR
 should decide whether effects are inferred or annotated.
 
@@ -170,8 +170,8 @@ should decide whether effects are inferred or annotated.
 Mojo's manual presents a Python-like surface with progressively stronger
 typing and performance features, backed by MLIR.
 
-Lesson for Auren: the "simple by default, complexity on demand" principle is
-viable, but only if the simple and fast paths share semantics. Auren's
+Lesson for Vantyx: the "simple by default, complexity on demand" principle is
+viable, but only if the simple and fast paths share semantics. Vantyx's
 interpreter is the semantic oracle and the typed IR/native backend covers a
 statically typed subset. Every rejected native construct must have a clear
 `E0401` message and a documented path to support, not a silent fallback.
@@ -184,9 +184,9 @@ archived and no longer being worked on, with a successor language exploring a
 different memory-safety approach. Hylo explores mutable value semantics with
 `inout`-style access.
 
-Lesson for Auren: an ambitious memory model can consume a language's entire
+Lesson for Vantyx: an ambitious memory model can consume a language's entire
 design budget before ordinary programs are usable. Ship a simple, documented
-memory model first and keep the representation replaceable. Auren's reference
+memory model first and keep the representation replaceable. Vantyx's reference
 semantics with documented cycle leaks is the pragmatic baseline; ownership,
 regions, and generational references stay in T-012 as opt-in research, not as
 a gate on enums, modules, or native code generation.
@@ -196,7 +196,7 @@ a gate on enums, modules, or native code generation.
 Carbon's design centers on C++ interoperability and migration; Hylo explores
 mutable value semantics with `inout`-style access.
 
-Lesson for Auren: C ABI interoperability (T-021) and ownership/value-semantics
+Lesson for Vantyx: C ABI interoperability (T-021) and ownership/value-semantics
 research (T-012) are important, but neither should shape the first enum
 implementation. Keep enum layout decisions behind the IR so a future backend
 can choose a tagged representation without changing source semantics.
@@ -206,7 +206,7 @@ can choose a tagged representation without changing source semantics.
 Julia's performance tips emphasize writing type-stable code so the compiler can
 specialize. Dynamic code is possible but can be dramatically slower.
 
-Lesson for Auren: do not pretend that `Any` code is fast. The native backend
+Lesson for Vantyx: do not pretend that `Any` code is fast. The native backend
 rejects `Any` with `E0401` instead of emitting a slow boxed path. Enum values in
 the interpreter are dynamically tagged; the future native representation must
 be a typed tag plus payload, and benchmarks must wait until that exists.
@@ -217,7 +217,7 @@ TypeScript documents `any` as an escape hatch that disables checking, and
 `unknown` as the safer top type. Structural typing makes adoption easy but can
 hide nominal intent.
 
-Lesson for Auren: Auren's `Any` behaves like a checked dynamic type at typed
+Lesson for Vantyx: Vantyx's `Any` behaves like a checked dynamic type at typed
 boundaries, not an unchecked `any`. Enum types are nominal: two enums with the
 same variant names are still distinct, and variant names are globally unique so
 constructors are unambiguous. This is a deliberate departure from structural
@@ -226,10 +226,10 @@ typing.
 ### MLIR and Cranelift: keep the backend replaceable
 
 MLIR provides reusable multi-level IR infrastructure; Cranelift provides fast
-native code generation. Auren currently emits C11 (ADR-0008) because it is
+native code generation. Vantyx currently emits C11 (ADR-0008) because it is
 auditable, dependency-free, and good enough for the supported subset.
 
-Lesson for Auren: keep the typed IR backend-neutral. Enums should be rejected
+Lesson for Vantyx: keep the typed IR backend-neutral. Enums should be rejected
 before lowering, not represented by an ad-hoc C struct that later backends
 must imitate. Revisit Cranelift/LLVM when the C backend blocks optimization or
 debug information, not before.
@@ -239,7 +239,7 @@ debug information, not before.
 The first review covered language design. This addendum covers a different
 failure mode: projects that had good designs but lost years to compatibility
 breaks, rewrites, unclear status, or licensing. Sources were fetched on
-2026-11-23. These are engineering judgments for Auren, not claims that the
+2026-11-23. These are engineering judgments for Vantyx, not claims that the
 source projects failed.
 
 ### Python: big-bang compatibility breaks are expensive
@@ -252,9 +252,9 @@ PEP 3000 deliberately broke compatibility with Python 2.x and stated that
 endorses incremental evolution over a complete rewrite, citing the dangers of
 rewrites.
 
-Lesson for Auren: a compatibility break is a multi-year product commitment,
+Lesson for Vantyx: a compatibility break is a multi-year product commitment,
 not a version-number decision. Keep the compiler an evolution of the current
-codebase, not a from-scratch rewrite. When Auren makes a breaking change, ship
+codebase, not a from-scratch rewrite. When Vantyx makes a breaking change, ship
 warnings, a migration note, and a supported overlap period. Until then, say
 plainly that 0.x is unstable.
 
@@ -268,7 +268,7 @@ production, listed known limitations, and noted that compile speed was roughly
 15% slower. The feature was not held back until it was perfect, and it was not
 marketed as risk-free either.
 
-Lesson for Auren: generics (T-018) stay deferred until the core is stable. When
+Lesson for Vantyx: generics (T-018) stay deferred until the core is stable. When
 they land, publish the design, measure compile-time cost, document limitations,
 and keep the change backward compatible. Do not promise a feature on a date
 before its semantics and tests exist.
@@ -280,7 +280,7 @@ At that point module stability was still under active development, and library
 evolution support was largely implemented but not finalized. Swift was widely
 used for years before ABI stability arrived.
 
-Lesson for Auren: do not gate v1 on a stable ABI or FFI. Native Auren binaries
+Lesson for Vantyx: do not gate v1 on a stable ABI or FFI. Native Vantyx binaries
 are currently rebuilt from source, and that is an acceptable v0.1 contract.
 Revisit ABI stability with T-021 (FFI), after the language and native subset
 have settled.
@@ -293,7 +293,7 @@ the `async`/`await` keywords. The release notes are candid about the breakage
 and explain the migration path. Zig is still pre-1.0 and is funded through the
 Zig Software Foundation.
 
-Lesson for Auren: 0.x permits necessary change, but each public break still
+Lesson for Vantyx: 0.x permits necessary change, but each public break still
 costs users time. Batch breaking changes, write migration notes, and keep the
 test suite as the safety net. A project also needs a funding and governance
 story before it asks strangers to depend on it.
@@ -306,7 +306,7 @@ in August 2026; compiler contributions were still not open at that point.
 Carbon has roughly 34,000 GitHub stars but its README says it is experimental
 and "not ready for use", with the 0.1 milestone still ahead.
 
-Lesson for Auren: adopt a permissive license and a contribution policy on day
+Lesson for Vantyx: adopt a permissive license and a contribution policy on day
 one. Label maturity prominently and do not treat stars, waitlists, or social
 attention as evidence of readiness. "Source available" is not the same as open
 source, and a compiler that cannot accept fixes is a trust problem.
@@ -323,20 +323,20 @@ warnings, documentation redirects, and ecosystem coordination. Crystal reached
 deprecated definitions and make breaking changes before the compatibility
 commitment begins.
 
-Lesson for Auren: a long pre-1.0 period is normal and is not, by itself, a
+Lesson for Vantyx: a long pre-1.0 period is normal and is not, by itself, a
 failure. What matters is bounded scope, visible status, and a stable identity.
-Auren's name and syntax are fixed by ADR-0006; there will be no rename. Keep an
+Vantyx's name and syntax are fixed by ADR-0006; there will be no rename. Keep an
 explicit "not yet" list, use 0.x to remove debt, and write the compatibility
 policy before 1.0 rather than after.
 
-### Sustainability decisions for Auren
+### Sustainability decisions for Vantyx
 
-| Decision | Evidence | Auren action |
+| Decision | Evidence | Vantyx action |
 | --- | --- | --- |
 | Evolve, do not rewrite | PEP 3000 | keep the interpreter as the oracle and extend the existing pipeline |
 | No date promises | Go generics, Roc | publish capability status, not release dates |
 | No big-bang break without a bridge | Python 2→3, Raku | warnings, aliases, migration notes, overlap period |
-| Stable identity | Raku rename | keep "Auren" and the surface syntax fixed (ADR-0006) |
+| Stable identity | Raku rename | keep "Vantyx" and the surface syntax fixed (ADR-0006) |
 | Explicit non-goals | Roc FAQ | maintain the "not yet" list in the specification and README |
 | License and contribution policy early | Mojo, Carbon | MIT, CONTRIBUTING, SECURITY, and a public status page |
 | Honest maturity labels | Carbon, Zig | call the project a pre-1.0 prototype everywhere |
@@ -348,7 +348,7 @@ policy before 1.0 rather than after.
 
 ### Adopt
 
-| Lesson | Source examples | Auren action |
+| Lesson | Source examples | Vantyx action |
 | --- | --- | --- |
 | Payload-carrying variants | Rust, Swift | `enum Name:` with `Variant` and `Variant(field: Type)`; ADR-0011 |
 | Exhaustive matching over closed enums | Rust, Swift, Roc, Gleam | `E0316` for a missing variant; wildcard `_` opts out |
@@ -361,7 +361,7 @@ policy before 1.0 rather than after.
 
 ### Avoid
 
-| Mistake | Why it hurts | Auren guard |
+| Mistake | Why it hurts | Vantyx guard |
 | --- | --- | --- |
 | Runtime-only exhaustiveness for static enums | missing cases ship to production | static `E0316` |
 | Implicit null as "no value" | null checks spread everywhere | use an enum variant; no null type |

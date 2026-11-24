@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Malformed-input and depth-limit smoke fuzzer for the Auren front end.
+"""Malformed-input and depth-limit smoke fuzzer for the Vantyx front end.
 
 The compiler must return a controlled diagnostic (exit 0 or 1) for any input.
 A panic, stack overflow, timeout, or signal is a failure.
 
 Usage:
-    python3 tools/fuzz_smoke.py --binary target/debug/auren
-    python3 tools/fuzz_smoke.py --binary target/debug/auren --iterations 1000
+    python3 tools/fuzz_smoke.py --binary target/debug/vantyx
+    python3 tools/fuzz_smoke.py --binary target/debug/vantyx --iterations 1000
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ DEPTH_CASES = [
 
 
 def run_case(binary: str, directory: str, name: str, source: str) -> str | None:
-    path = os.path.join(directory, name + ".auren")
+    path = os.path.join(directory, name + ".vtx")
     with open(path, "w", encoding="utf-8", errors="surrogateescape") as handle:
         handle.write(source)
     try:
@@ -115,7 +115,7 @@ def mutated_source(rng: random.Random) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--binary", default="target/debug/auren")
+    parser.add_argument("--binary", default="target/debug/vantyx")
     parser.add_argument("--iterations", type=int, default=400)
     parser.add_argument("--seed", type=int, default=20261122)
     args = parser.parse_args()
@@ -125,7 +125,7 @@ def main() -> int:
         return 2
 
     failures: list[str] = []
-    with tempfile.TemporaryDirectory(prefix="auren-fuzz-") as directory:
+    with tempfile.TemporaryDirectory(prefix="vantyx-fuzz-") as directory:
         for name, source in DEPTH_CASES:
             failure = run_case(args.binary, directory, name, source)
             if failure:

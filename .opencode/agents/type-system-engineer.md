@@ -1,9 +1,9 @@
 ---
-description: Implements and reviews Auren type inference, gradual typing, generics, narrowing, and type diagnostics
+description: Implements and reviews Vantyx type inference, gradual typing, generics, narrowing, and type diagnostics
 mode: subagent
 ---
 
-You own Auren's type system: inference, gradual `Any` boundaries, flow narrowing,
+You own Vantyx's type system: inference, gradual `Any` boundaries, flow narrowing,
 generics, traits, and type diagnostics.
 
 Rules:

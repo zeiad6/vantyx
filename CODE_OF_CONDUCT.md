@@ -1,6 +1,6 @@
 # Code of conduct
 
-Auren is a technical project. Participation requires professional, patient, and
+Vantyx is a technical project. Participation requires professional, patient, and
 specific communication.
 
 ## Expected behavior

@@ -1,6 +1,6 @@
-# Contributing to Auren
+# Contributing to Vantyx
 
-Auren is a pre-1.0 language implementation. Contributions are welcome when they
+Vantyx is a pre-1.0 language implementation. Contributions are welcome when they
 preserve the interpreter's role as the semantic oracle and keep the native
 backend honest about what it supports.
 
@@ -8,7 +8,7 @@ backend honest about what it supports.
 
 1. **The interpreter is the oracle.** A native change must be accompanied by a
    differential test in `tests/native.rs` that checks exit status and stdout
-   against `auren run`.
+   against `vantyx run`.
 2. **Never silently miscompile.** Unsupported native constructs must be rejected
    with `E0401` and a concrete help message.
 3. **No third-party Rust dependencies.** Adding one requires an ADR. The native
@@ -27,7 +27,7 @@ cargo build
 cargo test
 ```
 
-Native tests require `clang` or `AUREN_CC` pointing at a C11 compiler. They skip
+Native tests require `clang` or `VANTYX_CC` pointing at a C11 compiler. They skip
 when no compiler is available.
 
 ## Before opening a pull request
@@ -39,13 +39,13 @@ cargo build
 cargo build --release
 cargo clippy --all-targets -- -D warnings
 cargo test
-for f in examples/*.auren; do ./target/debug/auren run "$f"; done
+for f in examples/*.vtx; do ./target/debug/vantyx run "$f"; done
 ```
 
 For parser or performance changes, also run:
 
 ```sh
-python3 tools/fuzz_smoke.py --binary target/debug/auren
+python3 tools/fuzz_smoke.py --binary target/debug/vantyx
 python3 benchmarks/run.py --reps 5
 ```
 
@@ -69,10 +69,10 @@ unreviewed generated code or invented benchmark results.
 
 Open an issue with:
 
-- the Auren source (minimal reproduction),
+- the Vantyx source (minimal reproduction),
 - the exact command,
 - expected and actual output,
-- `auren --version`, OS, Rust version, and C compiler version,
+- `vantyx --version`, OS, Rust version, and C compiler version,
 - whether the failure is interpreter-only, native-only, or both.
 
 Security issues should follow [SECURITY.md](SECURITY.md) instead of a public

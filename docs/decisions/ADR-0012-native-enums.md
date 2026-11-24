@@ -15,7 +15,7 @@ The native backend already has:
 
 - unboxed scalar types, heap pointers for strings, structs, lists, and maps
 - generated per-type display and equality callbacks
-- a type descriptor (`AurenTypeDesc`) used by lists, maps, and structural
+- a type descriptor (`VantyxTypeDesc`) used by lists, maps, and structural
   equality
 - intentional allocation leaks and no reclamation, documented in the memory
   model
@@ -42,17 +42,17 @@ Choose a native enum representation that:
 Each enum type becomes a C struct:
 
 ```c
-struct Auren_e_Shape {
+struct Vantyx_e_Shape {
     int64_t tag;
     union {
-        int64_t auren_dummy;
-        struct { double auren_f_radius; } auren_v_Circle;
-        struct { double auren_f_width; double auren_f_height; } auren_v_Rect;
+        int64_t vantyx_dummy;
+        struct { double vantyx_f_radius; } vantyx_v_Circle;
+        struct { double vantyx_f_width; double vantyx_f_height; } vantyx_v_Rect;
     } payload;
 };
 ```
 
-Values are `Auren_e_Shape*`. A constructor allocates, zeroes, sets the tag, and
+Values are `Vantyx_e_Shape*`. A constructor allocates, zeroes, sets the tag, and
 assigns payload fields. Display and equality are generated per enum.
 
 Advantages: static payload layout; recursive payloads are pointers; enum values
@@ -64,7 +64,7 @@ current backend; pattern matching needs generated accessors.
 
 ### B. Generic tagged value with a descriptor and byte buffer
 
-A single `AurenValue` carries a tag and a payload buffer, with descriptors for
+A single `VantyxValue` carries a tag and a payload buffer, with descriptors for
 display/equality.
 
 Advantages: one representation for all enums; easier future dynamic support.
@@ -95,16 +95,16 @@ behavior for lists/maps/structs.
 ## Decision
 
 Use **option A**: a heap-allocated tagged struct per enum, with a union of
-per-variant payload structs. The native type is `Auren_e_<Enum>*`.
+per-variant payload structs. The native type is `Vantyx_e_<Enum>*`.
 
 ### Layout
 
 - `tag` is the zero-based declaration index of the variant, stored as
   `int64_t`.
-- The union always contains an `int64_t auren_dummy` member so enums with only
+- The union always contains an `int64_t vantyx_dummy` member so enums with only
   zero-payload variants remain valid C.
 - Each variant with at least one payload field gets an anonymous struct member
-  named `auren_v_<Variant>` containing fields named `auren_f_<field>`.
+  named `vantyx_v_<Variant>` containing fields named `vantyx_f_<field>`.
 - Zero-payload variants have no union member; their constructor only sets the
   tag.
 - Enum, variant, and field identifiers are prefixed in generated C so user
@@ -112,9 +112,9 @@ per-variant payload structs. The native type is `Auren_e_<Enum>*`.
 
 ### Construction
 
-Generated function `auren_variant_<Enum>_<Variant>`:
+Generated function `vantyx_variant_<Enum>_<Variant>`:
 
-1. allocates `sizeof(Auren_e_<Enum>)` with `auren_alloc`
+1. allocates `sizeof(Vantyx_e_<Enum>)` with `vantyx_alloc`
 2. zeroes the value with `memset`
 3. sets `tag`
 4. assigns payload fields in declaration order
@@ -136,7 +136,7 @@ Zero-payload variants take `void`.
   structs, whose existing display/equality guards terminate the traversal.
   This matches the interpreter, which formats enum payloads without marking the
   enum value itself.
-- Each enum gets an `AurenTypeDesc` of kind `AUREN_T_ENUM` with display and
+- Each enum gets an `VantyxTypeDesc` of kind `VANTYX_T_ENUM` with display and
   equality callbacks, so lists, maps, and struct fields can hold enums without
   special cases at every use site.
 

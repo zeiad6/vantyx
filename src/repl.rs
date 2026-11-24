@@ -21,9 +21,9 @@ pub const MAX_HISTORY: usize = 1000;
 
 /// Keywords and built-in type names offered by completion.
 const KEYWORDS: &[&str] = &[
-    "fn", "let", "var", "if", "elif", "else", "while", "for", "in", "return", "break",
-    "continue", "struct", "enum", "match", "true", "false", "and", "or", "not", "Int", "Float",
-    "Bool", "Str", "Unit", "Any", "List", "Map",
+    "fn", "let", "var", "if", "elif", "else", "while", "for", "in", "return", "break", "continue",
+    "struct", "enum", "match", "true", "false", "and", "or", "not", "Int", "Float", "Bool", "Str",
+    "Unit", "Any", "List", "Map",
 ];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -33,10 +33,10 @@ pub enum ReadOutcome {
     Interrupted,
 }
 
-/// Resolves the history file. `AUREN_HISTORY` overrides the default; the
+/// Resolves the history file. `VANTYX_HISTORY` overrides the default; the
 /// values `off`, `0`, and the empty string disable persistence.
 pub fn default_history_path() -> Option<PathBuf> {
-    if let Some(value) = env::var_os("AUREN_HISTORY") {
+    if let Some(value) = env::var_os("VANTYX_HISTORY") {
         let value = value.to_string_lossy();
         if value.is_empty() || value == "off" || value == "0" {
             return None;
@@ -45,7 +45,7 @@ pub fn default_history_path() -> Option<PathBuf> {
     }
     env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
-        .map(|home| PathBuf::from(home).join(".auren_history"))
+        .map(|home| PathBuf::from(home).join(".vtx_history"))
 }
 
 pub struct Editor {
@@ -107,11 +107,7 @@ impl Editor {
     }
 
     /// Reads one logical line. The returned string has no trailing newline.
-    pub fn read_line(
-        &mut self,
-        prompt: &str,
-        out: &mut dyn Write,
-    ) -> io::Result<ReadOutcome> {
+    pub fn read_line(&mut self, prompt: &str, out: &mut dyn Write) -> io::Result<ReadOutcome> {
         if !io::stdin().is_terminal() {
             return self.read_line_canonical(prompt, out);
         }
@@ -355,7 +351,7 @@ impl Editor {
             .map(|keyword| (*keyword).to_string())
             .collect();
         names.extend(
-            auren::checker::BUILTINS
+            vantyx::checker::BUILTINS
                 .iter()
                 .map(|builtin| (*builtin).to_string()),
         );
@@ -393,12 +389,7 @@ fn longest_common_prefix(values: &[&String]) -> String {
     first[..length].iter().collect()
 }
 
-fn repaint(
-    prompt: &str,
-    buffer: &[char],
-    cursor: usize,
-    out: &mut dyn Write,
-) -> io::Result<()> {
+fn repaint(prompt: &str, buffer: &[char], cursor: usize, out: &mut dyn Write) -> io::Result<()> {
     let text: String = buffer.iter().collect();
     write!(out, "\r\x1b[2K{prompt}{text}")?;
     let tail = buffer.len().saturating_sub(cursor);
@@ -613,7 +604,7 @@ mod tests {
 
     #[test]
     fn history_file_round_trips_and_is_private() {
-        let path = env::temp_dir().join(format!("auren-history-unit-{}", std::process::id()));
+        let path = env::temp_dir().join(format!("vantyx-history-unit-{}", std::process::id()));
         let _ = fs::remove_file(&path);
         let mut editor = Editor::new(Some(path.clone()));
         editor.add_history("let value = 41");
@@ -621,14 +612,14 @@ mod tests {
         drop(editor);
 
         let reloaded = Editor::new(Some(path.clone()));
-        assert_eq!(
-            reloaded.history(),
-            ["let value = 41", "print(value + 1)"]
-        );
+        assert_eq!(reloaded.history(), ["let value = 41", "print(value + 1)"]);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = fs::metadata(&path).expect("history metadata").permissions().mode();
+            let mode = fs::metadata(&path)
+                .expect("history metadata")
+                .permissions()
+                .mode();
             assert_eq!(mode & 0o777, 0o600);
         }
         let _ = fs::remove_file(&path);
@@ -636,7 +627,7 @@ mod tests {
 
     #[test]
     fn history_file_is_capped() {
-        let path = env::temp_dir().join(format!("auren-history-cap-{}", std::process::id()));
+        let path = env::temp_dir().join(format!("vantyx-history-cap-{}", std::process::id()));
         let _ = fs::remove_file(&path);
         let mut editor = Editor::new(Some(path.clone()));
         for index in 0..=MAX_HISTORY {

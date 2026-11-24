@@ -2,7 +2,7 @@
 //!
 //! The interpreter is deliberately fail-stop: every dynamic operation either
 //! produces a value of the expected shape or returns a `RuntimeError` with a
-//! span and call stack. It never panics on Auren-level input.
+//! span and call stack. It never panics on Vantyx-level input.
 
 use crate::ast::*;
 use crate::checker::{Entry, FnSig, SemanticModel, is_builtin};
@@ -86,9 +86,7 @@ pub fn run(
     model: &SemanticModel,
     out: &mut (dyn Write + Send),
 ) -> Result<(), RuntimeError> {
-    run_on_thread(program.span, || {
-        Interpreter::new(program, model, out).run()
-    })
+    run_on_thread(program.span, || Interpreter::new(program, model, out).run())
 }
 
 /// Executes a REPL session entry.
@@ -117,7 +115,7 @@ fn run_on_thread(
 ) -> Result<(), RuntimeError> {
     std::thread::scope(|scope| {
         let handle = std::thread::Builder::new()
-            .name("auren-interpreter".to_string())
+            .name("vantyx-interpreter".to_string())
             .stack_size(16 * 1024 * 1024)
             .spawn_scoped(scope, execute)
             .map_err(|error| {
@@ -246,14 +244,9 @@ impl<'a> Interpreter<'a> {
                 }
             }
             Entry::Main => {
-                let sig = self
-                    .model
-                    .functions
-                    .get("main")
-                    .cloned()
-                    .ok_or_else(|| {
-                        RuntimeError::new("R0010", "missing `main` function", self.program.span)
-                    })?;
+                let sig = self.model.functions.get("main").cloned().ok_or_else(|| {
+                    RuntimeError::new("R0010", "missing `main` function", self.program.span)
+                })?;
                 let body = self.fn_bodies.get("main").copied().ok_or_else(|| {
                     RuntimeError::new("R0010", "missing `main` body", self.program.span)
                 })?;
@@ -275,13 +268,7 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn type_error(
-        &self,
-        context: &str,
-        expected: &str,
-        value: &Value,
-        span: Span,
-    ) -> RuntimeError {
+    fn type_error(&self, context: &str, expected: &str, value: &Value, span: Span) -> RuntimeError {
         self.rt(
             "R0005",
             format!(
@@ -321,10 +308,7 @@ impl<'a> Interpreter<'a> {
     // ---- scopes ----
 
     fn lookup(&self, name: &str) -> Option<&Slot> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(name))
+        self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
     fn find_scope(&self, name: &str) -> Option<usize> {
@@ -344,14 +328,7 @@ impl<'a> Interpreter<'a> {
         let Some(scope) = self.scopes.last_mut() else {
             return Err(self.rt("R0010", "internal error: no active scope", span));
         };
-        scope.insert(
-            name.to_string(),
-            Slot {
-                value,
-                mutable,
-                ty,
-            },
-        );
+        scope.insert(name.to_string(), Slot { value, mutable, ty });
         Ok(())
     }
 
@@ -376,10 +353,7 @@ impl<'a> Interpreter<'a> {
 
     /// Executes a statement and returns its value when it is an expression
     /// statement. The REPL uses this to echo expression values exactly once.
-    fn exec_stmt_echo(
-        &mut self,
-        stmt: &Stmt,
-    ) -> Result<(Flow, Option<Value>), RuntimeError> {
+    fn exec_stmt_echo(&mut self, stmt: &Stmt) -> Result<(Flow, Option<Value>), RuntimeError> {
         if let StmtKind::Expr(expr) = &stmt.kind {
             let value = self.eval_expr(expr)?;
             return Ok((Flow::Normal, Some(value)));
@@ -474,9 +448,7 @@ impl<'a> Interpreter<'a> {
                 iter,
                 body,
             } => self.exec_for(name, *name_span, iter, body),
-            StmtKind::Match { scrutinee, arms } => {
-                self.exec_match_stmt(scrutinee, arms, stmt.span)
-            }
+            StmtKind::Match { scrutinee, arms } => self.exec_match_stmt(scrutinee, arms, stmt.span),
             StmtKind::Return(value) => {
                 let value = match value {
                     Some(expr) => self.eval_expr(expr)?,
@@ -519,7 +491,8 @@ impl<'a> Interpreter<'a> {
                 Ok(Flow::Normal)
             }
             Value::Str(text) => {
-                let characters: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
+                let characters: Vec<Value> =
+                    text.chars().map(|c| Value::str(c.to_string())).collect();
                 for character in characters {
                     match self.exec_for_iteration(name, name_span, character, body)? {
                         Flow::Normal | Flow::Continue => {}
@@ -688,16 +661,10 @@ impl<'a> Interpreter<'a> {
                 if instance.variant != *name || instance.fields.len() != fields.len() {
                     return None;
                 }
-                let variant = self
-                    .model
-                    .find_variant(name)
-                    .map(|(_, variant)| variant);
+                let variant = self.model.find_variant(name).map(|(_, variant)| variant);
                 let mut bindings = Vec::new();
                 for (index, field) in fields.iter().enumerate() {
-                    let PatternArg::Bind {
-                        name: binding, ..
-                    } = field
-                    else {
+                    let PatternArg::Bind { name: binding, .. } = field else {
                         continue;
                     };
                     let slot = instance.fields.get(index)?;
@@ -750,16 +717,15 @@ impl<'a> Interpreter<'a> {
                     Value::Struct(instance) => {
                         let (index, type_name) = {
                             let borrowed = instance.borrow();
-                            match borrowed
-                                .fields
-                                .iter()
-                                .position(|field| field.name == *name)
-                            {
+                            match borrowed.fields.iter().position(|field| field.name == *name) {
                                 Some(index) => (index, borrowed.type_name.clone()),
                                 None => {
                                     return Err(self.rt(
                                         "R0010",
-                                        format!("struct `{}` has no field `{name}`", borrowed.type_name),
+                                        format!(
+                                            "struct `{}` has no field `{name}`",
+                                            borrowed.type_name
+                                        ),
                                         target.span,
                                     ));
                                 }
@@ -870,12 +836,7 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn write_place(
-        &mut self,
-        place: &Place,
-        value: Value,
-        span: Span,
-    ) -> Result<(), RuntimeError> {
+    fn write_place(&mut self, place: &Place, value: Value, span: Span) -> Result<(), RuntimeError> {
         match place {
             Place::Var { scope, name } => {
                 let (mutable, ty) = {
@@ -992,16 +953,17 @@ impl<'a> Interpreter<'a> {
                 }
                 Ok(Value::str(text))
             }
-            ExprKind::Var(name) => self
-                .lookup(name)
-                .map(|slot| slot.value.clone())
-                .ok_or_else(|| {
-                    self.rt(
-                        "R0009",
-                        format!("variable `{name}` is not initialized yet"),
-                        expr.span,
-                    )
-                }),
+            ExprKind::Var(name) => {
+                self.lookup(name)
+                    .map(|slot| slot.value.clone())
+                    .ok_or_else(|| {
+                        self.rt(
+                            "R0009",
+                            format!("variable `{name}` is not initialized yet"),
+                            expr.span,
+                        )
+                    })
+            }
             ExprKind::List(elements) => {
                 let mut values = Vec::with_capacity(elements.len());
                 for element in elements {
@@ -1022,16 +984,11 @@ impl<'a> Interpreter<'a> {
                 let value = self.eval_expr(inner)?;
                 match op {
                     UnOp::Neg => match value {
-                        Value::Int(number) => number
-                            .checked_neg()
-                            .map(Value::Int)
-                            .ok_or_else(|| {
-                                self.rt(
-                                    "R0002",
-                                    "integer overflow while negating",
-                                    expr.span,
-                                )
-                            }),
+                        Value::Int(number) => {
+                            number.checked_neg().map(Value::Int).ok_or_else(|| {
+                                self.rt("R0002", "integer overflow while negating", expr.span)
+                            })
+                        }
                         Value::Float(number) => Ok(Value::Float(-number)),
                         other => Err(self.type_error(
                             " after `-`",
@@ -1042,9 +999,7 @@ impl<'a> Interpreter<'a> {
                     },
                     UnOp::Not => match value {
                         Value::Bool(flag) => Ok(Value::Bool(!flag)),
-                        other => {
-                            Err(self.type_error(" after `not`", "`Bool`", &other, expr.span))
-                        }
+                        other => Err(self.type_error(" after `not`", "`Bool`", &other, expr.span)),
                     },
                 }
             }
@@ -1068,9 +1023,7 @@ impl<'a> Interpreter<'a> {
                     let right = self.eval_expr(rhs)?;
                     match right {
                         Value::Bool(flag) => Ok(Value::Bool(flag)),
-                        other => {
-                            Err(self.type_error(" after `and`", "`Bool`", &other, rhs.span))
-                        }
+                        other => Err(self.type_error(" after `and`", "`Bool`", &other, rhs.span)),
                     }
                 }
                 BinOp::Or => {
@@ -1092,9 +1045,7 @@ impl<'a> Interpreter<'a> {
                     let right = self.eval_expr(rhs)?;
                     match right {
                         Value::Bool(flag) => Ok(Value::Bool(flag)),
-                        other => {
-                            Err(self.type_error(" after `or`", "`Bool`", &other, rhs.span))
-                        }
+                        other => Err(self.type_error(" after `or`", "`Bool`", &other, rhs.span)),
                     }
                 }
                 _ => {
@@ -1148,12 +1099,7 @@ impl<'a> Interpreter<'a> {
                     .find_variant(name)
                     .map(|(enum_name, variant)| (enum_name.to_string(), variant.clone()))
                 {
-                    return self.call_variant_constructor(
-                        &enum_name,
-                        &variant,
-                        args,
-                        expr.span,
-                    );
+                    return self.call_variant_constructor(&enum_name, &variant, args, expr.span);
                 }
                 Err(self.rt(
                     "R0010",
@@ -1193,9 +1139,7 @@ impl<'a> Interpreter<'a> {
                     )),
                 }
             }
-            ExprKind::Match { scrutinee, arms } => {
-                self.eval_match_expr(scrutinee, arms, expr.span)
-            }
+            ExprKind::Match { scrutinee, arms } => self.eval_match_expr(scrutinee, arms, expr.span),
         }
     }
 
@@ -1224,12 +1168,7 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn index_value(
-        &self,
-        base: Value,
-        index: Value,
-        span: Span,
-    ) -> Result<Value, RuntimeError> {
+    fn index_value(&self, base: Value, index: Value, span: Span) -> Result<Value, RuntimeError> {
         match base {
             Value::List(items) => {
                 let position = self.index_position(&index, span)?;
@@ -1269,12 +1208,7 @@ impl<'a> Interpreter<'a> {
                     )
                 })
             }
-            other => Err(self.type_error(
-                " in indexing",
-                "a List, Str, or Map",
-                &other,
-                span,
-            )),
+            other => Err(self.type_error(" in indexing", "a List, Str, or Map", &other, span)),
         }
     }
 
@@ -1294,9 +1228,7 @@ impl<'a> Interpreter<'a> {
                     .map(Value::Int)
                     .ok_or_else(|| self.rt("R0002", "integer overflow in `+`", span)),
                 (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
-                (Value::Str(a), Value::Str(b)) => {
-                    Ok(Value::str(format!("{}{}", &**a, &**b)))
-                }
+                (Value::Str(a), Value::Str(b)) => Ok(Value::str(format!("{}{}", &**a, &**b))),
                 _ => Err(self.binary_type_error("+", left, right, span)),
             },
             BinOp::Sub => match (left, right) {
@@ -1331,9 +1263,7 @@ impl<'a> Interpreter<'a> {
                 _ => Err(self.binary_type_error("/", left, right, span)),
             },
             BinOp::FloorDiv => match (left, right) {
-                (Value::Int(a), Value::Int(b)) => {
-                    Ok(Value::Int(self.floor_div(*a, *b, span)?))
-                }
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(self.floor_div(*a, *b, span)?)),
                 _ => Err(self.binary_type_error("//", left, right, span)),
             },
             BinOp::Mod => match (left, right) {
@@ -1500,24 +1430,14 @@ impl<'a> Interpreter<'a> {
                 param.span,
                 &format!(" for parameter `{}`", param.name),
             )?;
-            self.bind(
-                &param.name,
-                value,
-                false,
-                param.ty.clone(),
-                param.span,
-            )?;
+            self.bind(&param.name, value, false, param.ty.clone(), param.span)?;
         }
         let flow = self.exec_stmts(&body.body.stmts)?;
         let value = match flow {
             Flow::Normal => Value::Unit,
             Flow::Return(value) => value,
             Flow::Break | Flow::Continue => {
-                return Err(self.rt(
-                    "R0010",
-                    "loop control escaped a function body",
-                    body.span,
-                ));
+                return Err(self.rt("R0010", "loop control escaped a function body", body.span));
             }
         };
         if sig.ret_annotated {
@@ -1639,9 +1559,7 @@ impl<'a> Interpreter<'a> {
             if let Some((arg_name, _)) = &arg.name {
                 return Err(self.rt(
                     "R0010",
-                    format!(
-                        "named argument `{arg_name}` is not valid for variant constructors"
-                    ),
+                    format!("named argument `{arg_name}` is not valid for variant constructors"),
                     span,
                 ));
             }
@@ -1673,11 +1591,7 @@ impl<'a> Interpreter<'a> {
                 value,
             });
         }
-        Ok(Value::enum_value(
-            enum_name,
-            variant.name.clone(),
-            fields,
-        ))
+        Ok(Value::enum_value(enum_name, variant.name.clone(), fields))
     }
 
     // ---- builtins ----
@@ -1713,12 +1627,9 @@ impl<'a> Interpreter<'a> {
                     Value::Str(text) => Ok(Value::Int(text.chars().count() as i64)),
                     Value::List(items) => Ok(Value::Int(items.borrow().len() as i64)),
                     Value::Map(entries) => Ok(Value::Int(entries.borrow().len() as i64)),
-                    other => Err(self.type_error(
-                        " in `len`",
-                        "`Str`, `List`, or `Map`",
-                        other,
-                        span,
-                    )),
+                    other => {
+                        Err(self.type_error(" in `len`", "`Str`, `List`, or `Map`", other, span))
+                    }
                 }
             }
             "range" => {
@@ -1798,9 +1709,9 @@ impl<'a> Interpreter<'a> {
                             span,
                         )),
                     },
-                    Value::Map(entries) => {
-                        Ok(Value::Bool(map_get(entries.borrow().as_slice(), &args[1]).is_some()))
-                    }
+                    Value::Map(entries) => Ok(Value::Bool(
+                        map_get(entries.borrow().as_slice(), &args[1]).is_some(),
+                    )),
                     other => Err(self.type_error(
                         " in `contains`",
                         "`List`, `Str`, or `Map`",
@@ -1826,12 +1737,7 @@ impl<'a> Interpreter<'a> {
                             .collect();
                         Ok(Value::list(items))
                     }
-                    other => Err(self.type_error(
-                        &format!(" in `{name}`"),
-                        "`Map`",
-                        other,
-                        span,
-                    )),
+                    other => Err(self.type_error(&format!(" in `{name}`"), "`Map`", other, span)),
                 }
             }
             "str" => {
@@ -1858,17 +1764,9 @@ impl<'a> Interpreter<'a> {
                         }
                         Ok(Value::Int(*number as i64))
                     }
-                    Value::Str(text) => text
-                        .trim()
-                        .parse::<i64>()
-                        .map(Value::Int)
-                        .map_err(|_| {
-                            self.rt(
-                                "R0007",
-                                format!("cannot convert `{text}` to Int"),
-                                span,
-                            )
-                        }),
+                    Value::Str(text) => text.trim().parse::<i64>().map(Value::Int).map_err(|_| {
+                        self.rt("R0007", format!("cannot convert `{text}` to Int"), span)
+                    }),
                     other => Err(self.rt(
                         "R0007",
                         format!("cannot convert `{}` to Int", other.type_name()),
@@ -1881,17 +1779,11 @@ impl<'a> Interpreter<'a> {
                 match &args[0] {
                     Value::Int(number) => Ok(Value::Float(*number as f64)),
                     Value::Float(number) => Ok(Value::Float(*number)),
-                    Value::Str(text) => text
-                        .trim()
-                        .parse::<f64>()
-                        .map(Value::Float)
-                        .map_err(|_| {
-                            self.rt(
-                                "R0007",
-                                format!("cannot convert `{text}` to Float"),
-                                span,
-                            )
-                        }),
+                    Value::Str(text) => {
+                        text.trim().parse::<f64>().map(Value::Float).map_err(|_| {
+                            self.rt("R0007", format!("cannot convert `{text}` to Float"), span)
+                        })
+                    }
                     other => Err(self.rt(
                         "R0007",
                         format!("cannot convert `{}` to Float", other.type_name()),
@@ -1905,7 +1797,10 @@ impl<'a> Interpreter<'a> {
                     Value::Bool(flag) => Ok(Value::Bool(*flag)),
                     other => Err(self.rt(
                         "R0007",
-                        format!("cannot convert `{}` to Bool; only Bool is accepted", other.type_name()),
+                        format!(
+                            "cannot convert `{}` to Bool; only Bool is accepted",
+                            other.type_name()
+                        ),
                         span,
                     )),
                 }
@@ -1954,11 +1849,7 @@ impl<'a> Interpreter<'a> {
                 match &args[0] {
                     Value::Float(number) => {
                         if *number < 0.0 {
-                            return Err(self.rt(
-                                "R0004",
-                                "`sqrt` of a negative number",
-                                span,
-                            ));
+                            return Err(self.rt("R0004", "`sqrt` of a negative number", span));
                         }
                         Ok(Value::Float(number.sqrt()))
                     }
@@ -1986,12 +1877,7 @@ impl<'a> Interpreter<'a> {
                         }
                         Ok(Value::Int(result as i64))
                     }
-                    other => Err(self.type_error(
-                        &format!(" in `{name}`"),
-                        "`Float`",
-                        other,
-                        span,
-                    )),
+                    other => Err(self.type_error(&format!(" in `{name}`"), "`Float`", other, span)),
                 }
             }
             "assert" => {
@@ -2002,11 +1888,7 @@ impl<'a> Interpreter<'a> {
                     other => Err(self.type_error(" in `assert`", "`Bool`", other, span)),
                 }
             }
-            _ => Err(self.rt(
-                "R0010",
-                format!("unknown built-in function `{name}`"),
-                span,
-            )),
+            _ => Err(self.rt("R0010", format!("unknown built-in function `{name}`"), span)),
         }
     }
 
@@ -2047,12 +1929,7 @@ impl<'a> Interpreter<'a> {
             match arg {
                 Value::Int(number) => numbers.push(*number),
                 other => {
-                    return Err(self.type_error(
-                        &format!(" in `{name}`"),
-                        "`Int`",
-                        other,
-                        span,
-                    ));
+                    return Err(self.type_error(&format!(" in `{name}`"), "`Int`", other, span));
                 }
             }
         }
@@ -2073,7 +1950,11 @@ mod tests {
         let (program, parse_diagnostics) = parser::parse(source, lexed.tokens);
         assert!(!parse_diagnostics.has_errors(), "{:?}", parse_diagnostics);
         let (model, check_diagnostics) = checker::check(&program);
-        assert!(!check_diagnostics.has_errors(), "{:?}", check_diagnostics.items);
+        assert!(
+            !check_diagnostics.has_errors(),
+            "{:?}",
+            check_diagnostics.items
+        );
         let model = model.expect("model");
         let mut output = Vec::new();
         run(&program, &model, &mut output)?;
@@ -2213,9 +2094,8 @@ mod tests {
 
     #[test]
     fn annotated_binding_rejects_dynamic_wrong_type() {
-        let error = run_err(
-            "fn identity(x: Any) -> Any:\n    return x\n\nlet n: Int = identity(\"no\")\n",
-        );
+        let error =
+            run_err("fn identity(x: Any) -> Any:\n    return x\n\nlet n: Int = identity(\"no\")\n");
         assert_eq!(error.code, "R0005");
     }
 

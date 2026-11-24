@@ -9,7 +9,7 @@
 
 The interpreter gives `List` reference semantics: `let b = a` aliases the same
 list, `push(b, x)` is visible through `a`, and elements may be nested lists or
-structs. The native backend lowers checked Auren to self-contained GNU C11 and
+structs. The native backend lowers checked Vantyx to self-contained GNU C11 and
 must preserve those semantics for the statically typed subset. It has no
 installed runtime library, links only libc/libm, and intentionally leaks
 allocations for short-lived CLI programs.
@@ -20,7 +20,7 @@ be `Unit`, `Int`, `Float`, `Bool`, `Str`, a struct, or another list?
 
 ## Options considered
 
-### 1. Tagged `AurenValue` element union
+### 1. Tagged `VantyxValue` element union
 
 Every element is a `{ kind, union }` value, closely matching the interpreter's
 dynamic `Value`.
@@ -33,9 +33,9 @@ dynamic `Value`.
 
 ### 2. Typed contiguous storage plus a type descriptor (chosen)
 
-`AurenList` stores `void* items`, `len`, `cap`, `elem_size`, and a pointer to a
-static `AurenTypeDesc`. Elements are stored by value (`int64_t`, `double`,
-`bool`, `auren_str`, `AurenList*`, `Auren_s_*`). The descriptor describes the
+`VantyxList` stores `void* items`, `len`, `cap`, `elem_size`, and a pointer to a
+static `VantyxTypeDesc`. Elements are stored by value (`int64_t`, `double`,
+`bool`, `vantyx_str`, `VantyxList*`, `Vantyx_s_*`). The descriptor describes the
 element kind and, for structs, generated display/equality functions.
 
 - Advantages: unboxed scalar storage, one small runtime header per list,
@@ -46,7 +46,7 @@ element kind and, for structs, generated display/equality functions.
 
 ### 3. One generated C list type and helper set per element type
 
-Generate `AurenList_Int`, `AurenList_Point`, and so on.
+Generate `VantyxList_Int`, `VantyxList_Point`, and so on.
 
 - Advantages: fully typed C with no descriptors.
 - Disadvantages: code duplication, awkward identity when the same logical
@@ -57,16 +57,16 @@ Generate `AurenList_Int`, `AurenList_Point`, and so on.
 
 - Advantages: mature growth and algorithms.
 - Disadvantages: introduces a C++ ABI/runtime, complicates the "C11 + libc"
-  guarantee, and still needs Auren-specific display/equality.
+  guarantee, and still needs Vantyx-specific display/equality.
 
 ## Decision
 
 Use option 2.
 
-- `AurenList` is a stable heap header. Growth reallocates only `items`, so
+- `VantyxList` is a stable heap header. Growth reallocates only `items`, so
   aliases remain valid because they point at the header, not the buffer.
 - List literals allocate a header and push elements left-to-right.
-- Reads and writes go through `auren_list_slot`, which reports negative and
+- Reads and writes go through `vantyx_list_slot`, which reports negative and
   out-of-bounds indices as `R0003` with the same messages as the interpreter.
 - `push` grows capacity from 4 and doubles, with overflow checks. `pop`
   reports `R0003` on an empty list.
@@ -98,7 +98,7 @@ struct cycles and prints `[...]` / `TypeName(...)`; equality is depth-limited.
 - Cyclic structures display correctly, but structural equality of two distinct
   cycles is depth-limited rather than coinductive. *(Superseded: equality is
   now coinductive.)*
-- Because Auren has no user-visible interior pointers, `realloc` cannot leave a
+- Because Vantyx has no user-visible interior pointers, `realloc` cannot leave a
   dangling element reference in source programs.
 
 ## Reversibility

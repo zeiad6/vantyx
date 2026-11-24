@@ -1,16 +1,16 @@
 [package]
-name = "auren"
+name = "vantyx"
 version = "0.1.0"
 edition = "2024"
-description = "Auren: a safe, gradual-typing language that starts like a script and scales to native code"
+description = "Vantyx: a safe, gradual-typing language that starts like a script and scales to native code"
 license = "MIT"
 
 [lib]
-name = "auren"
+name = "vantyx"
 path = "src/lib.rs"
 
 [[bin]]
-name = "auren"
+name = "vantyx"
 path = "src/main.rs"
 
 [profile.release]

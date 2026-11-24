@@ -6,7 +6,7 @@ Updated: 2026-11-23 — literal scalar patterns (T-032) and match guards (T-033)
 
 ## Context
 
-Auren v0.1 has structs, gradual typing, collections, and a typed native backend
+Vantyx v0.1 has structs, gradual typing, collections, and a typed native backend
 for a static subset. It has no way to model a closed set of alternatives with
 payloads. Users must encode alternatives with integers, strings, or structs
 plus sentinel fields, which defeats exhaustiveness checking and makes adding a
@@ -69,7 +69,7 @@ Use **option C** for the current pre-release language line (crate 0.1.0).
 
 ### Declaration syntax
 
-```auren
+```vantyx
 enum Shape:
     Empty
     Circle(radius: Float)
@@ -85,7 +85,7 @@ enum Shape:
 
 ### Construction
 
-```auren
+```vantyx
 let a = Empty()
 let b = Circle(1.5)
 let c = Rect(2.0, 3.0)
@@ -98,7 +98,7 @@ let c = Rect(2.0, 3.0)
 
 ### Patterns and matching
 
-```auren
+```vantyx
 match shape:
     Empty:
         print("empty")
@@ -108,7 +108,7 @@ match shape:
         print("rect {width}x{height}")
 ```
 
-```auren
+```vantyx
 let label = match shape:
     Empty: "empty"
     Circle(radius): "circle"
@@ -117,7 +117,7 @@ let label = match shape:
 
 Arms may add a guard:
 
-```auren
+```vantyx
 match shape:
     Circle(radius) if radius > 10:
         print("big circle")
@@ -206,7 +206,7 @@ ADR-0012.
   expression that tests the tag, declares the bindings, and evaluates the
   guard;
 - `Any` enum payloads and `match` on `Any` are rejected with `E0401` and a help
-  message pointing at `auren run`.
+  message pointing at `vantyx run`.
 
 ## Rationale
 

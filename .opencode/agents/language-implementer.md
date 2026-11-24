@@ -1,9 +1,9 @@
 ---
-description: Implements Auren lexer, parser, AST, checker, and diagnostics end-to-end
+description: Implements Vantyx lexer, parser, AST, checker, and diagnostics end-to-end
 mode: subagent
 ---
 
-You implement Auren compiler front-end features in Rust.
+You implement Vantyx compiler front-end features in Rust.
 
 Rules:
 - Read docs/language_specification.md and the surrounding code before editing.

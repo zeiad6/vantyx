@@ -189,7 +189,7 @@ impl<'a> Lexer<'a> {
                         self.diagnostics.push(
                             crate::diagnostic::Diagnostic::error(
                                 "E0006",
-                                "`!` is not an operator in Auren",
+                                "`!` is not an operator in Vantyx",
                                 span,
                             )
                             .with_help("use `not` for logical negation"),
@@ -204,7 +204,7 @@ impl<'a> Lexer<'a> {
                         self.diagnostics.push(
                             crate::diagnostic::Diagnostic::error(
                                 "E0006",
-                                "`&&` is not an operator in Auren",
+                                "`&&` is not an operator in Vantyx",
                                 span,
                             )
                             .with_help("use `and`"),
@@ -229,7 +229,7 @@ impl<'a> Lexer<'a> {
                         self.diagnostics.push(
                             crate::diagnostic::Diagnostic::error(
                                 "E0006",
-                                "`||` is not an operator in Auren",
+                                "`||` is not an operator in Vantyx",
                                 span,
                             )
                             .with_help("use `or`"),
@@ -349,12 +349,8 @@ impl<'a> Lexer<'a> {
             if *self.indents.last().unwrap() != indent {
                 let span = self.span(self.pos, self.pos);
                 self.diagnostics.push(
-                    crate::diagnostic::Diagnostic::error(
-                        "E0001",
-                        "inconsistent indentation",
-                        span,
-                    )
-                    .with_help("align this line with an enclosing block"),
+                    crate::diagnostic::Diagnostic::error("E0001", "inconsistent indentation", span)
+                        .with_help("align this line with an enclosing block"),
                 );
                 // Recover by treating this as a new level.
                 self.indents.push(indent);
@@ -683,12 +679,8 @@ impl<'a> Lexer<'a> {
     fn finish(&mut self) {
         for (open, span) in self.brackets.drain(..) {
             self.diagnostics.push(
-                crate::diagnostic::Diagnostic::error(
-                    "E0005",
-                    format!("unclosed `{open}`"),
-                    span,
-                )
-                .with_help("add the matching closing bracket"),
+                crate::diagnostic::Diagnostic::error("E0005", format!("unclosed `{open}`"), span)
+                    .with_help("add the matching closing bracket"),
             );
         }
 

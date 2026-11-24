@@ -1,7 +1,7 @@
 //! Differential tests: the interpreter and the native C backend must agree.
 //!
 //! These tests require a C compiler (`clang` by default, override with
-//! `AUREN_CC`). If no compiler is available they skip rather than fail.
+//! `VANTYX_CC`). If no compiler is available they skip rather than fail.
 
 use std::fs;
 use std::path::PathBuf;
@@ -18,7 +18,7 @@ struct Engines {
 }
 
 fn compiler_available() -> bool {
-    let compiler = std::env::var("AUREN_CC").unwrap_or_else(|_| "clang".to_string());
+    let compiler = std::env::var("VANTYX_CC").unwrap_or_else(|_| "clang".to_string());
     Command::new(compiler)
         .arg("--version")
         .output()
@@ -28,13 +28,13 @@ fn compiler_available() -> bool {
 
 fn workspace(name: &str, source: &str) -> PathBuf {
     let directory = std::env::temp_dir().join(format!(
-        "auren-native-{}-{}-{}",
+        "vantyx-native-{}-{}-{}",
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed),
         name
     ));
     fs::create_dir_all(&directory).expect("create temp dir");
-    fs::write(directory.join("main.auren"), source).expect("write source");
+    fs::write(directory.join("main.vtx"), source).expect("write source");
     directory
 }
 
@@ -44,16 +44,16 @@ fn run_engines(name: &str, source: &str) -> Option<Engines> {
         return None;
     }
     let directory = workspace(name, source);
-    let source_path = directory.join("main.auren");
+    let source_path = directory.join("main.vtx");
     let executable = directory.join("program");
 
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_auren"))
+    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
         .arg("run")
         .arg(&source_path)
         .output()
         .expect("run interpreter");
 
-    let build = Command::new(env!("CARGO_BIN_EXE_auren"))
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
         .arg("build")
         .arg(&source_path)
         .arg("-o")
@@ -88,7 +88,9 @@ fn assert_same(name: &str, source: &str) {
         "native build failed for `{name}`:\n{}",
         String::from_utf8_lossy(&engines.build.stderr)
     );
-    let native = engines.native.expect("native output after successful build");
+    let native = engines
+        .native
+        .expect("native output after successful build");
     assert_eq!(
         engines.interpreter.status.code(),
         native.status.code(),
@@ -275,10 +277,7 @@ fn top_level_code_matches() {
 
 #[test]
 fn runtime_division_by_zero_exits_two() {
-    let Some(engines) = run_engines(
-        "division-error",
-        "fn main():\n    print(1 // 0)\n",
-    ) else {
+    let Some(engines) = run_engines("division-error", "fn main():\n    print(1 // 0)\n") else {
         return;
     };
     assert!(
@@ -309,10 +308,7 @@ fn runtime_overflow_exits_two() {
 
 #[test]
 fn runtime_assert_and_conversion_errors_exit_two() {
-    let Some(engines) = run_engines(
-        "assert-error",
-        "fn main():\n    assert(false)\n",
-    ) else {
+    let Some(engines) = run_engines("assert-error", "fn main():\n    assert(false)\n") else {
         return;
     };
     assert!(engines.build.status.success());
@@ -320,10 +316,7 @@ fn runtime_assert_and_conversion_errors_exit_two() {
     assert_eq!(native.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&native.stderr).contains("error[R0006]"));
 
-    let Some(engines) = run_engines(
-        "conversion-error",
-        "fn main():\n    print(int(2.5))\n",
-    ) else {
+    let Some(engines) = run_engines("conversion-error", "fn main():\n    print(int(2.5))\n") else {
         return;
     };
     assert!(engines.build.status.success());
@@ -1090,13 +1083,13 @@ fn generated_c_temp_file_is_owner_only() {
         return;
     }
     let directory = workspace("temp-permissions", "fn main():\n    print(1)\n");
-    let source = directory.join("main.auren");
-    let build = Command::new(env!("CARGO_BIN_EXE_auren"))
+    let source = directory.join("main.vtx");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
         .arg("build")
         .arg(&source)
         .arg("-o")
         .arg(directory.join("program"))
-        .env("AUREN_CC", "/bin/false")
+        .env("VANTYX_CC", "/bin/false")
         .output()
         .expect("run failing native build");
     assert_eq!(build.status.code(), Some(1));
@@ -1119,8 +1112,8 @@ fn default_output_path_is_the_source_stem() {
         return;
     }
     let directory = workspace("default-output", "print(\"default\")\n");
-    let source = directory.join("main.auren");
-    let build = Command::new(env!("CARGO_BIN_EXE_auren"))
+    let source = directory.join("main.vtx");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
         .arg("build")
         .arg(&source)
         .output()
@@ -1132,7 +1125,9 @@ fn default_output_path_is_the_source_stem() {
     );
     let executable = directory.join("main");
     assert!(executable.is_file(), "expected {}", executable.display());
-    let output = Command::new(&executable).output().expect("run default output");
+    let output = Command::new(&executable)
+        .output()
+        .expect("run default output");
     assert_eq!(String::from_utf8_lossy(&output.stdout), "default\n");
 }
 

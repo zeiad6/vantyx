@@ -1,7 +1,7 @@
 //! Typed intermediate representation for the native backend.
 //!
 //! The IR is deliberately small: it covers the statically typed subset of
-//! Auren that the C backend can lower without a dynamic value representation.
+//! Vantyx that the C backend can lower without a dynamic value representation.
 //! `List[T]` is supported for statically known `T`; `Any` and `Map` are
 //! rejected with `E0401` instead of being silently miscompiled.
 //!
@@ -200,14 +200,8 @@ pub enum IrStmtKind {
 pub enum IrPlace {
     Var(String),
     Global(String),
-    Field {
-        base: IrExpr,
-        field: String,
-    },
-    Index {
-        base: IrExpr,
-        index: IrExpr,
-    },
+    Field { base: IrExpr, field: String },
+    Index { base: IrExpr, index: IrExpr },
 }
 
 #[derive(Clone, Debug)]
@@ -540,8 +534,7 @@ impl<'a> Builder<'a> {
                 fields,
                 span: decl.span,
             };
-            self.struct_map
-                .insert(decl.name.clone(), ir_struct.clone());
+            self.struct_map.insert(decl.name.clone(), ir_struct.clone());
             self.structs.push(ir_struct);
         }
         Ok(())
@@ -552,10 +545,7 @@ impl<'a> Builder<'a> {
             let Item::Stmt(stmt) = item else {
                 continue;
             };
-            let StmtKind::Let {
-                name, ty, init, ..
-            } = &stmt.kind
-            else {
+            let StmtKind::Let { name, ty, init, .. } = &stmt.kind else {
                 continue;
             };
             let declared = match ty {
@@ -704,7 +694,7 @@ impl<'a> Builder<'a> {
     }
 
     fn fresh_temp(&mut self) -> String {
-        let name = format!("__auren_tmp{}", self.temp_counter);
+        let name = format!("__vantyx_tmp{}", self.temp_counter);
         self.temp_counter += 1;
         name
     }
@@ -712,16 +702,12 @@ impl<'a> Builder<'a> {
     // ---- types ----
 
     fn expr_type(&self, expr: &Expr) -> Result<Type, IrError> {
-        self.model
-            .expr_types
-            .get(&expr.id)
-            .cloned()
-            .ok_or_else(|| {
-                IrError::internal(
-                    format!("missing inferred type for expression {}", expr.id),
-                    expr.span,
-                )
-            })
+        self.model.expr_types.get(&expr.id).cloned().ok_or_else(|| {
+            IrError::internal(
+                format!("missing inferred type for expression {}", expr.id),
+                expr.span,
+            )
+        })
     }
 
     fn resolve_type(&self, expr: &TypeExpr) -> Result<Type, IrError> {
@@ -790,9 +776,7 @@ impl<'a> Builder<'a> {
 
     fn lower_stmt(&mut self, stmt: &Stmt, top_level: bool) -> Result<Vec<IrStmt>, IrError> {
         match &stmt.kind {
-            StmtKind::Let {
-                name, ty, init, ..
-            } => {
+            StmtKind::Let { name, ty, init, .. } => {
                 let init = self.lower_expr(init)?;
                 let declared = match ty {
                     Some(expr) => Some(self.resolve_type(expr)?),
@@ -873,10 +857,7 @@ impl<'a> Builder<'a> {
                 }])
             }
             StmtKind::For {
-                name,
-                iter,
-                body,
-                ..
+                name, iter, body, ..
             } => self.lower_for(stmt.span, name, iter, body),
             StmtKind::Return(value) => {
                 let value = match value {
@@ -1051,15 +1032,8 @@ impl<'a> Builder<'a> {
                     IrType::Map(key, value_ty) => {
                         self.expect_assignable(&index_expr.ty, &key, index.span)?;
                         self.lower_index_assignment(
-                            stmt.span,
-                            base.span,
-                            index.span,
-                            base_expr,
-                            index_expr,
-                            *key,
-                            *value_ty,
-                            op,
-                            value,
+                            stmt.span, base.span, index.span, base_expr, index_expr, *key,
+                            *value_ty, op, value,
                         )
                     }
                     other => Err(IrError::unsupported(
@@ -1173,11 +1147,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn lower_var_place(
-        &self,
-        name: &str,
-        span: Span,
-    ) -> Result<(IrPlace, IrType), IrError> {
+    fn lower_var_place(&self, name: &str, span: Span) -> Result<(IrPlace, IrType), IrError> {
         let ty = self.lookup_var_type(name, span)?;
         if self.is_local(name) {
             Ok((IrPlace::Var(name.to_string()), ty))
@@ -1235,7 +1205,12 @@ impl<'a> Builder<'a> {
         ))
     }
 
-    fn expect_assignable(&self, found: &IrType, expected: &IrType, span: Span) -> Result<(), IrError> {
+    fn expect_assignable(
+        &self,
+        found: &IrType,
+        expected: &IrType,
+        span: Span,
+    ) -> Result<(), IrError> {
         if found == expected {
             Ok(())
         } else {
@@ -1258,20 +1233,14 @@ impl<'a> Builder<'a> {
             ));
         };
         let Some(info) = self.struct_map.get(name) else {
-            return Err(IrError::internal(
-                format!("unknown struct `{name}`"),
-                span,
-            ));
+            return Err(IrError::internal(format!("unknown struct `{name}`"), span));
         };
         info.fields
             .iter()
             .find(|candidate| candidate.name == field)
             .map(|candidate| candidate.ty.clone())
             .ok_or_else(|| {
-                IrError::internal(
-                    format!("struct `{name}` has no field `{field}`"),
-                    span,
-                )
+                IrError::internal(format!("struct `{name}` has no field `{field}`"), span)
             })
     }
 
@@ -1323,9 +1292,7 @@ impl<'a> Builder<'a> {
                     let value = match (value, &scrutinee.ty) {
                         (LiteralPattern::Int(value), IrType::Int) => IrLiteral::Int(*value),
                         (LiteralPattern::Bool(value), IrType::Bool) => IrLiteral::Bool(*value),
-                        (LiteralPattern::Str(value), IrType::Str) => {
-                            IrLiteral::Str(value.clone())
-                        }
+                        (LiteralPattern::Str(value), IrType::Str) => IrLiteral::Str(value.clone()),
                         (value, other) => {
                             return Err(IrError::internal(
                                 format!(
@@ -1593,7 +1560,7 @@ impl<'a> Builder<'a> {
         IrError::unsupported(
             "native `for` loops support `range(...)`, typed List iterators, Str, and Map keys",
             span,
-            "use `for x in range(...)`, `for x in list`, `for c in text`, `for k in map`, or run this program with `auren run`",
+            "use `for x in range(...)`, `for x in list`, `for c in text`, `for k in map`, or run this program with `vantyx run`",
         )
     }
 
@@ -1626,7 +1593,7 @@ impl<'a> Builder<'a> {
                                 return Err(IrError::unsupported(
                                     "native strings cannot contain NUL bytes",
                                     expr.span,
-                                    "remove the NUL byte or run this program with `auren run`",
+                                    "remove the NUL byte or run this program with `vantyx run`",
                                 ));
                             }
                             ir_parts.push(IrStrPart::Text(text.clone()));
@@ -1722,10 +1689,7 @@ impl<'a> Builder<'a> {
                     },
                     UnOp::Not => {
                         if operand.ty != IrType::Bool {
-                            return Err(IrError::internal(
-                                "`not` operand is not Bool",
-                                expr.span,
-                            ));
+                            return Err(IrError::internal("`not` operand is not Bool", expr.span));
                         }
                         IrType::Bool
                     }
@@ -1874,9 +1838,7 @@ impl<'a> Builder<'a> {
                 | (IrType::Str, IrType::Str)
                 | (IrType::Unit, IrType::Unit) => IrType::Bool,
                 (IrType::List(a), IrType::List(b)) if a == b => IrType::Bool,
-                (IrType::Map(ak, av), IrType::Map(bk, bv)) if ak == bk && av == bv => {
-                    IrType::Bool
-                }
+                (IrType::Map(ak, av), IrType::Map(bk, bv)) if ak == bk && av == bv => IrType::Bool,
                 (IrType::Struct(a), IrType::Struct(b)) if a == b => IrType::Bool,
                 (IrType::Enum(a), IrType::Enum(b)) if a == b => IrType::Bool,
                 _ => return Err(self.binary_unsupported(op, &lhs.ty, &rhs.ty, span)),
@@ -1903,13 +1865,7 @@ impl<'a> Builder<'a> {
         })
     }
 
-    fn binary_unsupported(
-        &self,
-        op: BinOp,
-        lhs: &IrType,
-        rhs: &IrType,
-        span: Span,
-    ) -> IrError {
+    fn binary_unsupported(&self, op: BinOp, lhs: &IrType, rhs: &IrType, span: Span) -> IrError {
         IrError::unsupported(
             format!(
                 "native backend does not support `{}` on `{}` and `{}`",
@@ -1918,16 +1874,11 @@ impl<'a> Builder<'a> {
                 rhs.name()
             ),
             span,
-            "run this program with `auren run`",
+            "run this program with `vantyx run`",
         )
     }
 
-    fn lower_call(
-        &mut self,
-        call: &Expr,
-        callee: &Expr,
-        args: &[Arg],
-    ) -> Result<IrExpr, IrError> {
+    fn lower_call(&mut self, call: &Expr, callee: &Expr, args: &[Arg]) -> Result<IrExpr, IrError> {
         let ExprKind::Var(name) = &callee.kind else {
             return Err(IrError::unsupported(
                 "only named functions and struct constructors can be called natively",
@@ -1964,16 +1915,12 @@ impl<'a> Builder<'a> {
                 let expected = self.native_type(&param.ty, param.span, "parameter")?;
                 self.expect_assignable(&value.ty, &expected, value.span)?;
             }
-            let ty = self
-                .function_returns
-                .get(name)
-                .cloned()
-                .ok_or_else(|| {
-                    IrError::internal(
-                        format!("missing native return type for `{name}`"),
-                        call.span,
-                    )
-                })?;
+            let ty = self.function_returns.get(name).cloned().ok_or_else(|| {
+                IrError::internal(
+                    format!("missing native return type for `{name}`"),
+                    call.span,
+                )
+            })?;
             return Ok(IrExpr {
                 kind: IrExprKind::Call {
                     name: name.clone(),
@@ -2131,12 +2078,7 @@ impl<'a> Builder<'a> {
         })
     }
 
-    fn lower_builtin(
-        &mut self,
-        name: &str,
-        args: &[Arg],
-        span: Span,
-    ) -> Result<IrExpr, IrError> {
+    fn lower_builtin(&mut self, name: &str, args: &[Arg], span: Span) -> Result<IrExpr, IrError> {
         let mut lowered = Vec::with_capacity(args.len());
         for arg in args {
             lowered.push(self.lower_expr(&arg.value)?);
@@ -2156,7 +2098,7 @@ impl<'a> Builder<'a> {
                                 other.name()
                             ),
                             span,
-                            "run this program with `auren run`",
+                            "run this program with `vantyx run`",
                         ));
                     }
                 }
@@ -2205,7 +2147,7 @@ impl<'a> Builder<'a> {
                             lowered[0].ty.name()
                         ),
                         span,
-                        "run this program with `auren run` for dynamic collections",
+                        "run this program with `vantyx run` for dynamic collections",
                     ));
                 };
                 let element_ty = (**inner).clone();
@@ -2223,7 +2165,7 @@ impl<'a> Builder<'a> {
                             lowered[0].ty.name()
                         ),
                         span,
-                        "run this program with `auren run` for dynamic collections",
+                        "run this program with `vantyx run` for dynamic collections",
                     ));
                 };
                 (**inner).clone()
@@ -2238,11 +2180,7 @@ impl<'a> Builder<'a> {
                 match &lowered[0].ty {
                     IrType::List(inner) => {
                         let element_ty = (**inner).clone();
-                        self.expect_assignable(
-                            &lowered[1].ty,
-                            &element_ty,
-                            args[1].value.span,
-                        )?;
+                        self.expect_assignable(&lowered[1].ty, &element_ty, args[1].value.span)?;
                         IrType::Bool
                     }
                     IrType::Str => {
@@ -2256,11 +2194,7 @@ impl<'a> Builder<'a> {
                     }
                     IrType::Map(key, _) => {
                         let key_ty = (**key).clone();
-                        self.expect_assignable(
-                            &lowered[1].ty,
-                            &key_ty,
-                            args[1].value.span,
-                        )?;
+                        self.expect_assignable(&lowered[1].ty, &key_ty, args[1].value.span)?;
                         IrType::Bool
                     }
                     other => {
@@ -2270,7 +2204,7 @@ impl<'a> Builder<'a> {
                                 other.name()
                             ),
                             span,
-                            "run this program with `auren run`",
+                            "run this program with `vantyx run`",
                         ));
                     }
                 }
@@ -2309,7 +2243,7 @@ impl<'a> Builder<'a> {
                                 lowered[1].ty.name()
                             ),
                             span,
-                            "mixed numeric types are not allowed in Auren",
+                            "mixed numeric types are not allowed in Vantyx",
                         ));
                     }
                 }
@@ -2344,7 +2278,7 @@ impl<'a> Builder<'a> {
                 return Err(IrError::unsupported(
                     "native `range` is supported only directly in `for` loops",
                     span,
-                    "assign `range(...)` to a variable and iterate it under `auren run`",
+                    "assign `range(...)` to a variable and iterate it under `vantyx run`",
                 ));
             }
             "keys" | "values" => {
@@ -2403,9 +2337,7 @@ fn stmt_has_value_return(stmt: &Stmt) -> bool {
                 || elifs.iter().any(|(_, block)| block_has_value_return(block))
                 || else_block.as_ref().is_some_and(block_has_value_return)
         }
-        StmtKind::While { body, .. } | StmtKind::For { body, .. } => {
-            block_has_value_return(body)
-        }
+        StmtKind::While { body, .. } | StmtKind::For { body, .. } => block_has_value_return(body),
         StmtKind::Match { arms, .. } => arms.iter().any(|arm| match &arm.body {
             MatchArmBody::Block(block) => block_has_value_return(block),
             MatchArmBody::Expr(_) => false,

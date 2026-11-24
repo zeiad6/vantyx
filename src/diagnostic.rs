@@ -92,10 +92,7 @@ impl Diagnostic {
             "{}[{}]: {}\n",
             self.severity, self.code, self.message
         ));
-        out.push_str(&format!(
-            "{}--> {}:{}:{}\n",
-            gutter, source_name, line, col
-        ));
+        out.push_str(&format!("{}--> {}:{}:{}\n", gutter, source_name, line, col));
         out.push_str(&format!("{} |\n", gutter));
         out.push_str(&format!("{} | {}\n", number, expanded));
         out.push_str(&format!(
@@ -175,11 +172,10 @@ mod tests {
     fn renders_a_caret_under_the_span() {
         let src = "fn main():\n    let x = 1\n";
         let span = Span::new(23, 24);
-        let d = Diagnostic::error("E0101", "unexpected token", span)
-            .with_help("remove the token");
-        let rendered = d.render("test.auren", src);
+        let d = Diagnostic::error("E0101", "unexpected token", span).with_help("remove the token");
+        let rendered = d.render("test.vtx", src);
         assert!(rendered.contains("error[E0101]: unexpected token"));
-        assert!(rendered.contains("test.auren:2:13"));
+        assert!(rendered.contains("test.vtx:2:13"));
         assert!(rendered.contains("^"));
         assert!(rendered.contains("help: remove the token"));
     }
@@ -188,14 +184,14 @@ mod tests {
     fn tabs_do_not_break_alignment() {
         let src = "\tlet x = 1\n";
         let d = Diagnostic::error("E0002", "tab", Span::new(1, 4));
-        let rendered = d.render("t.auren", src);
+        let rendered = d.render("t.vtx", src);
         assert!(rendered.contains("    let x"));
     }
 
     #[test]
     fn empty_source_is_safe() {
         let d = Diagnostic::error("E0001", "eof", Span::point(0));
-        let rendered = d.render("empty.auren", "");
-        assert!(rendered.contains("empty.auren:1:1"));
+        let rendered = d.render("empty.vtx", "");
+        assert!(rendered.contains("empty.vtx:1:1"));
     }
 }

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Auren native stores each struct behind its own heap allocation, so this
+/* Vantyx native stores each struct behind its own heap allocation, so this
  * implementation does the same: a growable pointer array plus one malloc per
  * Point. Using a contiguous Point array here would benchmark a different
  * representation rather than the language implementation. */

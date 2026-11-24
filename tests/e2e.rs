@@ -1,4 +1,4 @@
-//! End-to-end tests that exercise the real `auren` binary.
+//! End-to-end tests that exercise the real `vantyx` binary.
 
 use std::fs;
 use std::io::Write;
@@ -12,29 +12,29 @@ struct Run {
 }
 
 fn temp_source(name: &str, source: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!("auren-e2e-{}", std::process::id()));
+    let directory = std::env::temp_dir().join(format!("vantyx-e2e-{}", std::process::id()));
     fs::create_dir_all(&directory).expect("create temp dir");
-    let path = directory.join(format!("{name}.auren"));
+    let path = directory.join(format!("{name}.vtx"));
     fs::write(&path, source).expect("write source");
     path
 }
 
-fn auren(args: &[&str], stdin: Option<&str>) -> Run {
-    auren_with_env(args, stdin, &[])
+fn vantyx(args: &[&str], stdin: Option<&str>) -> Run {
+    vantyx_with_env(args, stdin, &[])
 }
 
-fn auren_with_env(args: &[&str], stdin: Option<&str>, envs: &[(&str, &str)]) -> Run {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_auren"));
+fn vantyx_with_env(args: &[&str], stdin: Option<&str>, envs: &[(&str, &str)]) -> Run {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_vantyx"));
     command
         .args(args)
-        .env("AUREN_HISTORY", "off")
+        .env("VANTYX_HISTORY", "off")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     for (key, value) in envs {
         command.env(key, value);
     }
-    let mut child = command.spawn().expect("spawn auren");
+    let mut child = command.spawn().expect("spawn vantyx");
     if let Some(input) = stdin {
         child
             .stdin
@@ -44,7 +44,7 @@ fn auren_with_env(args: &[&str], stdin: Option<&str>, envs: &[(&str, &str)]) -> 
             .expect("write stdin");
     }
     drop(child.stdin.take());
-    let output = child.wait_with_output().expect("wait for auren");
+    let output = child.wait_with_output().expect("wait for vantyx");
     Run {
         code: output.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -54,12 +54,12 @@ fn auren_with_env(args: &[&str], stdin: Option<&str>, envs: &[(&str, &str)]) -> 
 
 fn run_file(name: &str, source: &str) -> Run {
     let path = temp_source(name, source);
-    auren(&["run", path.to_str().expect("utf-8 path")], None)
+    vantyx(&["run", path.to_str().expect("utf-8 path")], None)
 }
 
 fn check_file(name: &str, source: &str) -> Run {
     let path = temp_source(name, source);
-    auren(&["check", path.to_str().expect("utf-8 path")], None)
+    vantyx(&["check", path.to_str().expect("utf-8 path")], None)
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn syntax_error_exits_with_one() {
     assert_eq!(run.code, 1);
     assert!(run.stdout.is_empty());
     assert!(run.stderr.contains("error[E0102]"), "{}", run.stderr);
-    assert!(run.stderr.contains("syntax.auren:1:10"), "{}", run.stderr);
+    assert!(run.stderr.contains("syntax.vtx:1:10"), "{}", run.stderr);
 }
 
 #[test]
@@ -117,7 +117,11 @@ fn type_error_exits_with_one() {
     let run = run_file("type", "let x: Int = \"no\"\nprint(x)\n");
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
-    assert!(run.stderr.contains("expected `Int`, found `Str`"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("expected `Int`, found `Str`"),
+        "{}",
+        run.stderr
+    );
 }
 
 #[test]
@@ -151,29 +155,29 @@ fn check_failure_reports_errors() {
 
 #[test]
 fn reads_source_from_standard_input() {
-    let run = auren(&["run", "-"], Some("print(\"stdin\")\n"));
+    let run = vantyx(&["run", "-"], Some("print(\"stdin\")\n"));
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
     assert_eq!(run.stdout, "stdin\n");
 }
 
 #[test]
 fn version_and_usage() {
-    let version = auren(&["version"], None);
+    let version = vantyx(&["version"], None);
     assert_eq!(version.code, 0);
-    assert!(version.stdout.contains("auren 0.1.0"));
+    assert!(version.stdout.contains("vantyx 0.1.0"));
 
-    let usage = auren(&[], None);
+    let usage = vantyx(&[], None);
     assert_eq!(usage.code, 64);
     assert!(usage.stderr.contains("Usage:"));
 
-    let unknown = auren(&["frobnicate"], None);
+    let unknown = vantyx(&["frobnicate"], None);
     assert_eq!(unknown.code, 64);
     assert!(unknown.stderr.contains("unknown command"));
 }
 
 #[test]
 fn missing_file_is_reported() {
-    let run = auren(&["run", "/tmp/auren-does-not-exist-12345.auren"], None);
+    let run = vantyx(&["run", "/tmp/vantyx-does-not-exist-12345.vtx"], None);
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("cannot read"), "{}", run.stderr);
 }
@@ -187,7 +191,7 @@ fn no_entry_point_is_an_error() {
 
 #[test]
 fn repl_runs_a_simple_entry() {
-    let run = auren(&["repl"], Some("print(\"repl\")\nexit\n"));
+    let run = vantyx(&["repl"], Some("print(\"repl\")\nexit\n"));
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
     assert!(run.stdout.contains("repl"), "{}", run.stdout);
     assert!(run.stdout.contains(">>>"), "{}", run.stdout);
@@ -195,7 +199,7 @@ fn repl_runs_a_simple_entry() {
 
 #[test]
 fn repl_runs_a_block_terminated_by_a_blank_line() {
-    let run = auren(
+    let run = vantyx(
         &["repl"],
         Some("fn main():\n    print(\"block\")\n\nexit\n"),
     );
@@ -205,7 +209,7 @@ fn repl_runs_a_block_terminated_by_a_blank_line() {
 
 #[test]
 fn repl_persists_bindings_across_entries() {
-    let run = auren(
+    let run = vantyx(
         &["repl"],
         Some(
             "let x = 41\n\
@@ -230,7 +234,7 @@ fn repl_persists_bindings_across_entries() {
 
 #[test]
 fn repl_persists_functions_and_structs() {
-    let run = auren(
+    let run = vantyx(
         &["repl"],
         Some(
             "struct Point:\n    x: Int\n    y: Int\n\n\
@@ -246,10 +250,7 @@ fn repl_persists_functions_and_structs() {
 
 #[test]
 fn repl_recovers_from_compile_errors() {
-    let run = auren(
-        &["repl"],
-        Some("let x = 1\nx = 2\nprint(x)\nexit\n"),
-    );
+    let run = vantyx(&["repl"], Some("let x = 1\nx = 2\nprint(x)\nexit\n"));
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
     assert!(run.stderr.contains("error[E0203]"), "{}", run.stderr);
     assert!(run.stdout.contains("1"), "{}", run.stdout);
@@ -257,7 +258,7 @@ fn repl_recovers_from_compile_errors() {
 
 #[test]
 fn repl_recovers_from_runtime_errors() {
-    let run = auren(
+    let run = vantyx(
         &["repl"],
         Some("let x = 1\nprint(1 // 0)\nprint(\"alive\")\nexit\n"),
     );
@@ -268,7 +269,7 @@ fn repl_recovers_from_runtime_errors() {
 
 #[test]
 fn repl_echoes_new_expression_values_once() {
-    let run = auren(
+    let run = vantyx(
         &["repl"],
         Some("1 + 2\nlet x = 5\nx * 2\nprint(\"hi\")\n\"text\"\nexit\n"),
     );
@@ -282,22 +283,22 @@ fn repl_echoes_new_expression_values_once() {
 #[test]
 fn repl_history_persists_across_sessions() {
     let path = std::env::temp_dir().join(format!(
-        "auren-repl-history-{}-persist",
+        "vantyx-repl-history-{}-persist",
         std::process::id()
     ));
     let _ = fs::remove_file(&path);
     let history = path.to_str().expect("utf-8 history path");
-    let first = auren_with_env(
+    let first = vantyx_with_env(
         &["repl"],
         Some("let persisted = 41\nprint(persisted + 1)\nexit\n"),
-        &[("AUREN_HISTORY", history)],
+        &[("VANTYX_HISTORY", history)],
     );
     assert_eq!(first.code, 0, "stderr: {}", first.stderr);
     assert!(first.stdout.contains("42"), "{}", first.stdout);
-    let second = auren_with_env(
+    let second = vantyx_with_env(
         &["repl"],
         Some(":history\nexit\n"),
-        &[("AUREN_HISTORY", history)],
+        &[("VANTYX_HISTORY", history)],
     );
     assert_eq!(second.code, 0, "stderr: {}", second.stderr);
     assert!(
@@ -315,7 +316,7 @@ fn repl_history_persists_across_sessions() {
 
 #[test]
 fn repl_names_lists_visible_bindings() {
-    let run = auren(
+    let run = vantyx(
         &["repl"],
         Some("let alpha = 1\nfn helper():\n    return 2\n\n:names\nexit\n"),
     );
@@ -326,7 +327,7 @@ fn repl_names_lists_visible_bindings() {
 
 #[test]
 fn repl_does_not_echo_after_compile_errors() {
-    let run = auren(&["repl"], Some("1 + \"x\"\nexit\n"));
+    let run = vantyx(&["repl"], Some("1 + \"x\"\nexit\n"));
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
     assert!(run.stderr.contains("error["), "{}", run.stderr);
     assert!(
@@ -402,10 +403,7 @@ fn enums_and_match_statements_work_end_to_end() {
          \x20   print(Number(1) == Number(2))\n",
     );
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
-    assert_eq!(
-        run.stdout,
-        "number 42\nword hi\nend\nToken\ntrue\nfalse\n"
-    );
+    assert_eq!(run.stdout, "number 42\nword hi\nend\nToken\ntrue\nfalse\n");
 }
 
 #[test]
@@ -455,7 +453,11 @@ fn unknown_variant_in_pattern_is_rejected() {
     );
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("error[E0315]"), "{}", run.stderr);
-    assert!(run.stderr.contains("unknown variant `Off`"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("unknown variant `Off`"),
+        "{}",
+        run.stderr
+    );
 }
 
 #[test]
@@ -468,7 +470,11 @@ fn wrong_variant_enum_is_rejected() {
     );
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("error[E0315]"), "{}", run.stderr);
-    assert!(run.stderr.contains("belongs to enum `Right`"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("belongs to enum `Right`"),
+        "{}",
+        run.stderr
+    );
 }
 
 #[test]
@@ -491,7 +497,11 @@ fn duplicate_variant_names_are_rejected() {
     );
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("error[E0202]"), "{}", run.stderr);
-    assert!(run.stderr.contains("variant constructor names are global"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("variant constructor names are global"),
+        "{}",
+        run.stderr
+    );
 }
 
 #[test]

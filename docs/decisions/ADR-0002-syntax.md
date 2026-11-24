@@ -4,7 +4,7 @@
 - Date: 2026-11-21
 
 ## Context
-Auren targets Python-like approachability but must remain unambiguous and tool-friendly.
+Vantyx targets Python-like approachability but must remain unambiguous and tool-friendly.
 
 ## Options
 1. Indentation blocks (Python style).

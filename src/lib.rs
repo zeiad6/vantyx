@@ -1,4 +1,4 @@
-//! Auren: a safe, gradually typed language.
+//! Vantyx: a safe, gradually typed language.
 //!
 //! The public pipeline is intentionally small:
 //!
@@ -9,6 +9,7 @@
 //! `compile` stops at the first stage that produced errors and returns every
 //! diagnostic collected by that stage. Warnings do not block execution.
 
+pub mod ai;
 pub mod ast;
 pub mod checker;
 pub mod codegen_c;
@@ -84,7 +85,11 @@ pub fn compile_with_options(source: &str, require_entry: bool) -> CompileResult 
 }
 
 /// Renders a runtime error with its primary span and call stack.
-pub fn render_runtime_error(error: &interp::RuntimeError, source_name: &str, source: &str) -> String {
+pub fn render_runtime_error(
+    error: &interp::RuntimeError,
+    source_name: &str,
+    source: &str,
+) -> String {
     let mut diagnostic = Diagnostic::error(error.code.clone(), error.message.clone(), error.span);
     if let Some(frame) = error.stack.last() {
         diagnostic = diagnostic.with_note(format!("in function `{}`", frame.function));

@@ -1,22 +1,22 @@
 # Project Status
 
-Updated: 2026-11-23 (T-035 public repository, CI, and v0.1.0 pre-release verified; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums verified; T-031 bracketed-match diagnostic; T-028 sustainability addendum; documentation reconciled)
+Updated: 2026-11-23 (Vantyx rename applied locally; dependency-free AI host foundation and `vantyx ai` CLI verified offline; T-035 public repository, CI, and v0.1.0 pre-release; T-029 REPL line editing, history, completion, and expression echo; T-033 match guards; T-032 scalar literal patterns; T-030 native enums; T-031 bracketed-match diagnostic; T-028 sustainability addendum; documentation reconciled)
 
 ## Project overview
 
-**Auren** is a gradual-typing programming language implemented in Rust. It targets Python-like ergonomics with Rust-like safety and a real native compilation path. Repository codename: RustZ.
+**Vantyx** is a gradual-typing programming language implemented in Rust. It targets Python-like ergonomics with Rust-like safety and a real native compilation path. Repository codename: RustZ.
 
-- Language: Auren
-- Repository: https://github.com/zeiad6/auren (public, MIT)
-- File extension: `.auren`
-- CLI: `auren`
+- Language: Vantyx
+- Repository: https://github.com/zeiad6/vantyx (public, MIT)
+- File extension: `.vtx`
+- CLI: `vantyx`
 - Implementation: Rust 1.100.0, 2024 edition, zero third-party dependencies
 - Version: 0.1.0 (pre-release)
-- Maturity: **functional prototype** — front end, interpreter, typed IR, and a native C backend for a statically typed subset that now includes closed enums, exhaustive `match`, scalar literal patterns, and match guards
+- Maturity: **functional prototype** — front end, interpreter, typed IR, and a native C backend for a statically typed subset that now includes closed enums, exhaustive `match`, scalar literal patterns, and match guards; plus an offline, dependency-free AI host foundation and `vantyx ai` CLI
 
 ## Current phase
 
-**Phase 6 — native compiler, in progress.** The front end (Phases 2–3), interpreter (Phase 4), and gradual type checker (Phase 5) are complete for the v0.1 language, including closed enums, exhaustive matching, scalar literal patterns, and guards. The typed IR and C backend (Phase 6) cover typed lists, insertion-ordered maps, structs, string indexing and iteration, and native enums with guarded `match`. Memory reclamation, a native map hash index, debug information, and benchmark-driven optimization remain open.
+**Phase 6 — native compiler, in progress; AI phase AI-1 complete.** The front end (Phases 2–3), interpreter (Phase 4), and gradual type checker (Phase 5) are complete for the v0.1 language, including closed enums, exhaustive matching, scalar literal patterns, and guards. The typed IR and C backend (Phase 6) cover typed lists, insertion-ordered maps, structs, string indexing and iteration, and native enums with guarded `match`. Memory reclamation, a native map hash index, debug information, and benchmark-driven optimization remain open. The AI host foundation (AI-0 and AI-1) is implemented and verified offline: providers, JSON, schema validation, budgets, embeddings, BM25, tools, bounded agents, metrics, and an OpenAI-compatible HTTP adapter exposed through `vantyx ai`. Live local/cloud AI evidence, streaming, and language-level AI syntax remain open.
 
 ## Implemented and verified
 
@@ -53,7 +53,7 @@ Every item below is exercised by the test suite or was manually verified through
 - Builtins: `print`, `len`, `range`, `push`, `pop`, `contains`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`.
 
 ### Native backend (C11)
-- `auren build <file.auren>` lowers checked AST → typed IR → GNU C11 → executable via `clang` (override with `AUREN_CC`), linked with libc/libm.
+- `vantyx build <file.vtx>` lowers checked AST → typed IR → GNU C11 → executable via `clang` (override with `VANTYX_CC`), linked with libc/libm.
 - `-o <path>` selects the output; default is the source stem.
 - Supported native types: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]`, `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums.
 - Supported declarations/control flow: globals, functions, structs, enums, `match` statements and expressions with optional guards, `if`/`elif`/`else`, `while`, `for ... in range(...)`, `for x in list`, `for c in str`, `for k in map`, `return`, `break`, `continue`.
@@ -70,20 +70,38 @@ Every item below is exercised by the test suite or was manually verified through
 - 67 differential tests compare interpreter vs native exit codes and stdout.
 - All five `examples/` programs build and run natively with identical output.
 
+### AI host foundation (T-037, T-038, T-039; ADR-0015)
+- Zero third-party dependencies: the AI toolkit is part of the `vantyx` crate and links only the Rust standard library; remote HTTPS uses the system `curl` binary, and local endpoints use `std::net`.
+- Strict JSON value, parser, and writer with depth, size, and duplicate-key limits; no `serde`.
+- Provider trait with chat/model-list capabilities, stable `AI_E_*` errors, retryability, usage, finish reasons, text and image content parts, and mock/echo providers.
+- OpenAI-compatible non-streaming chat and model-list adapter; request mapping for messages, tools, response format, temperature, top-p, max tokens, and seed; bounded 8 MiB responses; timeouts; 401/429/5xx mapping; secret redaction.
+- Network policy: loopback HTTP is local; remote HTTPS requires `--allow-network` or `VANTYX_AI_ALLOW_NETWORK=1`; no implicit downloads.
+- Deterministic budgets for steps, tool calls, tokens, and wall-clock time; cancellation flag; bounded agent loop with tool-result feedback.
+- Token estimates are explicitly labelled as estimates, not model tokenizers.
+- Embedding vector math (dot, norm, cosine, Euclidean, normalization) and an in-memory vector index with deletion.
+- BM25 lexical retrieval with Unicode-aware tokenization and ranked hits.
+- JSON Schema subset validation (type, required, properties, additionalProperties, items, min/max items, min/max length, pattern, enum, const, numeric bounds) with paths.
+- Typed tool registry with capability sets, deny-by-default policy, path roots, approval modes, and read-only demo tools; denied capabilities return errors to the agent instead of executing.
+- Opt-in JSONL metrics containing provider, model, operation, latency, usage, finish reason, error code, retry count, and tool name — never prompts, responses, arguments, or secrets.
+- SSE parser with size and line limits (not yet wired to streaming output).
+- CLI: `vantyx ai providers`, `doctor`, `models`, `chat`, and `tokens`; `--json`, `--metrics`, `--system`, repeated `--message`, stdin prompts, and environment configuration.
+
 ### Tooling
-- `auren run <file>` (also `-` for stdin), `auren check <file>`, `auren build <file> [-o out]`, `auren repl`, `auren version`, `auren help`.
+- `vantyx run <file>` (also `-` for stdin), `vantyx check <file>`, `vantyx build <file> [-o out]`, `vantyx repl`, `vantyx ai <command>`, `vantyx version`, `vantyx help`.
 - Exit codes: 0 success, 1 compile/IO error, 2 runtime error, 64 usage error.
 - Persistent REPL (T-009): bindings, functions, structs, and mutable globals survive across entries; blocks end with a blank line; compile and runtime errors are reported without ending the session and failed entries are rolled back.
-- REPL editing (T-029, ADR-0013): raw-mode line editing through the system `stty` with a canonical fallback; Tab completion for keywords, builtins, and top-level names; Up/Down history with optional persistence (`AUREN_HISTORY`, default `~/.auren_history`, mode 0600); expression values echo once; `:help`, `:history`, `:names`, and `:quit` meta-commands.
+- REPL editing (T-029, ADR-0013): raw-mode line editing through the system `stty` with a canonical fallback; Tab completion for keywords, builtins, and top-level names; Up/Down history with optional persistence (`VANTYX_HISTORY`, default `~/.vtx_history`, mode 0600); expression values echo once; `:help`, `:history`, `:names`, and `:quit` meta-commands.
 
 ### Performance baseline (T-022)
-- Six equivalent workloads (`arith_loop`, `fib`, `list_ops`, `map_ops`, `struct_ops`, `string_ops`) in Auren, Python, C, and Rust.
+- Six equivalent workloads (`arith_loop`, `fib`, `list_ops`, `map_ops`, `struct_ops`, `string_ops`) in Vantyx, Python, C, and Rust.
 - The runner verifies identical stdout before timing, discards one warm-up, takes 5 measured runs, and records wall time, peak RSS, build time, and binary size.
 - Native medians vs interpreter: `arith_loop` 5.21 ms vs 1300.9 ms, `fib` 3.31 ms vs 167.5 ms, `list_ops` 4.66 ms vs 383.6 ms, `map_ops` 64.2 ms vs 106.2 ms, `struct_ops` 9.11 ms vs 405.1 ms, `string_ops` 7.72 ms vs 59.8 ms.
 - Native is in the same band as C/Rust on arithmetic, recursion, list, and struct workloads; map operations (~7.7× slower than hand-written C linear arrays) and immutable string concatenation (~2.9× slower than C) are the measured gaps.
 - Raw results: `benchmarks/results/2026-11-22.{json,md}`; methodology and caveats: `docs/benchmarks.md`. The enum backend has not been benchmarked yet.
 
 ## Partially implemented
+
+- **AI host** — the offline foundation and compatible-endpoint path are verified, but no live local model or cloud provider request has been recorded; streaming output, model pull/remove with integrity checks, keyring storage, persistent agent state, embedding providers, hybrid retrieval, ingestion/chunking, retrieval evaluation, and a dedicated prompt-injection corpus remain open. Language-level `from ai import Client` is blocked on modules (T-013) and async (T-017).
 
 - **Native backend subset** — `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, dynamic `match` on `Any`, unsupported loop forms, and string index assignment are rejected with `E0401`/`E0306`; native strings, structs, list buffers, map buffers, and enum values are leaked; no debug info. Map operations are O(n) (ADR-0010). Native enum layout and allocation policy are documented in ADR-0012.
 - **Enums and pattern matching** — closed enums, payloads, exhaustive matching, `Any` matching, scalar literal patterns, and guards are implemented in the interpreter and for statically typed values natively. Nested/or-patterns, float/interpolated-string patterns, generic enums, and explicit discriminants are not implemented (ADR-0011).
@@ -94,6 +112,14 @@ Every item below is exercised by the test suite or was manually verified through
 
 ## Not implemented
 
+- Language-level AI syntax (`from ai import Client`, `await`) until modules and async exist
+- Streaming chat output and cancellation in the CLI
+- Model manager `info`/`pull`/`remove` with checksums, size, license, and provenance
+- Keyring-backed credential storage
+- Live local/cloud AI verification
+- Persistent agent state and resume
+- Embedding providers, hybrid retrieval, ingestion/chunking, and retrieval evaluation
+- Tensors, autodiff, SIMD, GPU, MCP, ONNX/GGUF embedding, multi-agent orchestration
 - Native map hash index for O(1) expected lookup (ADR-0010 revisit criterion)
 - Bytecode VM (T-011)
 - Modules/imports (T-013)
@@ -118,21 +144,27 @@ Verified on 2026-11-23:
 | `cargo build` | success |
 | `cargo build --release` | success |
 | `cargo clippy --all-targets -- -D warnings` | success, zero warnings |
-| `cargo test` | **241 passed, 0 failed** (126 library unit + 7 CLI unit + 41 end-to-end + 67 native) |
-| `auren run examples/*.auren` | all 5 exit 0 with expected output |
-| `auren build examples/*.auren` + run | all 5 exit 0 with output identical to `run` |
+| `cargo test` | **340 passed, 0 failed** (208 library unit + 10 CLI unit + 14 AI integration + 41 end-to-end + 67 native) |
+| `vantyx run examples/*.vtx` | all 5 exit 0 with expected output |
+| `vantyx build examples/*.vtx` + run | all 5 exit 0 with output identical to `run` |
 | REPL pty smoke (`script`) | Tab completion (`pri` → `print`, `alp` → `alpha`), Up/Down history recall, Ctrl-C recovery, Ctrl-D exit 0, and persisted history all verified |
 | Native enum smoke (`enum` + payloads + match statement/expression + lists + maps + equality + display + `type`) | interpreter and native output identical |
 | Native scalar literal smoke (`Int`/`Str`/`Bool` matches, negative literals, match expression) | interpreter and native output identical |
 | Native guard smoke (payload, wildcard, and literal guards, guarded match expression, side-effecting guard) | interpreter and native output identical |
-| `python3 tools/fuzz_smoke.py --binary target/debug/auren` | 9 depth/limit cases + 400 random/mutated inputs, all controlled diagnostics |
+| `vantyx ai providers` / `doctor --provider mock` | exit 0; offline status and conservative capabilities reported |
+| `vantyx ai chat --provider mock` / `--provider echo` / `--json` | exit 0; deterministic text, echo, and parseable JSON with usage |
+| `vantyx ai tokens "hello world"` | exit 0; estimate labelled "not a model tokenizer" |
+| Remote HTTPS without `--allow-network` | exit 1 with `AI_E_NETWORK_DISABLED` and help |
+| Loopback OpenAI-compatible adapter and CLI chat | request/response round trip verified by `tests/ai.rs`; no external network |
+| `--metrics` redaction test | JSONL contains usage and status only; prompt absent |
+| `python3 tools/fuzz_smoke.py --binary target/debug/vantyx` | 9 depth/limit cases + 400 random/mutated inputs, all controlled diagnostics |
 | Launch-material link check | 8 files checked; all relative links resolve |
-| Native `Any` rejection demo | `auren run` prints the value; `auren build` exits 1 with `E0401` and help |
+| Native `Any` rejection demo | `vantyx run` prints the value; `vantyx build` exits 1 with `E0401` and help |
 | GitHub Actions CI (public, run 45308796021) | passed build, 241 tests, clippy, release build, and differential examples on commit `86bfcb7` |
 
 Not re-run for this verification: `python3 benchmarks/run.py`. Its last recorded results remain in `benchmarks/results/`.
 
-Native tests require `clang` (or `AUREN_CC`) and skip when no compiler is available.
+Native tests require `clang` (or `VANTYX_CC`) and skip when no compiler is available.
 
 ## Known bugs
 
@@ -144,20 +176,22 @@ See `docs/PROJECT_BASELINE.md` and `docs/security-audit-2026-11-22.md`. The larg
 
 ## Public launch
 
-Auren is published at **https://github.com/zeiad6/auren** under the MIT license. The public repository includes `.gitignore`, a GitHub Actions CI workflow, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`, `llms.txt`, and `docs/launch/` with canonical descriptions, recommendation boundaries, launch drafts, and a demo script. The material states the pre-1.0 status, native subset, intentional leaks, O(n) maps, and missing tooling. GitHub Actions CI run 45308499010 passed on launch commit `ea4f2ec`, and run 45308796021 passed after the checkout-action update on commit `86bfcb7`; both covered build, 241 tests, clippy, release build, and differential examples. The repository description and ten discovery topics are set. The [v0.1.0 pre-release](https://github.com/zeiad6/auren/releases/tag/v0.1.0) is published, and [issue #1](https://github.com/zeiad6/auren/issues/1) is pinned for questions and corrections. T-035 is VERIFIED.
+The public repository is currently still **https://github.com/zeiad6/auren**; the local tree has been renamed to Vantyx, and the GitHub repository rename plus clean-clone CI verification are the remaining P0 steps (T-042). The rename target is **https://github.com/zeiad6/vantyx**. The public repository includes `.gitignore`, a GitHub Actions CI workflow, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`, `llms.txt`, and `docs/launch/` with canonical descriptions, recommendation boundaries, launch drafts, and a demo script. The material states the pre-1.0 status, native subset, intentional leaks, O(n) maps, and missing tooling. GitHub Actions CI run 45308499010 passed on launch commit `ea4f2ec`, and run 45308796021 passed after the checkout-action update on commit `86bfcb7`; both covered build, 241 tests, clippy, release build, and differential examples. The repository description and ten discovery topics are set. The [v0.1.0 pre-release](https://github.com/zeiad6/vantyx/releases/tag/v0.1.0) is published, and [issue #1](https://github.com/zeiad6/vantyx/issues/1) is pinned for questions and corrections. T-035 is VERIFIED.
 
 ## Current task
 
-T-035 public repository and launch kit — VERIFIED (https://github.com/zeiad6/auren; CI run 45308499010 passed). T-029 REPL line editing, history, completion, and expression echo — VERIFIED. T-033 match guards — VERIFIED. T-032 scalar literal patterns in `match` — VERIFIED. T-030 native enums and `match` — VERIFIED. T-031 bracketed-match diagnostic — VERIFIED. Documentation reconciled on 2026-11-23.
+T-036 Vantyx rename — IN_PROGRESS (local code and docs renamed; GitHub repository rename pending). T-037 AI host foundation — VERIFIED. T-038 `vantyx ai` CLI — VERIFIED. T-039 OpenAI-compatible adapter — VERIFIED offline. T-040 live local/cloud verification — BLOCKED (no server or credentials). T-041 AI discovery and status synchronization — VERIFIED. T-042 GitHub repository rename and clean-clone CI — READY. T-035 public repository and launch kit — VERIFIED on the old repository name. T-029, T-030, T-031, T-032, and T-033 — VERIFIED.
 
 ## Next tasks
 
-1. Nested/or-patterns (follow-up to T-014/T-030/T-032/T-033)
-2. Native map hash index if benchmarks justify it
-3. T-011 bytecode VM feasibility study
-4. Enum allocation benchmark before optimizing the native representation
-5. T-034 REPL multi-line history and field completion (P4, BACKLOG)
+1. T-042 rename the GitHub repository, push, and verify CI from a clean clone
+2. T-040 live local/cloud AI verification when a server and credentials are available
+3. Nested/or-patterns (follow-up to T-014/T-030/T-032/T-033)
+4. Native map hash index if benchmarks justify it
+5. T-011 bytecode VM feasibility study
+6. Enum allocation benchmark before optimizing the native representation
+7. T-034 REPL multi-line history and field completion (P4, BACKLOG)
 
 ## Last verification
 
-`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-23: 126 library unit + 7 CLI unit + 41 end-to-end + 67 native = 241 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. A REPL pty smoke under `script` verified raw-mode editing, Tab completion of keywords and user names, history recall, Ctrl-C recovery, Ctrl-D exit, and history persistence. Manual enum, scalar-literal, and guard smokes produced identical interpreter/native output. Fuzz smoke re-ran clean (9 depth/limit cases + 400 random/mutated inputs). Benchmarks were not re-run for this verification.
+`cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on 2026-11-23: 208 library unit + 10 CLI unit + 14 AI integration + 41 end-to-end + 67 native = 340 tests passed, clippy clean. All five examples ran under the interpreter and as native binaries with identical output. Manual AI CLI smokes verified providers, mock/echo chat, JSON output, token estimates, doctor, and network denial; loopback OpenAI-compatible chat is covered by integration tests. Live local/cloud AI, the REPL pty smoke, fuzz smoke, and benchmarks were not re-run for this verification; their earlier recorded results remain valid for the unchanged subsystems.

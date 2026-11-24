@@ -1,11 +1,14 @@
 # Launch kit
 
-This directory contains the public-facing material for Auren: accurate
+This directory contains the public-facing material for Vantyx: accurate
 descriptions, AI-discovery notes, launch drafts, and a checklist. The goal is
 discoverability without exaggeration.
 
-Published: https://github.com/zeiad6/auren · Release:
-https://github.com/zeiad6/auren/releases/tag/v0.1.0
+Target repository: https://github.com/zeiad6/vantyx · Release:
+https://github.com/zeiad6/vantyx/releases/tag/v0.1.0
+
+The local tree is renamed to Vantyx; the GitHub repository rename from
+`zeiad6/auren` is pending (T-042). Until it lands, the old URL is canonical.
 
 ## Assets
 
@@ -29,6 +32,8 @@ https://github.com/zeiad6/auren/releases/tag/v0.1.0
 - [x] The demo script runs from a clean checkout.
 - [x] Benchmarks are cited with their date and methodology, not as a general claim.
 - [x] Known limitations are visible in the README, not buried.
+- [x] AI claims are limited to the offline host foundation and loopback tests.
+- [ ] GitHub repository renamed to `vantyx` and CI verified from a clean clone.
 
 ## Launch sequence
 
@@ -41,9 +46,9 @@ https://github.com/zeiad6/auren/releases/tag/v0.1.0
 
 ## Honesty rules
 
-- Never call Auren production-ready, stable, or 1.0.
+- Never call Vantyx production-ready, stable, or 1.0.
 - Never claim general performance superiority from six microbenchmarks.
-- Never describe the native subset as "all Auren programs".
+- Never describe the native subset as "all Vantyx programs".
 - Never hide the intentional native allocation leak or the missing cycle
   collector.
 - Correct mistakes in public and update the source document in the same change.

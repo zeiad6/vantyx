@@ -1,22 +1,23 @@
 # Promotion kit
 
 Drafts and assets for an honest launch. The repository is
-[`zeiad6/auren`](https://github.com/zeiad6/auren), and the first release is
-[`v0.1.0`](https://github.com/zeiad6/auren/releases/tag/v0.1.0). Keep the
+[`zeiad6/vantyx`](https://github.com/zeiad6/vantyx), and the first release is
+[`v0.1.0`](https://github.com/zeiad6/vantyx/releases/tag/v0.1.0). Keep the
 limitations in every long-form post; they are part of the pitch, not a footnote.
 
 ## Taglines
 
 Primary:
 
-> **Script like Python. Ship native.**
+> **Script like Python. Ship native. Build AI-native.**
 
 Alternatives:
 
 - A small language that starts as a script and compiles to C.
 - Gradual types. Checked semantics. Native when you ask.
-- Prototype in Auren. Read the C it becomes.
+- Prototype in Vantyx. Read the C it becomes.
 - Python-like ergonomics with an interpreter you can audit.
+- A small language with an AI host you can audit.
 
 Do not use "Rust alternative", "Python replacement", "blazing fast", or
 "production-ready".
@@ -25,38 +26,44 @@ Do not use "Rust alternative", "Python replacement", "blazing fast", or
 
 ### 25 words
 
-> Auren is a pre-1.0 language with Python-like syntax, optional types, an
-> interpreter, and a native C11 backend for a typed subset.
+> Vantyx is a pre-1.0 language with Python-like syntax, optional types, an
+> interpreter, a native C11 backend for a typed subset, and an offline-first AI
+> host CLI.
 
 ### 50 words
 
-> Auren lets you prototype with indentation, `let`, and optional annotations,
+> Vantyx lets you prototype with indentation, `let`, and optional annotations,
 > then compile the statically typed subset to native code through generated C11.
 > The interpreter is the semantic oracle, native behavior is checked by
-> differential tests, and the Rust compiler has no third-party crates.
+> differential tests, and the Rust compiler has no third-party crates. `vantyx
+> ai` adds mock/echo chat and an OpenAI-compatible HTTP adapter with explicit
+> network permission and redacted metrics.
 
 ### 100 words
 
-> Auren is a pre-1.0 programming language for the gap between a quick script and
+> Vantyx is a pre-1.0 programming language for the gap between a quick script and
 > a native build. It has Python-like indentation, `let`/`var`, optional type
 > annotations, structs, closed enums with payloads, exhaustive `match`, and a
 > REPL with history and completion. A tree-walking interpreter is the reference
 > implementation. The native backend emits GNU C11 and supports a statically
 > typed subset; unsupported constructs fail with `E0401` instead of silently
 > miscompiling. The compiler is written in Rust with zero third-party crates.
-> It is a functional prototype with documented limits, not a production runtime.
+> An offline AI host adds strict JSON, schema validation, tools, bounded agents,
+> and an OpenAI-compatible adapter through `vantyx ai`; no model is bundled or
+> downloaded. It is a functional prototype with documented limits, not a
+> production runtime.
 
 ## Show HN
 
-**Title:** Show HN: Auren – a gradual-typing language with an interpreter and C backend
+**Title:** Show HN: Vantyx – a gradual-typing language with an interpreter and C backend
 
 **Body:**
 
-I built Auren to explore a specific question: how small can a language
+I built Vantyx to explore a specific question: how small can a language
 implementation be while still having a real type checker, an interpreter, and a
 native backend that agree with each other?
 
-Auren has Python-like indentation, `let`/`var`, optional type annotations,
+Vantyx has Python-like indentation, `let`/`var`, optional type annotations,
 structs, closed enums with payloads, exhaustive `match` with guards, and a
 persistent REPL. The interpreter is the semantic oracle. The native backend
 emits GNU C11 and supports a statically typed subset; anything dynamic is
@@ -65,26 +72,30 @@ checked by differential tests against the interpreter. The Rust compiler has no
 third-party crates and the generated C links only libc/libm.
 
 What works: the language above, native lists/maps/structs/enums, checked
-arithmetic, bounds checks, UTF-8 string indexing, and a benchmark baseline
-against C, Rust, and Python.
+arithmetic, bounds checks, UTF-8 string indexing, a benchmark baseline against
+C, Rust, and Python, and an offline AI host CLI with mock/echo providers, strict
+JSON, schema validation, tools, bounded agents, and an OpenAI-compatible
+non-streaming adapter.
 
-What does not: modules, generics, closures, async, FFI, a standard library, and
-native support for `Any`. Native allocations are intentionally leaked in v0.1,
-native maps are O(n), and there is no cycle collector or sandbox. This is a
-pre-1.0 prototype, not a production tool.
+What does not: modules, generics, closures, async, FFI, a standard library,
+native support for `Any`, language-level AI syntax, streaming AI output, model
+downloads, or GPU/tensor support. Native allocations are intentionally leaked in
+v0.1, native maps are O(n), and there is no cycle collector or sandbox. The AI
+adapter is tested against loopback and stub servers, not a live provider. This is
+a pre-1.0 prototype, not a production tool.
 
-Code and docs: https://github.com/zeiad6/auren
+Code and docs: https://github.com/zeiad6/vantyx
 
 I would especially value feedback on the interpreter/native boundary, the
 diagnostics, and whether the gradual typing rules are easy to predict.
 
 ## Reddit / r/ProgrammingLanguages
 
-**Title:** Auren: a gradual-typing language with an interpreter and a C11 backend (pre-1.0)
+**Title:** Vantyx: a gradual-typing language with an interpreter and a C11 backend (pre-1.0)
 
 **Body:**
 
-I have been building Auren as a testbed for a few language-design choices:
+I have been building Vantyx as a testbed for a few language-design choices:
 
 - indentation syntax and optional annotations, so a script can start untyped;
 - a tree-walking interpreter as the semantic oracle;
@@ -101,18 +112,21 @@ structs, enums, and guarded `match`.
 
 It is deliberately small: no modules, generics, closures, async, FFI, or
 standard library yet. Native allocations are leaked in v0.1 and native maps are
-O(n). I am more interested in critique of the semantics and the testing strategy
-than in feature requests, though both are welcome.
+O(n). A new offline AI host (`vantyx ai`) adds mock/echo chat, strict JSON,
+schema validation, tools, bounded agents, and an OpenAI-compatible adapter with
+loopback defaults and no bundled model. I am more interested in critique of the
+semantics and the testing strategy than in feature requests, though both are
+welcome.
 
-Repository: https://github.com/zeiad6/auren
+Repository: https://github.com/zeiad6/vantyx
 
 ## Lobsters
 
-**Title:** Auren: a gradual-typing language with an interpreter and a C11 backend
+**Title:** Vantyx: a gradual-typing language with an interpreter and a C11 backend
 
 **Body:**
 
-Auren is a pre-1.0 language implementation in Rust with no third-party crates.
+Vantyx is a pre-1.0 language implementation in Rust with no third-party crates.
 It pairs Python-like indentation and optional annotations with a tree-walking
 interpreter and a native GNU C11 backend for a statically typed subset.
 
@@ -128,28 +142,28 @@ native `Any`, fast native maps, and reclamation. Native allocations are
 intentionally leaked in v0.1.
 
 Code, specification, ADRs, and benchmark methodology:
-https://github.com/zeiad6/auren
+https://github.com/zeiad6/vantyx
 
 ## Short posts
 
 **Variant A (technical):**
 
-> Auren 0.1: a pre-1.0 language with Python-like syntax, optional types, an
+> Vantyx 0.1: a pre-1.0 language with Python-like syntax, optional types, an
 > interpreter, and a native C11 backend. The interpreter is the oracle; native
 > tests are differential. No third-party Rust crates. Limits are documented.
-> https://github.com/zeiad6/auren
+> https://github.com/zeiad6/vantyx
 
 **Variant B (demo):**
 
-> `let x = 41` then `x + 1` in the Auren REPL prints `42`. Add types, compile
+> `let x = 41` then `x + 1` in the Vantyx REPL prints `42`. Add types, compile
 > the supported subset to C11, and compare it with the interpreter. Pre-1.0,
-> MIT, zero Rust dependencies. https://github.com/zeiad6/auren
+> MIT, zero Rust dependencies. https://github.com/zeiad6/vantyx
 
 **Variant C (design):**
 
-> Auren's native rule: match the interpreter or reject with `E0401`. No silent
+> Vantyx's native rule: match the interpreter or reject with `E0401`. No silent
 > fallback, no surprise semantics. The supported subset is small and tested
-> differentially. https://github.com/zeiad6/auren
+> differentially. https://github.com/zeiad6/vantyx
 
 ## Demo script
 
@@ -157,28 +171,28 @@ Run from a clean checkout:
 
 ```sh
 cargo build
-./target/debug/auren run examples/enums.auren
-./target/debug/auren build examples/enums.auren -o /tmp/auren-enums
-/tmp/auren-enums
+./target/debug/vantyx run examples/enums.vtx
+./target/debug/vantyx build examples/enums.vtx -o /tmp/vantyx-enums
+/tmp/vantyx-enums
 ```
 
 The two outputs should be identical. Show the diff:
 
 ```sh
-./target/debug/auren run examples/enums.auren > /tmp/interp.out
-/tmp/auren-enums > /tmp/native.out
+./target/debug/vantyx run examples/enums.vtx > /tmp/interp.out
+/tmp/vantyx-enums > /tmp/native.out
 diff -u /tmp/interp.out /tmp/native.out
 ```
 
 Show the REPL:
 
 ```sh
-./target/debug/auren repl
+./target/debug/vantyx repl
 ```
 
 Then type:
 
-```auren
+```vantyx
 let x = 41
 x + 1
 :names
@@ -191,9 +205,9 @@ history recall. Piped input does not exercise raw mode.
 Show a rejected native construct:
 
 ```sh
-printf 'let x: Any = 1\nprint(x)\n' > /tmp/dynamic.auren
-./target/debug/auren run /tmp/dynamic.auren
-./target/debug/auren build /tmp/dynamic.auren -o /tmp/dynamic
+printf 'let x: Any = 1\nprint(x)\n' > /tmp/dynamic.vtx
+./target/debug/vantyx run /tmp/dynamic.vtx
+./target/debug/vantyx build /tmp/dynamic.vtx -o /tmp/dynamic
 ```
 
 The build should fail with `E0401` and a concrete help message. This is the
@@ -211,7 +225,7 @@ The build should fail with `E0401` and a concrete help message. This is the
 ## FAQ for comments
 
 **Why another language?**
-Auren is a research and teaching implementation, not a claim that the world
+Vantyx is a research and teaching implementation, not a claim that the world
 needs another general-purpose language. It explores the interpreter/native
 boundary and gradual typing in a codebase small enough to read.
 
@@ -248,7 +262,7 @@ Yes, under MIT. It is pre-1.0; expect breaking changes.
 - "Production-ready", "stable", "1.0", or "battle-tested".
 - "Faster than C/Rust" or "Rust-level performance".
 - "Memory-safe" without the interpreter/native distinction.
-- "Compiles all Auren programs natively".
+- "Compiles all Vantyx programs natively".
 - "Python replacement" or "Rust killer".
 - "Zero-cost abstractions" before measurement.
 - "No bugs" or "fully tested"; state the test count and the limits.

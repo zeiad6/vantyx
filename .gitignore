@@ -13,9 +13,9 @@
 *.bin
 a.out
 
-# Auren local state
-.auren_history
-*.auren.tmp
+# Vantyx local state
+.vtx_history
+*.vtx.tmp
 
 # Python bytecode from benchmark and fuzz tooling
 __pycache__/

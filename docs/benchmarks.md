@@ -32,10 +32,10 @@ to guide optimization and to make regressions visible.
 | `struct_ops` | 80,000 heap-allocated structs, field mutation, and sum |
 | `string_ops` | 15 string doublings (65,536 characters) and a character scan |
 
-Each workload exists as `.auren`, `.py`, `.c`, and `.rs` under
-`benchmarks/`. The Auren source is run twice: once through `auren run`
+Each workload exists as `.vtx`, `.py`, `.c`, and `.rs` under
+`benchmarks/`. The Vantyx source is run twice: once through `vantyx run`
 (interpreter, including parsing and type checking) and once as a prebuilt
-native executable from `auren build`.
+native executable from `vantyx build`.
 
 ## Methodology
 
@@ -43,11 +43,11 @@ native executable from `auren build`.
   implementation; the table reports the median, minimum, and maximum.
 - **Timing:** wall time including process startup. The timer starts
   immediately before `fork` in a small C helper and stops after `wait4`.
-  For `auren-interp`, this includes lexing, parsing, and type checking.
+  For `vantyx-interp`, this includes lexing, parsing, and type checking.
 - **Memory:** peak RSS from `wait4(2)` `ru_maxrss`, reported by the same C
   helper. The helper's own resident set (roughly 1.5–2 MiB) is the floor for
   very small binaries.
-- **Builds:** `auren build` (including its `clang -O2` invocation), `clang -O2
+- **Builds:** `vantyx build` (including its `clang -O2` invocation), `clang -O2
   -std=c11`, and `rustc -O` are timed separately and excluded from run time.
 - **Output verification:** the runner aborts if any implementation's stdout
   differs from the interpreter's.
@@ -56,21 +56,21 @@ native executable from `auren build`.
 
 ## Equivalence notes
 
-- Auren `Int` arithmetic is **checked**; C `int64_t` arithmetic and Rust
-  release-mode arithmetic are unchecked. Auren pays for overflow checks.
-- Auren maps are insertion-ordered linear scans (ADR-0010). The Python, C, and
+- Vantyx `Int` arithmetic is **checked**; C `int64_t` arithmetic and Rust
+  release-mode arithmetic are unchecked. Vantyx pays for overflow checks.
+- Vantyx maps are insertion-ordered linear scans (ADR-0010). The Python, C, and
   Rust map workloads deliberately use linear key arrays too, so this is not a
   comparison against hash tables. The Python implementation is **not**
   `dict` and is not representative of Python's normal map performance.
-- Auren native stores each struct behind its own allocation, so the C and Rust
+- Vantyx native stores each struct behind its own allocation, so the C and Rust
   struct workloads use one allocation per struct (`malloc` / `Box`) rather than
   a contiguous value array.
-- Auren strings are immutable; concatenation allocates a new string. Python
+- Vantyx strings are immutable; concatenation allocates a new string. Python
   and Rust follow the same immutable-string model. The C workload uses a
   geometric-growth buffer; total copied bytes are similar for this doubling
   pattern, but the allocation strategy is not identical.
 - Binary sizes are not directly comparable: the Rust binaries statically link
-  the standard library, while the Auren and C binaries rely on libc/libm.
+  the standard library, while the Vantyx and C binaries rely on libc/libm.
 
 ## Environment
 
@@ -80,14 +80,14 @@ native executable from `auren build`.
 | CPU | Intel Core i7-8565U @ 1.80 GHz, 4 cores |
 | RAM | 1,978,576 kB |
 | OS | Linux 7.2.15+kali-amd64 (glibc 2.43) |
-| Auren | 0.1.0, release build |
+| Vantyx | 0.1.0, release build |
 | clang | 21.1.8 (Debian) |
 | rustc | 1.100.0 |
 | Python | 3.14.10 |
 
 ## Results (median ms)
 
-| Workload | Auren interp | Auren native | Python | C | Rust |
+| Workload | Vantyx interp | Vantyx native | Python | C | Rust |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `arith_loop` | 1300.888 | 5.210 | 413.489 | 5.097 | 5.683 |
 | `fib` | 167.512 | 3.311 | 49.790 | 3.148 | 3.612 |
@@ -98,7 +98,7 @@ native executable from `auren build`.
 
 Peak RSS and min/max spread are in the raw result files. Representative values:
 
-| Workload | Auren native RSS | Auren interp RSS | C RSS | Rust RSS |
+| Workload | Vantyx native RSS | Vantyx interp RSS | C RSS | Rust RSS |
 | --- | ---: | ---: | ---: | ---: |
 | `arith_loop` | 2.09 MiB | 3.12 MiB | 1.60 MiB | 2.00 MiB |
 | `list_ops` | 3.36 MiB | 6.45 MiB | 2.77 MiB | 3.34 MiB |
@@ -106,7 +106,7 @@ Peak RSS and min/max spread are in the raw result files. Representative values:
 
 Build time and binary size:
 
-| Workload | Auren build s | C build s | Rust build s | Auren binary B | C binary B | Rust binary B |
+| Workload | Vantyx build s | C build s | Rust build s | Vantyx binary B | C binary B | Rust binary B |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `arith_loop` | 0.236 | 0.165 | 0.206 | 16,736 | 15,992 | 4,493,248 |
 | `fib` | 0.238 | 0.140 | 0.162 | 16,776 | 16,016 | 4,493,104 |
@@ -123,7 +123,7 @@ Build time and binary size:
   generated descriptors.
 - **Native vs C/Rust:** on these workloads the native backend is in the same
   performance band for arithmetic, recursion, list, and struct code. Do not
-  read small differences (including cases where Auren is marginally ahead) as
+  read small differences (including cases where Vantyx is marginally ahead) as
   a language-level win; they are within measurement noise and reflect
   workload-specific code generation. `string_ops` is ~2.9× slower than C
   because immutable concatenation allocates a fresh exact-size string.

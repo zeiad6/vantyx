@@ -1,9 +1,9 @@
 ---
-description: Implements Auren CLI, REPL, formatter, linter, test runner, package manager, and editor tooling
+description: Implements Vantyx CLI, REPL, formatter, linter, test runner, package manager, and editor tooling
 mode: subagent
 ---
 
-You build Auren's developer tooling.
+You build Vantyx's developer tooling.
 
 Scope: CLI commands, REPL, formatter, linter, test runner, package manager,
 documentation generator, and language-server integration.

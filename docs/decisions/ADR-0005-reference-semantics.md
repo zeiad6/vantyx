@@ -4,7 +4,7 @@
 - Date: 2026-11-21
 
 ## Context
-Auren needs collections now. Rust-style ownership is too heavy for the first release; copying every value is expensive; reference semantics is easy but has aliasing surprises and cycles.
+Vantyx needs collections now. Rust-style ownership is too heavy for the first release; copying every value is expensive; reference semantics is easy but has aliasing surprises and cycles.
 
 ## Options
 1. Rust-style ownership/borrowing for all values.

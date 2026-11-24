@@ -2,12 +2,12 @@
 
 ## Goals
 
-Auren must be simple to start and progressively optimizable. The architecture separates a reusable semantic core from execution backends so interpreted and native execution share one language definition.
+Vantyx must be simple to start and progressively optimizable. The architecture separates a reusable semantic core from execution backends so interpreted and native execution share one language definition.
 
 ## Pipeline
 
 ```
-source (.auren)
+source (.vtx)
   │
   ▼
 lexer ──► tokens + INDENT/DEDENT + spans

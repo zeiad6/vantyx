@@ -2,7 +2,7 @@
 
 ## Status
 
-Auren makes **no competitive performance claims**. A single-machine baseline was measured on 2026-11-22 (T-022); methodology, environment, and raw numbers are in [benchmarks.md](benchmarks.md) and `benchmarks/results/`. The interpreter is a reference implementation; the native backend emits C compiled with `-O2`.
+Vantyx makes **no competitive performance claims**. A single-machine baseline was measured on 2026-11-22 (T-022); methodology, environment, and raw numbers are in [benchmarks.md](benchmarks.md) and `benchmarks/results/`. The interpreter is a reference implementation; the native backend emits C compiled with `-O2`.
 
 ## Current cost model
 
@@ -43,7 +43,7 @@ Python 3.14.10. Full methodology and raw data: [benchmarks.md](benchmarks.md).
 | `struct_ops` | 405.1 ms | 9.11 ms | 178.6 ms | 11.75 ms | 12.38 ms |
 | `string_ops` | 59.8 ms | 7.72 ms | 44.8 ms | 2.64 ms | 3.60 ms |
 
-\* The Python map workload uses linear arrays to match Auren's map design; it
+\* The Python map workload uses linear arrays to match Vantyx's map design; it
 is not `dict` and is not representative of normal Python map performance.
 
 ## Interpretation and next optimizations

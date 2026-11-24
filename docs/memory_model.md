@@ -2,7 +2,7 @@
 
 ## Current model (v0.1)
 
-- All Auren values live in Rust-managed memory. There is no user-visible pointer arithmetic and no `unsafe` in Auren code.
+- All Vantyx values live in Rust-managed memory. There is no user-visible pointer arithmetic and no `unsafe` in Vantyx code.
 - Scalars (`Int`, `Float`, `Bool`, `Unit`) are copied.
 - `Str` is immutable and reference-counted.
 - `List`, `Map`, and structs use reference semantics via `Rc<RefCell<...>>`.
@@ -35,7 +35,7 @@
 
 ## Native backend (v0.1 subset)
 
-- Native values are unboxed C values: `int64_t`, `double`, `bool`, `const char*`, pointers to heap-allocated structs, `AurenList*` for lists, `AurenMap*` for maps, and `Auren_e_<Enum>*` for enums.
+- Native values are unboxed C values: `int64_t`, `double`, `bool`, `const char*`, pointers to heap-allocated structs, `VantyxList*` for lists, `VantyxMap*` for maps, and `Vantyx_e_<Enum>*` for enums.
 - Strings, structs, list buffers, map buffers, and enum values are allocated with `malloc`/`realloc` and **never freed**. Native programs are short-lived CLI processes; this is a documented limitation, not a memory-safety claim.
 - Struct assignment aliases the same heap object, matching the interpreter's reference semantics. List and map assignment aliases the same header; growth reallocates only the element buffer, so aliases stay valid. Enum values are immutable; assigning an enum aliases the same tagged struct, which is observationally equivalent because payload slots cannot be reassigned.
 - Native lists use typed contiguous storage plus generated element descriptors (ADR-0009). Native maps use insertion-ordered parallel key/value buffers plus generated key/value descriptors (ADR-0010). Native enums use a tagged struct with a union of per-variant payload structs plus generated display/equality callbacks (ADR-0012). Scalar elements are unboxed; structs, enums, and nested collections are stored as pointers.
@@ -53,4 +53,4 @@
 4. **Cycle collector** or weak references for reference types.
 5. **Arena/region APIs** for scientific and systems workloads.
 
-Ordinary Auren code must never be forced to write lifetime annotations. Advanced memory control is opt-in.
+Ordinary Vantyx code must never be forced to write lifetime annotations. Advanced memory control is opt-in.

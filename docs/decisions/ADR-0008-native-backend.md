@@ -5,15 +5,15 @@
 
 ## Context
 
-The interpreter is the semantic oracle, but Auren's mission requires native executables. The project runs on a 1 GiB Linux machine, has a zero-dependency compiler core (ADR-0007), and must keep the front end reusable by future backends.
+The interpreter is the semantic oracle, but Vantyx's mission requires native executables. The project runs on a 1 GiB Linux machine, has a zero-dependency compiler core (ADR-0007), and must keep the front end reusable by future backends.
 
 ## Problem
 
-How should Auren lower checked programs to native code without (a) committing to a heavyweight dependency, (b) creating a second semantic implementation, or (c) silently miscompiling constructs the backend cannot represent?
+How should Vantyx lower checked programs to native code without (a) committing to a heavyweight dependency, (b) creating a second semantic implementation, or (c) silently miscompiling constructs the backend cannot represent?
 
 ## Options considered
 
-1. **C emission via the system C compiler.** Lower checked AST to a typed IR, emit GNU C11, invoke `clang` (or `AUREN_CC`), link with libc/libm.
+1. **C emission via the system C compiler.** Lower checked AST to a typed IR, emit GNU C11, invoke `clang` (or `VANTYX_CC`), link with libc/libm.
 2. **Cranelift.** Pure-Rust codegen, fast compile times, no C toolchain, but a large dependency and an immature ecosystem for some targets.
 3. **LLVM.** Best optimization and target coverage, but heavy build/link requirements and a large dependency footprint.
 4. **Bytecode VM first.** Portable and fast to start, but it does not produce native executables and delays the native path.
@@ -41,7 +41,7 @@ Constructs outside the subset are rejected with `E0401` and a help message. They
 
 ## Consequences
 
-- `auren build` requires a C compiler (`clang` by default; override with `AUREN_CC`).
+- `vantyx build` requires a C compiler (`clang` by default; override with `VANTYX_CC`).
 - Native builds reject `Any`, `List`, `Map`, indexing, and non-`range` loops for now. *(Superseded by the 2026-11-22 update below.)*
 - Generated programs leak strings and structs on purpose; native processes are short-lived and this matches the interpreter's documented `Rc` cycle limitation. There is no native cycle collector.
 - Native code has no call-depth guard yet; runaway recursion can exhaust the C stack. *(Superseded: a 256-frame guard was added.)*

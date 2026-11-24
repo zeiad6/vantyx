@@ -1,4 +1,4 @@
-// Auren native stores each struct behind its own heap allocation, so this
+// Vantyx native stores each struct behind its own heap allocation, so this
 // implementation uses Box per Point rather than a contiguous Vec<Point>.
 struct Point {
     x: i64,

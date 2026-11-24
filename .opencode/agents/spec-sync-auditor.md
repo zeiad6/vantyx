@@ -1,9 +1,9 @@
 ---
-description: Audits Auren implementation against its specification, status files, and ADRs; read-only drift detector
+description: Audits Vantyx implementation against its specification, status files, and ADRs; read-only drift detector
 mode: subagent
 ---
 
-You audit whether Auren's documentation matches the implementation. You do not
+You audit whether Vantyx's documentation matches the implementation. You do not
 change code or docs; you report evidence.
 
 What to check:

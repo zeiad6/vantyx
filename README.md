@@ -1,28 +1,28 @@
-# Auren
+# Vantyx
 
-**Script like Python. Ship native.**
+**Script like Python. Ship native. Build AI-native.**
 
-Auren is a pre-1.0 programming language with Python-like indentation, optional
-type annotations, a tree-walking interpreter, and a native GNU C11 backend for
-the statically typed subset.
+Vantyx is a pre-1.0 programming language with Python-like indentation, optional
+type annotations, a tree-walking interpreter, a native GNU C11 backend for the
+statically typed subset, and a dependency-free AI host toolkit.
 
 ![status](https://img.shields.io/badge/status-pre--1.0-orange)
 ![license](https://img.shields.io/badge/license-MIT-blue)
-[![CI](https://github.com/zeiad6/auren/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/zeiad6/auren/actions/workflows/ci.yml)
-[![release](https://img.shields.io/github/v/release/zeiad6/auren?include_prereleases&label=release)](https://github.com/zeiad6/auren/releases)
+[![CI](https://github.com/zeiad6/vantyx/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/zeiad6/vantyx/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/zeiad6/vantyx?include_prereleases&label=release)](https://github.com/zeiad6/vantyx/releases)
 
-```auren
+```vantyx
 fn main():
     let name = "World"
     print("Hello, {name}!")
 ```
 
-> **Status: functional prototype.** Auren is not production-ready. The native
+> **Status: functional prototype.** Vantyx is not production-ready. The native
 > backend supports a subset, native allocations are intentionally leaked in
 > v0.1, native maps are O(n), and there is no cycle collector or sandbox. See
 > [PROJECT_STATUS.md](PROJECT_STATUS.md) for the verified state and exact limits.
 
-## Why Auren
+## Why Vantyx
 
 1. **Simple by default** — indentation blocks, `let`/`var`, optional type
    annotations, no required `main`.
@@ -33,25 +33,36 @@ fn main():
 4. **One semantics** — the interpreter is the oracle; native behavior is
    checked by differential tests. Unsupported constructs fail with `E0401`,
    never silently miscompile.
-5. **Small and auditable** — the Rust compiler has zero third-party crates and
-   the generated C links only libc/libm.
+5. **Small and auditable** — the Rust compiler and AI host have zero
+   third-party crates, and the generated C links only libc/libm.
+6. **AI at the boundary, not in the core** — `vantyx ai` speaks an
+   OpenAI-compatible protocol over HTTP; no model is bundled or downloaded, and
+   remote network access is opt-in.
 
 ## Status
 
-Auren is a **functional prototype**. The lexer, parser, gradual type checker,
+Vantyx is a **functional prototype**. The lexer, parser, gradual type checker,
 tree-walking interpreter, typed IR, and native C11 backend are implemented and
 tested. Closed enums with payloads, exhaustive `match`, scalar literal patterns
 for `Int`/`Str`/`Bool`, and `Bool`-checked match guards work in both engines.
 Native lists, insertion-ordered maps, structs, enums, and UTF-8-aware string
 indexing/iteration are supported for statically typed code. The REPL persists
 bindings and declarations and provides line editing, history, Tab completion,
-and expression echo.
+and expression echo. The AI host foundation is offline and tested: strict JSON,
+JSON Schema validation, provider abstraction, token budgets, embeddings, BM25,
+typed tools, bounded agents, redacted metrics, and an OpenAI-compatible HTTP
+adapter. Language-level AI syntax is not implemented yet; `vantyx ai` is the
+supported surface.
 
-| Need | Auren today |
+| Need | Vantyx today |
 | --- | --- |
 | A quick script with no type annotations | Yes, through the interpreter |
 | Optional static types and clear diagnostics | Yes |
 | A native executable | Yes, for the statically typed subset |
+| Offline AI chat with a mock provider | Yes, through `vantyx ai` |
+| OpenAI-compatible local or cloud chat | Yes, via an explicit endpoint and `--allow-network` for remote HTTPS |
+| Language-level `from ai import Client` | Not yet (needs modules and async) |
+| Bundled model, tokenizer, tensors, GPU | No |
 | Modules, generics, closures, async, FFI | Not yet |
 | Production reliability or a stable ABI | No |
 | Fast native maps or automatic reclamation | No |
@@ -64,23 +75,63 @@ major gaps.
 
 ```sh
 cargo build
-./target/debug/auren run examples/hello.auren
-./target/debug/auren check examples/hello.auren
-./target/debug/auren build examples/hello.auren -o /tmp/hello
+./target/debug/vantyx run examples/hello.vtx
+./target/debug/vantyx check examples/hello.vtx
+./target/debug/vantyx build examples/hello.vtx -o /tmp/hello
 /tmp/hello
-./target/debug/auren repl
+./target/debug/vantyx repl
+./target/debug/vantyx ai providers
+./target/debug/vantyx ai chat --provider mock "hello"
+./target/debug/vantyx ai tokens "hello world"
 ```
 
-Native builds require `clang` (override with `AUREN_CC`). Programs using `Any`,
+Native builds require `clang` (override with `VANTYX_CC`). Programs using `Any`,
 `List[Any]`, maps whose key/value types cannot be inferred statically, `Any`
-enum payloads, or `match` on `Any` must currently run with `auren run`. A match
+enum payloads, or `match` on `Any` must currently run with `vantyx run`. A match
 expression must be the final element of its statement or arm; bind it to a
 variable before using it inside a call or literal.
+
+## AI host tools
+
+`vantyx ai` is a host-level CLI for local and cloud models. It is offline by
+default and never bundles or downloads a model.
+
+```sh
+# No network, no model, deterministic output
+./target/debug/vantyx ai providers
+./target/debug/vantyx ai doctor --provider mock
+./target/debug/vantyx ai chat --provider mock "hello"
+./target/debug/vantyx ai chat --provider echo "hello"
+./target/debug/vantyx ai chat --provider mock --json "hello"
+
+# A local OpenAI-compatible server (Ollama, llama.cpp, LM Studio, ...)
+./target/debug/vantyx ai models --endpoint http://127.0.0.1:11434/v1
+./target/debug/vantyx ai chat --provider openai --model qwen2.5:7b \
+  --endpoint http://127.0.0.1:11434/v1 "Explain this error"
+
+# Remote HTTPS requires an explicit opt-in and a key in an environment variable
+export VANTYX_AI_API_KEY_ENV=MY_API_KEY
+export MY_API_KEY=...
+./target/debug/vantyx ai chat --provider openai --model gpt-4.1-mini \
+  --endpoint https://api.example.com/v1 --allow-network "hello"
+```
+
+- Loopback HTTP is treated as local. Remote HTTPS requires `--allow-network` or
+  `VANTYX_AI_ALLOW_NETWORK=1`.
+- API keys are read only from the named environment variable; they are never
+  written to project files, metrics, or errors.
+- `--metrics <path>` appends redacted JSONL (provider, model, latency, usage,
+  status) with no prompts, responses, or tool arguments.
+- Token counts from `vantyx ai tokens` are labelled estimates, not a model
+  tokenizer.
+- Streaming, model download/removal, keyring storage, and live provider tests
+  are not implemented. See [docs/ai/](docs/ai/) and
+  [ADR-0015](docs/decisions/ADR-0015-ai-host-foundation.md).
 
 ## REPL
 
 ```sh
-./target/debug/auren repl
+./target/debug/vantyx repl
 ```
 
 The REPL keeps bindings, functions, structs, enums, and mutable globals across
@@ -92,8 +143,8 @@ their value once; `print` output is not duplicated.
 - **Ctrl-C** cancels the current entry; **Ctrl-D** exits.
 - **`:help`**, **`:history`**, **`:names`**, and **`:quit`** are REPL commands.
 
-History is stored in `~/.auren_history` with mode 0600 on Unix. Set
-`AUREN_HISTORY` to another path, or to `off` to disable persistence. Multi-line
+History is stored in `~/.vtx_history` with mode 0600 on Unix. Set
+`VANTYX_HISTORY` to another path, or to `off` to disable persistence. Multi-line
 blocks are kept for the session but are not recalled. Piped input and systems
 without `stty` fall back to canonical line input. See
 [ADR-0013](docs/decisions/ADR-0013-repl-line-editing.md).
@@ -106,7 +157,7 @@ python3 benchmarks/run.py --reps 5
 ```
 
 The runner checks that all implementations print identical output, then times
-Auren (interpreter and native), Python, C, and Rust on six equivalent workloads.
+Vantyx (interpreter and native), Python, C, and Rust on six equivalent workloads.
 On the 2026-11-22 single-machine baseline, the native backend was in the same
 performance band as C/Rust on arithmetic, recursion, list, and struct workloads;
 map operations and immutable string concatenation were the measured gaps. See
@@ -123,9 +174,15 @@ general performance claim.
 - [Memory model](docs/memory_model.md)
 - [Benchmarks](docs/benchmarks.md)
 - [Roadmap](docs/roadmap.md)
+- [AI architecture](docs/ai/AI_ARCHITECTURE.md)
+- [AI research](docs/ai/AI_RESEARCH.md)
+- [AI security](docs/ai/AI_SECURITY.md)
+- [AI roadmap](docs/ai/AI_ROADMAP.md)
+- [ADR-0015: AI host foundation](docs/decisions/ADR-0015-ai-host-foundation.md)
+- [Historical requirements audit](RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md)
 - [Tasks](TASKS.md)
 - [Project status](PROJECT_STATUS.md)
-- [Release v0.1.0](https://github.com/zeiad6/auren/releases/tag/v0.1.0)
+- [Release v0.1.0](https://github.com/zeiad6/vantyx/releases/tag/v0.1.0)
 - [Launch and AI-discovery kit](docs/launch/)
 - [`llms.txt`](llms.txt) — compact facts for AI assistants
 - [Contributing](CONTRIBUTING.md)
@@ -142,13 +199,16 @@ general performance claim.
 | `src/ir.rs` | Typed, backend-neutral IR |
 | `src/codegen_c.rs` | GNU C11 native backend |
 | `src/repl.rs` | Zero-dependency REPL editor, history, and completion |
+| `src/ai/` | Dependency-free AI host: JSON, providers, schema, tools, agents, retrieval, HTTP |
+| `src/ai_cli.rs` | `vantyx ai` commands |
 | `src/diagnostic.rs` | Source spans and rendered diagnostics |
 | `tests/e2e.rs` | End-to-end language tests |
 | `tests/native.rs` | Differential interpreter vs native tests |
+| `tests/ai.rs` | Offline AI CLI and loopback HTTP integration tests |
 | `examples/` | Runnable programs, including enums and structs |
 | `tools/fuzz_smoke.py` | Reproducible malformed-input and depth-limit fuzzing |
-| `benchmarks/` | Equivalent Auren/Python/C/Rust workloads and the measurement runner |
-| `docs/` | Specification, architecture, ADRs, research, launch kit |
+| `benchmarks/` | Equivalent Vantyx/Python/C/Rust workloads and the measurement runner |
+| `docs/` | Specification, architecture, ADRs, research, AI docs, launch kit |
 | `.opencode/agents/` | Specialized engineering subagents |
 
 ## License

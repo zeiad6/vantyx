@@ -4,13 +4,13 @@
 - Date: 2026-11-21
 
 ## Context
-Auren needs a compiler/runtime that is memory-safe, fast, maintainable, and able to grow into native code generation and concurrency.
+Vantyx needs a compiler/runtime that is memory-safe, fast, maintainable, and able to grow into native code generation and concurrency.
 
 ## Options
 1. Rust — memory safety without GC, strong tooling, Cranelift/LLVM bindings, growing compiler ecosystem.
 2. C++ — mature compiler ecosystem, but manual memory safety and slower safe iteration.
 3. Python — fastest prototyping, unacceptable runtime performance for a compiler long-term.
-4. Self-hosted Auren — ideal end state, impossible before the language exists.
+4. Self-hosted Vantyx — ideal end state, impossible before the language exists.
 
 ## Decision
 Implement the compiler and runtime in Rust (2024 edition), with no third-party runtime dependencies for the core.

@@ -1,6 +1,6 @@
 # Security Audit — 2026-11-22
 
-Scope: Auren v0.1 compiler front end, interpreter, native C backend, and CLI
+Scope: Vantyx v0.1 compiler front end, interpreter, native C backend, and CLI
 build path. Method: source review, targeted stress inputs, a reproducible
 malformed-input fuzz harness, and the full test suite. No third-party security
 tooling was used.
@@ -19,11 +19,11 @@ tooling was used.
 | A-008 | Low | 32-bit allocation-size truncation was possible in generated C | Fixed with `SIZE_MAX` checks |
 | A-009 | Info | Native temp C file handling and string escaping | Verified safe |
 | A-010 | Info | Native bounds, missing-key, capacity, and range checks | Verified |
-| A-011 | Info | `AUREN_CC`, the C compiler, and libc are trusted boundaries | Documented |
+| A-011 | Info | `VANTYX_CC`, the C compiler, and libc are trusted boundaries | Documented |
 | A-012 | Info | Mutating a map key after insertion makes it unreachable | Documented semantic limitation |
 
 No memory-unsafety, use-after-free, double-free, or code-injection issue was
-found in the supported subset. Auren is **not** a sandbox; untrusted programs
+found in the supported subset. Vantyx is **not** a sandbox; untrusted programs
 still require OS-level isolation.
 
 ## A-001 — Parser stack exhaustion (High, fixed)
@@ -34,21 +34,21 @@ with `thread 'main' has overflowed its stack` instead of returning a diagnostic.
 Reproductions (pre-fix):
 
 ```sh
-python3 - <<'PY' > /tmp/chain.auren
+python3 - <<'PY' > /tmp/chain.vtx
 print("fn main():")
 print("    let x = " + "+".join(["1"] * 10_000))
 PY
-target/debug/auren check /tmp/chain.auren
+target/debug/vantyx check /tmp/chain.vtx
 ```
 
 ```sh
-python3 - <<'PY' > /tmp/nest.auren
+python3 - <<'PY' > /tmp/nest.vtx
 print("fn main():")
 for i in range(2_000):
     print("    " * (i + 1) + "if true:")
 print("    " * 2_001 + 'print("x")')
 PY
-target/debug/auren check /tmp/nest.auren
+target/debug/vantyx check /tmp/nest.vtx
 ```
 
 Fix: bounded parser recursion and AST depth in `src/parser.rs`:
@@ -79,7 +79,7 @@ Test: `offsets_inside_multibyte_characters_are_safe`.
 Native equality returned `false` after its depth limit for two distinct but
 structurally equal cycles, while the interpreter returned `true`. Reproduction:
 
-```auren
+```vantyx
 struct Node:
     next: Map[Str, Node]
 
@@ -93,7 +93,7 @@ fn main():
 
 Fix: the generated runtime tracks active `(left, right, descriptor)` container
 pairs and treats a revisited pair as equal, matching the interpreter's
-coinductive `seen` set (`src/codegen_c.rs`, `auren_eq_frames`). The depth limit
+coinductive `seen` set (`src/codegen_c.rs`, `vantyx_eq_frames`). The depth limit
 remains as a stack guard.
 
 Tests: `cyclic_structural_equality_matches`, `struct_equality_matches`.
@@ -101,7 +101,7 @@ Tests: `cyclic_structural_equality_matches`, `struct_equality_matches`.
 ## A-004 — Stale call-depth claim (Low, fixed)
 
 `docs/security.md` and `PROJECT_STATUS.md` said the native backend had no
-call-depth guard. The backend already emits `auren_call_depth >= 256` with
+call-depth guard. The backend already emits `vantyx_call_depth >= 256` with
 `R0012` (`src/codegen_c.rs:489`). Documentation is corrected; the existing
 `native_call_depth_limit_exits_two` test verifies the behavior.
 
@@ -132,7 +132,7 @@ by an ordered hash index without changing the language.
 Generated list and map growth checked `cap * elem_size` against `INT64_MAX` but
 not against `SIZE_MAX`. On a 32-bit target the product could truncate when cast
 to `size_t`. Both reserve functions now also check `SIZE_MAX`
-(`src/codegen_c.rs`, `auren_list_reserve` and `auren_map_reserve`).
+(`src/codegen_c.rs`, `vantyx_list_reserve` and `vantyx_map_reserve`).
 
 ## A-009 — Temp files and escaping (Info, verified)
 
@@ -151,7 +151,7 @@ Test: `generated_c_temp_file_is_owner_only`.
 ## A-010 — Native runtime checks (Info, verified)
 
 - List and string indexes are bounds-checked; negative indexes raise `R0003`
-  (`auren_list_slot`, `auren_str_index`).
+  (`vantyx_list_slot`, `vantyx_str_index`).
 - Missing map keys raise `R0008`.
 - List and map capacity growth checks overflow and `SIZE_MAX`, raising `R0004`.
 - `range` rejects zero steps and caps output at 10,000,000 elements.
@@ -164,11 +164,11 @@ by zero, overflow, range limits, and call-depth limits.
 
 ## A-011 — Trusted boundaries (Info)
 
-`AUREN_CC` selects an arbitrary compiler executable and is trusted input from
+`VANTYX_CC` selects an arbitrary compiler executable and is trusted input from
 the environment. The selected C compiler, system libc, and libm are trusted.
-`auren build` writes the output path chosen by the user and does not sandbox
-filesystem access. Executing untrusted Auren source is unsafe without OS-level
-isolation; Auren provides no sandbox.
+`vantyx build` writes the output path chosen by the user and does not sandbox
+filesystem access. Executing untrusted Vantyx source is unsafe without OS-level
+isolation; Vantyx provides no sandbox.
 
 ## A-012 — Mutable map keys (Info)
 
@@ -184,7 +184,7 @@ Performed on 2026-11-22:
 cargo build
 cargo clippy --all-targets -- -D warnings
 cargo test
-python3 tools/fuzz_smoke.py --binary target/debug/auren --iterations 400
+python3 tools/fuzz_smoke.py --binary target/debug/vantyx --iterations 400
 ```
 
 Results:
@@ -194,7 +194,7 @@ Results:
 - `cargo clippy --all-targets -- -D warnings`: clean.
 - `tools/fuzz_smoke.py`: 9 depth/limit cases and 400 random/mutated inputs
   produced controlled diagnostics; no panic, signal, or timeout.
-- Native differential tests require `clang` (or `AUREN_CC`) and skip when no C
+- Native differential tests require `clang` (or `VANTYX_CC`) and skip when no C
   compiler is available.
 
 ## Residual risks

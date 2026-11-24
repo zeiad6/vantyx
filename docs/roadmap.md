@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: Phase 0–1 complete; Phases 2–5 complete for the v0.1 language; Phase 6 in progress (typed IR + C11 backend for a statically typed subset including enums, guarded `match`, and scalar literal patterns). Phases are ordered to avoid architectural debt; items can move when evidence justifies it.
+Status: Phase 0–1 complete; Phases 2–5 complete for the v0.1 language; Phase 6 in progress (typed IR + C11 backend for a statically typed subset including enums, guarded `match`, and scalar literal patterns); AI-0 and AI-1 complete, AI-2 in progress (offline and compatible-endpoint foundation verified; live provider evidence pending). Phases are ordered to avoid architectural debt; items can move when evidence justifies it.
 
 ## Phase 0 — Baseline and research ✅
 Repository inspection, environment setup, prior-art review, risk register.
@@ -47,7 +47,7 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 ## Phase 6 — Native compiler 🚧
 - [x] Typed IR and lowering for the static subset
 - [x] C11 backend via system clang (ADR-0008)
-- [x] `auren build`, linking, `-o`
+- [x] `vantyx build`, linking, `-o`
 - [x] Differential interpreter/native test suite (67 tests)
 - [x] Native `List[T]` for statically typed elements (T-024, ADR-0009)
 - [x] Native UTF-8 string indexing/iteration (T-025)
@@ -81,9 +81,30 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 - [ ] Package manager and registry
 - [ ] LSP and editor support
 
+## Phase AI — AI-native toolchain
+
+Detailed plan and exit gates: `docs/ai/AI_ROADMAP.md`.
+
+- [x] AI-0 — historical audit, naming audit, ecosystem research, architecture,
+      security model, and dependency decision.
+- [x] AI-1 — dependency-free offline foundation: JSON, providers, budgets,
+      embeddings, vector index, BM25, JSON Schema, tools, bounded agents,
+      metrics, SSE, and `vantyx ai` CLI.
+- [ ] AI-2 — live local/cloud providers, model manager, keyring (compatible
+      endpoint path and `models`/`doctor` already work).
+- [ ] AI-3 — streaming output, typed extraction, constrained decoding.
+- [ ] AI-4 — embedding providers, persistence, hybrid retrieval, ingestion,
+      citations, and evaluation.
+- [ ] AI-5 — write/shell/network tools with approvals, persistent agents.
+- [ ] AI-6 — multimodal audio/video and size validation.
+- [ ] AI-7 — tensor and numerical foundations after an ADR.
+- [ ] AI-8 — GPU, distributed, and multi-agent only with verified hardware and
+      measured value.
+- [ ] Language-level AI syntax after modules (T-013) and async (T-017).
+
 ## Phase 11 — AI and systems
-- [ ] Tensors, numerical libraries
-- [ ] GPU backend exploration
+- [ ] Tensors, numerical libraries (research only; see AI-7)
+- [ ] GPU backend exploration (blocked on verified hardware; see AI-8)
 - [ ] C ABI FFI, Python/Rust interop
 
 ## Phase 12 — Production readiness

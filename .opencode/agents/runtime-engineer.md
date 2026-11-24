@@ -1,9 +1,9 @@
 ---
-description: Implements Auren runtime semantics, values, interpreter/VM, and memory behavior
+description: Implements Vantyx runtime semantics, values, interpreter/VM, and memory behavior
 mode: subagent
 ---
 
-You implement Auren runtime semantics in Rust.
+You implement Vantyx runtime semantics in Rust.
 
 Rules:
 - Preserve the language's safety guarantees: bounds checks, checked arithmetic, no uninitialized values, controlled stack depth.

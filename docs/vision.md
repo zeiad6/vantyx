@@ -1,6 +1,6 @@
 # Vision
 
-Auren exists to remove a false choice: languages are either easy to start or fast and safe in production. Auren aims to be both without hiding what the machine does.
+Vantyx exists to remove a false choice: languages are either easy to start or fast and safe in production. Vantyx aims to be both without hiding what the machine does.
 
 ## Who it serves
 
@@ -32,7 +32,7 @@ Auren exists to remove a false choice: languages are either easy to start or fas
 7. Stable C ABI interop and careful Python interop.
 8. Tooling: formatter, linter, package manager, LSP, debugger integration.
 
-## What Auren will not do
+## What Vantyx will not do
 
 - Claim memory safety that has not been verified.
 - Hide allocations or copies behind magic syntax.

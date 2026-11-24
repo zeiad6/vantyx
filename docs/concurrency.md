@@ -2,7 +2,7 @@
 
 ## Status (v0.1)
 
-Concurrency is **not implemented**. Auren programs are single-threaded, and both execution engines assume one thread:
+Concurrency is **not implemented**. Vantyx programs are single-threaded, and both execution engines assume one thread:
 
 - The interpreter runs on one dedicated 16 MiB thread.
 - Generated native programs are single-threaded.

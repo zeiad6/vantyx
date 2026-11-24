@@ -10,7 +10,7 @@
     "python": "3.14.10",
     "clang": "Debian clang version 21.1.8 (13)",
     "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
-    "auren": "auren 0.1.0"
+    "vantyx": "vantyx 0.1.0"
   },
   "descriptions": {
     "arith_loop": "1,000,000 checked Int loop iterations with multiply/modulo/add",
@@ -22,7 +22,7 @@
   },
   "results": {
     "arith_loop": {
-      "auren-interp": {
+      "vantyx-interp": {
         "times_ms": [
           1272.374,
           1300.888,
@@ -36,7 +36,7 @@
         "peak_rss_mib": 3.12,
         "exit_code": 0
       },
-      "auren-native": {
+      "vantyx-native": {
         "times_ms": [
           6.142,
           4.99,
@@ -94,7 +94,7 @@
       }
     },
     "fib": {
-      "auren-interp": {
+      "vantyx-interp": {
         "times_ms": [
           164.635,
           167.512,
@@ -108,7 +108,7 @@
         "peak_rss_mib": 3.34,
         "exit_code": 0
       },
-      "auren-native": {
+      "vantyx-native": {
         "times_ms": [
           3.311,
           3.372,
@@ -166,7 +166,7 @@
       }
     },
     "list_ops": {
-      "auren-interp": {
+      "vantyx-interp": {
         "times_ms": [
           383.585,
           382.157,
@@ -180,7 +180,7 @@
         "peak_rss_mib": 6.45,
         "exit_code": 0
       },
-      "auren-native": {
+      "vantyx-native": {
         "times_ms": [
           4.767,
           4.829,
@@ -238,7 +238,7 @@
       }
     },
     "map_ops": {
-      "auren-interp": {
+      "vantyx-interp": {
         "times_ms": [
           106.536,
           106.218,
@@ -252,7 +252,7 @@
         "peak_rss_mib": 3.33,
         "exit_code": 0
       },
-      "auren-native": {
+      "vantyx-native": {
         "times_ms": [
           63.092,
           64.212,
@@ -310,7 +310,7 @@
       }
     },
     "struct_ops": {
-      "auren-interp": {
+      "vantyx-interp": {
         "times_ms": [
           405.054,
           399.025,
@@ -324,7 +324,7 @@
         "peak_rss_mib": 30.39,
         "exit_code": 0
       },
-      "auren-native": {
+      "vantyx-native": {
         "times_ms": [
           9.494,
           9.11,
@@ -382,7 +382,7 @@
       }
     },
     "string_ops": {
-      "auren-interp": {
+      "vantyx-interp": {
         "times_ms": [
           60.282,
           59.757,
@@ -396,7 +396,7 @@
         "peak_rss_mib": 6.42,
         "exit_code": 0
       },
-      "auren-native": {
+      "vantyx-native": {
         "times_ms": [
           7.741,
           7.367,
@@ -456,70 +456,70 @@
   },
   "builds": {
     "arith_loop": {
-      "auren-native": 0.23593006499959301,
+      "vantyx-native": 0.23593006499959301,
       "c": 0.16522695000003296,
       "rust": 0.2057955199998105
     },
     "fib": {
-      "auren-native": 0.23783607799987294,
+      "vantyx-native": 0.23783607799987294,
       "c": 0.14021239699968646,
       "rust": 0.16202852500009612
     },
     "list_ops": {
-      "auren-native": 0.2588418499999534,
+      "vantyx-native": 0.2588418499999534,
       "c": 0.15927778099967327,
       "rust": 0.204950528000154
     },
     "map_ops": {
-      "auren-native": 0.44828090999999404,
+      "vantyx-native": 0.44828090999999404,
       "c": 0.16146334199993362,
       "rust": 0.23350294699957885
     },
     "struct_ops": {
-      "auren-native": 0.29488101499964614,
+      "vantyx-native": 0.29488101499964614,
       "c": 0.15031235600008586,
       "rust": 0.23522243799970965
     },
     "string_ops": {
-      "auren-native": 0.26710226599971065,
+      "vantyx-native": 0.26710226599971065,
       "c": 0.17081733399982113,
       "rust": 0.22116219899999123
     }
   },
   "sizes": {
     "arith_loop": {
-      "auren-source": 147,
-      "auren-native": 16736,
+      "vantyx-source": 147,
+      "vantyx-native": 16736,
       "c": 15992,
       "rust": 4493248
     },
     "fib": {
-      "auren-source": 120,
-      "auren-native": 16776,
+      "vantyx-source": 120,
+      "vantyx-native": 16776,
       "c": 16016,
       "rust": 4493104
     },
     "list_ops": {
-      "auren-source": 263,
-      "auren-native": 16832,
+      "vantyx-source": 263,
+      "vantyx-native": 16832,
       "c": 16144,
       "rust": 4494328
     },
     "map_ops": {
-      "auren-source": 234,
-      "auren-native": 21672,
+      "vantyx-source": 234,
+      "vantyx-native": 21672,
       "c": 16136,
       "rust": 4494432
     },
     "struct_ops": {
-      "auren-source": 363,
-      "auren-native": 16824,
+      "vantyx-source": 363,
+      "vantyx-native": 16824,
       "c": 16144,
       "rust": 4494736
     },
     "string_ops": {
-      "auren-source": 224,
-      "auren-native": 16784,
+      "vantyx-source": 224,
+      "vantyx-native": 16784,
       "c": 16192,
       "rust": 4494072
     }

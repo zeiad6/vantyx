@@ -7,7 +7,7 @@
  * redirects the target's stdout/stderr to /dev/null, and reports the child's
  * wall time and ru_maxrss from wait4(2).
  *
- * Output (stderr): AUREN_MEASURE <elapsed_ms> <maxrss_kib> <exit_code>
+ * Output (stderr): VANTYX_MEASURE <elapsed_ms> <maxrss_kib> <exit_code>
  */
 #define _GNU_SOURCE
 
@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
     } else {
         code = 255;
     }
-    fprintf(stderr, "AUREN_MEASURE %.3f %ld %d\n", elapsed_ms, usage.ru_maxrss,
+    fprintf(stderr, "VANTYX_MEASURE %.3f %ld %d\n", elapsed_ms, usage.ru_maxrss,
             code);
     return code;
 }

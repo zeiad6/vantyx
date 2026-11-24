@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn line_and_column_are_one_based() {
         let src = "abc\ndef\n";
-        let map = SourceMap::new("t.auren", src);
+        let map = SourceMap::new("t.vtx", src);
         assert_eq!(map.line_col(0), (1, 1));
         assert_eq!(map.line_col(2), (1, 3));
         assert_eq!(map.line_col(4), (2, 1));
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn unicode_columns_count_characters() {
         let src = "héllo\n";
-        let map = SourceMap::new("t.auren", src);
+        let map = SourceMap::new("t.vtx", src);
         // "h" is 1 byte, "é" is 2 bytes; byte 3 is the second "l".
         assert_eq!(map.line_col(3), (1, 3));
     }
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn clamping_never_panics() {
         let src = "x";
-        let map = SourceMap::new("t.auren", src);
+        let map = SourceMap::new("t.vtx", src);
         assert_eq!(map.line_col(999), (1, 2));
         assert_eq!(Span::new(0, 999).clamp(1), Span::new(0, 1));
     }
@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn offsets_inside_multibyte_characters_are_safe() {
         let src = "aé\n";
-        let map = SourceMap::new("t.auren", src);
+        let map = SourceMap::new("t.vtx", src);
         // Byte 2 is the second byte of `é`, not a character boundary.
         assert_eq!(map.line_col(2), (1, 2));
         assert_eq!(map.line_col(3), (1, 3));

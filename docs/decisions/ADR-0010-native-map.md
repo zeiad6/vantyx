@@ -9,7 +9,7 @@ The interpreter supports `Map[K, V]` with insertion order, structural key
 equality, reference semantics, and `R0008` for missing keys. The native C
 backend rejects every `Map` with `E0401`, so a large class of ordinary programs
 cannot be compiled. Native lists already use a type descriptor plus an
-`AurenList` buffer; maps need a representation that preserves interpreter
+`VantyxList` buffer; maps need a representation that preserves interpreter
 semantics and fits the same descriptor mechanism.
 
 ## Problem
@@ -44,7 +44,7 @@ complex than equality.
 ### C. Insertion-ordered parallel arrays with linear search
 
 Advantages: exact interpreter semantics (insertion order, structural equality),
-no hash function, works with the existing `AurenTypeDesc` equality callbacks,
+no hash function, works with the existing `VantyxTypeDesc` equality callbacks,
 small and auditable runtime, trivial cycle/depth handling. Keys and values are
 stored in two parallel buffers.
 
@@ -55,9 +55,9 @@ A later ordered hash index can be added behind the same runtime API.
 
 Use **option C** for the first native map implementation.
 
-- `AurenMap` stores `len`, `cap`, `key_size`, `value_size`, key/value
+- `VantyxMap` stores `len`, `cap`, `key_size`, `value_size`, key/value
   descriptors, and parallel `keys`/`values` buffers.
-- Lookup scans keys with `auren_value_equals`, the same structural equality used
+- Lookup scans keys with `vantyx_value_equals`, the same structural equality used
   by lists and structs.
 - Assigning an existing key replaces the value in place and keeps its original
   position; a new key is appended.
@@ -81,7 +81,7 @@ map runtime needs no type-specific generated code.
 
 - Native map operations are O(n). Benchmarks must not claim map performance.
 - The runtime API is internal; a future ordered hash index can replace the
-  storage while keeping `auren_map_get/set/contains/keys/values` contracts.
+  storage while keeping `vantyx_map_get/set/contains/keys/values` contracts.
 - Map keys are compared structurally. Mutating a key after insertion can make it
   unreachable, exactly as in the interpreter; documentation must say so.
 - Cycle-safe display and coinductive equality are required because maps can
@@ -107,7 +107,7 @@ runtime API.
 
 - IR: `IrType::Map`, `IrExprKind::Map`, `IrStmtKind::ForMap`, map indexing and
   compound assignment, typed `keys`/`values`, and `contains`.
-- Runtime: `AurenMap`, descriptor-driven key/value equality, insertion-ordered
+- Runtime: `VantyxMap`, descriptor-driven key/value equality, insertion-ordered
   iteration, cycle-safe display, and coinductive cycle-safe equality.
 - Checker precision: `keys`/`values` return `List[K]`/`List[V]`; `contains`
   checks the key/element type; `pop` returns `List[T]`'s element type.

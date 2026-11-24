@@ -1,6 +1,6 @@
 # Type System
 
-Auren uses **gradual typing**: static checking where types are known, runtime validation where they are not.
+Vantyx uses **gradual typing**: static checking where types are known, runtime validation where they are not.
 
 ## Types
 

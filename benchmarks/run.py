@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Build and run Auren benchmark workloads against Python, C, and Rust.
+"""Build and run Vantyx benchmark workloads against Python, C, and Rust.
 
 Methodology:
   * Every implementation prints exactly the same output; this is checked before
     any timing.
   * One warm-up run is discarded, then N measured runs are taken.
   * Wall time includes process startup (fork/exec) for every implementation.
-  * `auren-interp` includes parsing and type checking on every run, matching
-    `auren run`; `auren-native` is a prebuilt executable.
-  * Map workloads use linear key arrays in every language because Auren's
+  * `vantyx-interp` includes parsing and type checking on every run, matching
+    `vantyx run`; `vantyx-native` is a prebuilt executable.
+  * Map workloads use linear key arrays in every language because Vantyx's
     native and interpreter maps are insertion-ordered linear scans (ADR-0010).
     This keeps the algorithmic work equivalent.
   * Peak RSS is collected with wait4(2) through a tiny C helper, so the
@@ -45,7 +45,7 @@ WORKLOADS = [
     "struct_ops",
     "string_ops",
 ]
-IMPLEMENTATIONS = ["auren-interp", "auren-native", "python", "c", "rust"]
+IMPLEMENTATIONS = ["vantyx-interp", "vantyx-native", "python", "c", "rust"]
 
 DESCRIPTIONS = {
     "arith_loop": "1,000,000 checked Int loop iterations with multiply/modulo/add",
@@ -57,12 +57,12 @@ DESCRIPTIONS = {
 }
 
 
-def command_for(workload: str, implementation: str, build_dir: Path, auren: Path) -> list[str]:
-    source = BENCH / f"{workload}.{ 'auren' if implementation.startswith('auren') else implementation }"
-    if implementation == "auren-interp":
-        return [str(auren), "run", str(BENCH / f"{workload}.auren")]
-    if implementation == "auren-native":
-        return [str(build_dir / f"{workload}-auren")]
+def command_for(workload: str, implementation: str, build_dir: Path, vantyx: Path) -> list[str]:
+    source = BENCH / f"{workload}.{ 'vantyx' if implementation.startswith('vantyx') else implementation }"
+    if implementation == "vantyx-interp":
+        return [str(vantyx), "run", str(BENCH / f"{workload}.vtx")]
+    if implementation == "vantyx-native":
+        return [str(build_dir / f"{workload}-vantyx")]
     if implementation == "python":
         return [sys.executable, str(BENCH / f"{workload}.py")]
     if implementation == "c":
@@ -82,7 +82,7 @@ def run_command(command: list[str], timeout: float = 120.0) -> subprocess.Comple
     )
 
 
-def build_all(auren: Path, build_dir: Path, workloads: list[str]) -> dict:
+def build_all(vantyx: Path, build_dir: Path, workloads: list[str]) -> dict:
     clang = shutil.which("clang")
     rustc = shutil.which("rustc")
     if clang is None:
@@ -94,12 +94,12 @@ def build_all(auren: Path, build_dir: Path, workloads: list[str]) -> dict:
     for workload in workloads:
         builds[workload] = {}
         jobs = {
-            "auren-native": [
-                str(auren),
+            "vantyx-native": [
+                str(vantyx),
                 "build",
-                str(BENCH / f"{workload}.auren"),
+                str(BENCH / f"{workload}.vtx"),
                 "-o",
-                str(build_dir / f"{workload}-auren"),
+                str(build_dir / f"{workload}-vantyx"),
             ],
             "c": [
                 clang,
@@ -131,13 +131,13 @@ def build_all(auren: Path, build_dir: Path, workloads: list[str]) -> dict:
 
 
 def verify_outputs(
-    workloads: list[str], build_dir: Path, auren: Path
+    workloads: list[str], build_dir: Path, vantyx: Path
 ) -> dict[str, dict[str, str]]:
     outputs: dict[str, dict[str, str]] = {}
     for workload in workloads:
         outputs[workload] = {}
         for implementation in IMPLEMENTATIONS:
-            command = command_for(workload, implementation, build_dir, auren)
+            command = command_for(workload, implementation, build_dir, vantyx)
             result = run_command(command)
             if result.returncode != 0:
                 raise SystemExit(
@@ -145,7 +145,7 @@ def verify_outputs(
                     f"stderr:\n{result.stderr}"
                 )
             outputs[workload][implementation] = result.stdout
-        reference = outputs[workload]["auren-interp"]
+        reference = outputs[workload]["vantyx-interp"]
         for implementation, output in outputs[workload].items():
             if output != reference:
                 raise SystemExit(
@@ -183,7 +183,7 @@ def measure_once(helper: Path, command: list[str]) -> tuple[float, int, int]:
         timeout=300.0,
     )
     for line in reversed(result.stderr.splitlines()):
-        if line.startswith("AUREN_MEASURE "):
+        if line.startswith("VANTYX_MEASURE "):
             _, elapsed, maxrss, exit_code = line.split()
             return float(elapsed), int(maxrss), int(exit_code)
     raise SystemExit(
@@ -245,8 +245,8 @@ def environment() -> dict[str, str | int]:
         "rustc": subprocess.run(
             ["rustc", "--version"], capture_output=True, text=True
         ).stdout.strip(),
-        "auren": subprocess.run(
-            [str(ROOT / "target/release/auren"), "version"],
+        "vantyx": subprocess.run(
+            [str(ROOT / "target/release/vantyx"), "version"],
             capture_output=True,
             text=True,
         ).stdout.strip(),
@@ -255,7 +255,7 @@ def environment() -> dict[str, str | int]:
 
 def markdown(report: dict, workloads: list[str]) -> str:
     lines = [
-        "# Auren benchmark baseline",
+        "# Vantyx benchmark baseline",
         "",
         f"Generated: {report['generated_at']}",
         "",
@@ -283,27 +283,27 @@ def markdown(report: dict, workloads: list[str]) -> str:
         "",
         "## Build time and binary size",
         "",
-        "| Workload | Auren native build s | C build s | Rust build s | "
-        "Auren binary B | C binary B | Rust binary B |",
+        "| Workload | Vantyx native build s | C build s | Rust build s | "
+        "Vantyx binary B | C binary B | Rust binary B |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for workload in workloads:
         builds = report["builds"][workload]
         sizes = report["sizes"][workload]
         lines.append(
-            f"| {workload} | {builds['auren-native']:.3f} | {builds['c']:.3f} | "
-            f"{builds['rust']:.3f} | {sizes['auren-native']} | {sizes['c']} | "
+            f"| {workload} | {builds['vantyx-native']:.3f} | {builds['c']:.3f} | "
+            f"{builds['rust']:.3f} | {sizes['vantyx-native']} | {sizes['c']} | "
             f"{sizes['rust']} |"
         )
     lines += [
         "",
         "## Notes",
         "",
-        "- `auren-interp` re-parses and type-checks the source on every run, as",
-        "  `auren run` does; `auren-native` is a prebuilt executable.",
-        "- `auren-native` build time includes invoking clang with `-O2`.",
+        "- `vantyx-interp` re-parses and type-checks the source on every run, as",
+        "  `vantyx run` does; `vantyx-native` is a prebuilt executable.",
+        "- `vantyx-native` build time includes invoking clang with `-O2`.",
         "- Map workloads use linear key arrays in every language, matching",
-        "  Auren's insertion-ordered linear map (ADR-0010). They are not a",
+        "  Vantyx's insertion-ordered linear map (ADR-0010). They are not a",
         "  comparison against hash-table implementations.",
         "- String workloads allocate immutable concatenation results; native",
         "  allocations are intentionally not reclaimed.",
@@ -325,15 +325,15 @@ def main() -> int:
         help="benchmark only the given workload (repeatable)",
     )
     parser.add_argument(
-        "--auren",
-        default=str(ROOT / "target/release/auren"),
-        help="path to the release auren binary",
+        "--vantyx",
+        default=str(ROOT / "target/release/vantyx"),
+        help="path to the release vantyx binary",
     )
     args = parser.parse_args()
 
-    auren = Path(args.auren).resolve()
-    if not auren.is_file():
-        print(f"error: auren binary not found: {auren}", file=sys.stderr)
+    vantyx = Path(args.vtx).resolve()
+    if not vantyx.is_file():
+        print(f"error: vantyx binary not found: {vantyx}", file=sys.stderr)
         print("hint: run `cargo build --release` first", file=sys.stderr)
         return 2
     workloads = args.workload or WORKLOADS
@@ -342,22 +342,22 @@ def main() -> int:
         return 2
 
     RESULTS.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="auren-bench-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="vantyx-bench-") as temporary:
         build_dir = Path(temporary)
         print("building native implementations...", file=sys.stderr)
-        builds = build_all(auren, build_dir, workloads)
+        builds = build_all(vantyx, build_dir, workloads)
         clang = shutil.which("clang")
         if clang is None:
             raise SystemExit("error: clang not found")
         helper = build_measure_helper(clang, build_dir)
         print("verifying identical output...", file=sys.stderr)
-        verify_outputs(workloads, build_dir, auren)
+        verify_outputs(workloads, build_dir, vantyx)
 
         results: dict[str, dict] = {}
         for workload in workloads:
             results[workload] = {}
             for implementation in IMPLEMENTATIONS:
-                command = command_for(workload, implementation, build_dir, auren)
+                command = command_for(workload, implementation, build_dir, vantyx)
                 print(f"measuring {workload}/{implementation}...", file=sys.stderr)
                 results[workload][implementation] = measure(
                     helper, command, args.reps
@@ -366,8 +366,8 @@ def main() -> int:
         sizes: dict[str, dict[str, int]] = {}
         for workload in workloads:
             sizes[workload] = {
-                "auren-source": (BENCH / f"{workload}.auren").stat().st_size,
-                "auren-native": (build_dir / f"{workload}-auren").stat().st_size,
+                "vantyx-source": (BENCH / f"{workload}.vtx").stat().st_size,
+                "vantyx-native": (build_dir / f"{workload}-vantyx").stat().st_size,
                 "c": (build_dir / f"{workload}-c").stat().st_size,
                 "rust": (build_dir / f"{workload}-rust").stat().st_size,
             }

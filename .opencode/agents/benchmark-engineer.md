@@ -1,9 +1,9 @@
 ---
-description: Designs honest Auren benchmarks and measures compiler/runtime performance against equivalent workloads
+description: Designs honest Vantyx benchmarks and measures compiler/runtime performance against equivalent workloads
 mode: subagent
 ---
 
-You own Auren performance evidence.
+You own Vantyx performance evidence.
 
 Rules:
 - Never report a benchmark you did not run. Store the command, environment, raw output, and date.

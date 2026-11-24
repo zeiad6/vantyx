@@ -36,7 +36,7 @@ Guarantees: left-to-right evaluation order, checked integer arithmetic, checked 
 
 Implemented: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, nominal enums, globals, functions, `if`/`while`/`for range`/`for list`/`for str`/`for map key`, `match` statements and expressions over closed enums, string indexing, structural equality, and the builtins listed in `PROJECT_STATUS.md`.
 
-Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported `for` iterables, and unannotated value-returning functions. String index assignment is rejected by the checker with `E0306`. Unsupported programs must run with `auren run`.
+Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported `for` iterables, and unannotated value-returning functions. String index assignment is rejected by the checker with `E0306`. Unsupported programs must run with `vantyx run`.
 
 This boundary is normative for v0.1: native builds must fail loudly rather than produce different behavior.
 
@@ -52,7 +52,7 @@ Rendering includes file, line, column, source line, caret, and optional help. Mu
 
 ## Tooling boundary
 
-`src/main.rs` owns CLI dispatch, file compilation, and native builds. `src/repl.rs` owns interactive input: raw-mode editing through the system `stty` with a canonical fallback, history, and completion (ADR-0013). The REPL compiles accumulated entries with `compile_with_options(source, false)` and executes them through the interpreter; it never invokes the native backend. Expression echo lives in `Interpreter::run_repl`, so each new expression is evaluated once and replayed entries stay muted. REPL meta-commands are handled before compilation and are not Auren syntax.
+`src/main.rs` owns CLI dispatch, file compilation, and native builds. `src/repl.rs` owns interactive input: raw-mode editing through the system `stty` with a canonical fallback, history, and completion (ADR-0013). The REPL compiles accumulated entries with `compile_with_options(source, false)` and executes them through the interpreter; it never invokes the native backend. Expression echo lives in `Interpreter::run_repl`, so each new expression is evaluated once and replayed entries stay muted. REPL meta-commands are handled before compilation and are not Vantyx syntax.
 
 ## Testing strategy
 

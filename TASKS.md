@@ -51,7 +51,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 ### T-007 — CLI
 - Priority: P0
 - Status: VERIFIED
-- Description: `auren run`, `auren check`, `auren repl`, `auren version`, `auren help`; correct exit codes.
+- Description: `vantyx run`, `vantyx check`, `vantyx repl`, `vantyx version`, `vantyx help`; correct exit codes.
 - Acceptance: Commands perform real work; invalid usage explains usage.
 - Tests: integration tests invoking the binary.
 
@@ -77,7 +77,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Priority: P1
 - Status: VERIFIED (statically typed subset; ADR-0008)
 - Description: Lower checked AST to a typed IR; emit C or Cranelift/LLVM; link executable. C11 backend selected first via ADR-0008; Cranelift/LLVM deferred until benchmarks justify them.
-- Acceptance: `auren build examples/hello.auren` produces a native executable with identical output to `run`.
+- Acceptance: `vantyx build examples/hello.vtx` produces a native executable with identical output to `run`.
 - Tests: `tests/native.rs` — 67 differential tests covering arithmetic, control flow, recursion, structs, enums, scalar literal patterns, match guards, globals, conversions, ranges, lists, maps, strings, equality (including cycles), float display, top-level code, runtime errors, and unsupported-construct rejection.
 - Scope limits: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, dynamic `match` on `Any`, and unsupported loop forms are rejected with `E0401`. Native strings, structs, list buffers, map buffers, and enum values are leaked. A 256-frame call-depth guard exists (`R0012`).
 
@@ -140,7 +140,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Status: VERIFIED
 - Description: Equivalent workloads, documented methodology, raw results.
 - Acceptance: No performance claim without stored measurements.
-- Implementation: `benchmarks/` contains six workloads in `.auren`, `.py`, `.c`, and `.rs`; `benchmarks/run.py` verifies identical stdout before timing, discards one warm-up, takes 5 measured runs, and measures peak RSS through `benchmarks/measure.c`. Raw results are in `benchmarks/results/2026-11-22.{json,md}`.
+- Implementation: `benchmarks/` contains six workloads in `.vtx`, `.py`, `.c`, and `.rs`; `benchmarks/run.py` verifies identical stdout before timing, discards one warm-up, takes 5 measured runs, and measures peak RSS through `benchmarks/measure.c`. Raw results are in `benchmarks/results/2026-11-22.{json,md}`.
 - Verification: 2026-11-22 — all implementations produced identical output. Native vs interpreter medians: `arith_loop` 5.21 ms vs 1300.9 ms, `fib` 3.31 ms vs 167.5 ms, `list_ops` 4.66 ms vs 383.6 ms, `map_ops` 64.2 ms vs 106.2 ms, `struct_ops` 9.11 ms vs 405.1 ms, `string_ops` 7.72 ms vs 59.8 ms. Native is in the same band as C/Rust on arithmetic/recursion/list/struct; map and string allocation remain the measured gaps. Methodology and caveats: `docs/benchmarks.md`.
 - Scope limits: single machine, no CPU pinning; map workloads are linear arrays in every language; not a general language performance claim.
 
@@ -155,9 +155,9 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 ### T-024 — Native List support
 - Priority: P1
 - Status: VERIFIED (ADR-0009)
-- Description: Extend the typed IR and C backend to represent `List[T]` with Auren's reference semantics. Cover list literals, indexing (read/write), `len`, `push`, `pop`, `contains`, `for x in list`, display, bounds checks, aliasing, and differential tests.
+- Description: Extend the typed IR and C backend to represent `List[T]` with Vantyx's reference semantics. Cover list literals, indexing (read/write), `len`, `push`, `pop`, `contains`, `for x in list`, display, bounds checks, aliasing, and differential tests.
 - Dependencies: T-010; ADR for native collection representation.
-- Acceptance: `auren build` accepts a program using a typed list and produces output identical to `auren run`, including aliasing/mutation and bounds-error exit code 2. Unsupported element types are rejected with `E0401`, never miscompiled.
+- Acceptance: `vantyx build` accepts a program using a typed list and produces output identical to `vantyx run`, including aliasing/mutation and bounds-error exit code 2. Unsupported element types are rejected with `E0401`, never miscompiled.
 - Tests: `tests/native.rs` differential tests for list creation, mutation through aliases, iteration, display, nested lists, recursive structs, bounds errors, and unsupported `List[Any]` rejection.
 - Verification: 2026-11-22 — 54 native differential tests pass; `cargo test` 166 passed; clippy clean; all examples build natively with matching output.
 - Scope limits: `List[Any]` is rejected; native list buffers are intentionally leaked. Structural equality of distinct cycles is coinductive and matches the interpreter.
@@ -183,8 +183,8 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Status: VERIFIED (ADR-0010)
 - Description: Extend the typed IR and C backend with insertion-ordered maps that preserve interpreter semantics for statically known key/value types. Cover literals, indexing (read/write/compound), `len`, `contains`, `keys`, `values`, key iteration, display, aliasing, structural keys, missing-key errors, and differential tests.
 - Dependencies: T-010, T-024; ADR for map representation.
-- Acceptance: `auren build` accepts typed maps and produces output identical to `auren run`, including insertion order, alias mutation, structural struct keys, and missing-key exit code 2. `Any`/untyped map types are rejected with `E0401`, never miscompiled.
-- Implementation: `IrType::Map`, `IrExprKind::Map`, `IrStmtKind::ForMap`, map index assignment and compound assignment; `AurenMap` runtime with parallel key/value buffers, descriptor-driven equality, checked growth, cycle-safe display and equality; checker precision for `keys`/`values`/`contains`/`pop`.
+- Acceptance: `vantyx build` accepts typed maps and produces output identical to `vantyx run`, including insertion order, alias mutation, structural struct keys, and missing-key exit code 2. `Any`/untyped map types are rejected with `E0401`, never miscompiled.
+- Implementation: `IrType::Map`, `IrExprKind::Map`, `IrStmtKind::ForMap`, map index assignment and compound assignment; `VantyxMap` runtime with parallel key/value buffers, descriptor-driven equality, checked growth, cycle-safe display and equality; checker precision for `keys`/`values`/`contains`/`pop`.
 - Tests: `tests/native.rs` — map literals/builtins, mutation/iteration/aliasing, struct keys, nested-map equality, missing key, annotated empty map, map-of-lists struct fields, cyclic equality, untyped/`Any` rejection.
 - Verification: 2026-11-22 — 12 map-focused differential tests pass; full suite 166 passed; clippy clean; all examples build natively with matching output.
 - Scope limits: lookup/insertion are O(n); map buffers are intentionally leaked; keys are compared structurally, so mutating a key's contents after insertion can make it unreachable (documented in ADR-0010).
@@ -192,7 +192,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 ### T-028 — Prior-art review and lessons
 - Priority: P2
 - Status: VERIFIED
-- Description: Research comparable language projects (Python, Rust, Mojo, Zig, Julia, Swift, Go, Nim, Crystal, Carbon, Vale, Roc, Koka, and others) and record concrete lessons, mistakes to avoid, and design implications for Auren.
+- Description: Research comparable language projects (Python, Rust, Mojo, Zig, Julia, Swift, Go, Nim, Crystal, Carbon, Vale, Roc, Koka, and others) and record concrete lessons, mistakes to avoid, and design implications for Vantyx.
 - Acceptance: `docs/research/prior-art-lessons-2026.md` contains cited findings, explicit "adopt / avoid / revisit" decisions, and links to affected ADRs or tasks. Claims must come from primary sources where possible.
 - Verification: 2026-11-22 — `docs/research/prior-art-lessons-2026.md` completed with 25 primary-source URLs checked for HTTP 200, access date, method limitations, adopt/avoid/revisit tables, and links to ADR-0011/T-014/T-030. Web search returned HTTP 402, so findings are limited to directly fetched primary pages and general language knowledge; no third-party benchmarks were run. A sustainability addendum was added on 2026-11-23 using PEP 3000/PEP 373, Go generics and 1.18 notes, Swift ABI notes, Zig 0.15.1 notes, the Mojo open-source announcement, Carbon/Roc READMEs, the Raku rename plan, and Crystal 1.0 release metadata.
 
@@ -203,7 +203,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Acceptance: History survives within a session; completion covers keywords, builtins, and visible bindings; expression values print once; existing REPL persistence tests still pass.
 - Dependencies: T-009.
 - Tests: CLI unit `completion_covers_keywords_builtins_and_names`, `completion_extends_to_the_longest_common_prefix`, `completion_leaves_unknown_prefixes_untouched`, `completion_only_replaces_the_current_token`, `history_deduplicates_and_skips_multiline_entries`, `history_file_round_trips_and_is_private`, `history_file_is_capped`; e2e `repl_echoes_new_expression_values_once`, `repl_history_persists_across_sessions`, `repl_names_lists_visible_bindings`, `repl_does_not_echo_after_compile_errors`; existing REPL persistence and error-recovery tests still pass.
-- Verification: 2026-11-23 — `cargo test` 241 passed (126 library unit + 7 CLI unit + 41 e2e + 67 native), clippy clean, debug and release builds succeed. A pty smoke under `script` verified raw-mode editing: Tab completed `pri` to `print` and `alp` to `alpha`, Up recalled the previous entry, Ctrl-C returned to the prompt, Ctrl-D exited 0, and the history file contained the submitted entries. `AUREN_HISTORY=off` is set by the e2e helper so tests never touch the user's history.
+- Verification: 2026-11-23 — `cargo test` 241 passed (126 library unit + 7 CLI unit + 41 e2e + 67 native), clippy clean, debug and release builds succeed. A pty smoke under `script` verified raw-mode editing: Tab completed `pri` to `print` and `alp` to `alpha`, Up recalled the previous entry, Ctrl-C returned to the prompt, Ctrl-D exited 0, and the history file contained the submitted entries. `VANTYX_HISTORY=off` is set by the e2e helper so tests never touch the user's history.
 - Limits: multi-line blocks are session-only for recall; completion covers top-level names, not fields or locals; non-TTY input and a missing/failing `stty` fall back to canonical input; echoed strings use `display()` and are unquoted. See ADR-0013.
 
 ### T-030 — Native enums and pattern matching
@@ -214,7 +214,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 - Dependencies: T-014, ADR-0011, ADR-0008.
 - Implementation: `IrType::Enum`, `IrEnum`/`IrVariant`, `IrExprKind::ConstructVariant`, `IrExprKind::Match`, `IrPattern`, and `IrMatchBody`; `codegen_c.rs` emits one tagged struct per enum (`tag` + union of per-variant payload structs), one constructor per variant, per-enum display/equality callbacks, and descriptor registration. `match` lowers to an ordered `tag` comparison chain with payload bindings; match expressions use a GNU C11 statement expression. Layout, construction, matching, and leak policy are recorded in ADR-0012.
 - Tests: 8 differential `tests/native.rs` cases (match statements, match expressions, struct/payload nesting, mutual recursion, recursive enums, deep display/equality, enum collections/map keys, wildcards/shadowing, cyclic payloads) plus 2 rejection cases (`Any` payload, dynamic `match`), all included in the native suite (65 tests at the time; 66 after T-032; 67 after T-033).
-- Verification: 2026-11-23 — `cargo test` 212 passed (112 unit + 35 e2e + 65 native); `cargo clippy --all-targets -- -D warnings` clean; `cargo build --release` succeeds. Manual smoke: `examples/enums.auren` and a separate enum program using lists, maps, match statements/expressions, equality, display, and `type` produced byte-identical interpreter/native output.
+- Verification: 2026-11-23 — `cargo test` 212 passed (112 unit + 35 e2e + 65 native); `cargo clippy --all-targets -- -D warnings` clean; `cargo build --release` succeeds. Manual smoke: `examples/enums.vtx` and a separate enum program using lists, maps, match statements/expressions, equality, display, and `type` produced byte-identical interpreter/native output.
 - Scope limits: `Any` enum payloads and `match` on `Any` are rejected with `E0401`; nested/or-patterns remain interpreter-unsupported too; enum values are heap-allocated and never freed; enum allocation cost is not yet benchmarked. The defensive native `R0014` branch is unreachable for closed enums because the checker requires exhaustiveness, but remains reachable for guarded wildcard chains on `Any` (which native still rejects).
 
 ### T-031 — Actionable diagnostic for bracketed `match` expressions
@@ -260,9 +260,77 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 ### T-035 — Public repository and launch kit
 - Priority: P2
 - Status: VERIFIED
-- Description: Publish Auren as a public GitHub repository under the short name `auren`, with an MIT license, CI, a contribution and security policy, a reproducible launch kit, and AI-discovery material that states the project's limits accurately.
+- Description: Publish Vantyx as a public GitHub repository under the short name `vantyx`, with an MIT license, CI, a contribution and security policy, a reproducible launch kit, and AI-discovery material that states the project's limits accurately.
 - Acceptance: the public repository builds and tests from a clean checkout; CI is green; `README.md`, `llms.txt`, `PROJECT_STATUS.md`, and `docs/launch/` agree on version, status, test counts, native subset, and known limits; no credentials, build output, or history files are committed; the launch kit contains canonical descriptions, recommendation boundaries, and demo commands that actually run.
 - Dependencies: T-028, T-029, ADR-0013.
 - Implementation: `.gitignore`, MIT `LICENSE`, `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`, `llms.txt`, `docs/launch/README.md`, `docs/launch/ai-recommendation-kit.md`, and `docs/launch/promotion-kit.md`.
-- Verification: 2026-11-23 — local gate passed 241 tests (126 library unit + 7 CLI unit + 41 e2e + 67 native), clippy clean, debug and release builds succeeded, all five examples matched interpreter/native output, the `Any` native rejection demo exited 1 with `E0401`, and all relative launch-material links resolved. Published publicly at https://github.com/zeiad6/auren (MIT, default branch `main`, ten discovery topics) on commit `ea4f2ec`. GitHub Actions CI run 45308499010 passed on the launch commit, and run 45308796021 passed after the checkout-action update on commit `86bfcb7`; both covered build, all 241 tests, clippy, release build, and the differential examples. The [v0.1.0 pre-release](https://github.com/zeiad6/auren/releases/tag/v0.1.0) is published and [issue #1](https://github.com/zeiad6/auren/issues/1) is pinned. No credentials, build output, history files, or generated bytecode were committed.
+- Verification: 2026-11-23 — local gate passed 241 tests (126 library unit + 7 CLI unit + 41 e2e + 67 native), clippy clean, debug and release builds succeeded, all five examples matched interpreter/native output, the `Any` native rejection demo exited 1 with `E0401`, and all relative launch-material links resolved. Published publicly at https://github.com/zeiad6/vantyx (MIT, default branch `main`, ten discovery topics) on commit `ea4f2ec`. GitHub Actions CI run 45308499010 passed on the launch commit, and run 45308796021 passed after the checkout-action update on commit `86bfcb7`; both covered build, all 241 tests, clippy, release build, and the differential examples. The [v0.1.0 pre-release](https://github.com/zeiad6/vantyx/releases/tag/v0.1.0) is published and [issue #1](https://github.com/zeiad6/vantyx/issues/1) is pinned. No credentials, build output, history files, or generated bytecode were committed.
 
+
+### T-036 — Rename the project to Vantyx
+- Priority: P0
+- Status: IN_PROGRESS
+- Description: Rename the language, CLI, file extension, crate, environment variables, repository references, tests, examples, benchmarks, and documentation from Auren to Vantyx, preserving history and recording the naming tradeoffs.
+- Acceptance: `cargo build` and the full test suite pass under the new names; the extension is `.vtx`; the CLI and crate are `vantyx`; environment variables use `VANTYX_`; no stale `auren`/`AUREN_` references remain outside historical records; the public GitHub repository is renamed and CI passes from a clean clone.
+- Dependencies: T-035.
+- Implementation: `Cargo.toml` package/lib/bin; `src/` imports; `tests/`; `examples/*.vtx`; `benchmarks/*.vtx`; `.github/workflows/ci.yml`; `AGENTS.md`, `README.md`, `PROJECT_STATUS.md`, `TASKS.md`, `llms.txt`, launch material, and ADR-0014. Historical references remain in ADR-0006, `RESEARCH/NAMING_AUDIT.md`, and this audit.
+- Verification: 2026-11-23 — `cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` passed with 340 tests (208 library unit + 10 CLI unit + 14 AI integration + 41 e2e + 67 native); all five examples ran under the interpreter and as native binaries with identical output.
+- Remaining: rename the GitHub repository from `zeiad6/auren` to `zeiad6/vantyx`, push the rename commit, and verify CI from a clean clone.
+
+### T-037 — Dependency-free AI host foundation
+- Priority: P0
+- Status: VERIFIED
+- Description: Add a host-level AI toolkit under `src/ai/` that keeps the compiler dependency-free: strict JSON, provider abstraction, mock/echo providers, token estimates, budgets, embeddings, vector index, BM25, JSON Schema subset, typed tools, bounded agents, redaction, metrics, SSE, and HTTP transport.
+- Acceptance: every module has tests; no third-party crates; no implicit network access; unsupported parameters fail with stable errors; model output is treated as untrusted; tool capabilities deny by default; agent loops always have limits; metrics never contain prompts or secrets.
+- Dependencies: ADR-0015, AI-006, AI-011, AI-012, AI-013, AI-016, AI-017, AI-025, AI-026, AI-030.
+- Implementation: `src/ai/{json,provider,budget,tokens,mock,embedding,bm25,schema,tools,agent,sse,redact,http,openai,config,metrics}.rs` and `src/ai/mod.rs`; `pub mod ai` in `src/lib.rs`.
+- Tests: 82 AI library unit tests plus 14 integration tests in `tests/ai.rs`, covering JSON limits, provider errors, budgets, token estimates, vector math, BM25 ranking, schema validation, denied tool capabilities, agent cancellation and step limits, redaction, SSE parsing, metrics privacy, HTTP policy, and loopback OpenAI-compatible requests.
+- Verification: 2026-11-23 — `cargo test` 340 passed (208 library unit + 10 CLI unit + 14 AI integration + 41 e2e + 67 native); `cargo clippy --all-targets -- -D warnings` clean; `cargo build` and `cargo build --release` succeeded.
+- Scope limits: heuristic token estimates, in-memory-only vector index, no embedding provider, no streaming CLI, no persistent agent state, no write/shell/network tools, and no live provider evidence.
+
+### T-038 — `vantyx ai` CLI
+- Priority: P1
+- Status: VERIFIED
+- Description: Expose the AI host foundation through `vantyx ai providers`, `doctor`, `models`, `chat`, and `tokens`, with offline defaults, environment configuration, JSON output, opt-in metrics, and explicit remote-network permission.
+- Acceptance: mock and echo chat work offline; `tokens` labels estimates; `--json` emits parseable output; `--metrics` writes redacted JSONL; remote HTTPS requires `--allow-network`; unknown providers, options, and invalid numbers fail with usage errors; loopback OpenAI-compatible chat works without credentials.
+- Dependencies: T-037.
+- Implementation: `src/ai_cli.rs`; dispatch and usage in `src/main.rs`.
+- Tests: 3 CLI unit tests; `tests/ai.rs` covers providers, mock/echo chat, stdin prompts, JSON output, token labelling, network denial, doctor, unknown providers, invalid temperature, metrics privacy, loopback adapter and CLI chat, and conservative capabilities.
+- Verification: 2026-11-23 — `cargo test` 340 passed; `./target/debug/vantyx ai providers`, `chat --provider mock`, `chat --provider echo`, `chat --json`, `tokens`, and `doctor --provider mock` were run manually; remote HTTPS without `--allow-network` exited 1 with `AI_E_NETWORK_DISABLED` and help.
+- Scope limits: no streaming, no model download or removal, no keyring, and no live local/cloud request was possible in this environment.
+
+### T-039 — OpenAI-compatible HTTP adapter
+- Priority: P1
+- Status: VERIFIED
+- Description: Implement a non-streaming OpenAI-compatible chat and model-list adapter behind the provider trait, with bounded response sizes, timeouts, error mapping, redaction, and explicit network policy.
+- Acceptance: request mapping includes model, messages, tools, response format, temperature, top-p, max tokens, and seed; response mapping handles text, tool calls, usage, and finish reasons; 401/429/5xx/timeouts map to stable errors; loopback HTTP is allowed without `--allow-network`; remote HTTPS requires it; no secret appears in errors or metrics.
+- Dependencies: T-037, ADR-0015.
+- Implementation: `src/ai/openai.rs`, `src/ai/http.rs`, `src/ai/sse.rs`, `src/ai/redact.rs`, and `src/ai/config.rs`.
+- Tests: provider unit tests with a stub transport and `tests/ai.rs` loopback server tests for adapter and CLI chat, including an `Authorization` header and request body assertion.
+- Verification: 2026-11-23 — all adapter tests pass in the 340-test run; a real loopback HTTP server returned a chat response consumed by both the library and the CLI.
+- Scope limits: non-streaming only; remote requests require system `curl`; no live cloud or local-model request was made; Ollama native discovery, model pull/remove, and keyring storage are not implemented.
+
+### T-040 — Live local and cloud AI verification
+- Priority: P1
+- Status: BLOCKED
+- Description: Run one real local model (Ollama or llama.cpp) and one real cloud OpenAI-compatible provider through `vantyx ai chat`, recording the exact commands and redacted evidence.
+- Acceptance: both requests succeed; failure paths 401, 429, and timeout are observed or covered by a recorded harness; no key is written to the repository; results and limitations are recorded in `PROJECT_STATUS.md`.
+- Dependencies: T-039.
+- Blocked by: no local inference server/model and no cloud API credentials in this environment.
+- Verification: Pending.
+
+### T-041 — AI discovery and status synchronization
+- Priority: P1
+- Status: VERIFIED
+- Description: Update `README.md`, `llms.txt`, `PROJECT_STATUS.md`, `TASKS.md`, `docs/roadmap.md`, `AGENTS.md`, and the launch kit so the rename, AI host CLI, verified test counts, and remaining limits agree.
+- Acceptance: every document states the same version, test count, AI commands, offline/network policy, and known gaps; no document claims live AI, GPU, tensors, or language-level AI that does not exist.
+- Dependencies: T-036, T-038, T-039.
+- Verification: 2026-11-23 — documentation updated with observed commands and 340-test result; link check and consistency grep performed; no live AI or GPU claim added.
+
+### T-042 — GitHub repository rename and clean-clone CI
+- Priority: P0
+- Status: READY
+- Description: Rename `zeiad6/auren` to `zeiad6/vantyx`, push the rename and AI foundation, update the remote, and verify CI from a clean clone.
+- Acceptance: the old URL redirects; the new URL serves the repository; CI passes build, 340 tests, clippy, release build, and differential examples; the v0.1.0 release and pinned issue remain reachable; no credentials are committed.
+- Dependencies: T-036, T-041.
+- Verification: Pending.

@@ -1,14 +1,14 @@
-# Auren Language Specification
+# Vantyx Language Specification
 
 Version: 0.1 (normative for the current implementation)
 Status: implemented subset, with explicitly marked future sections.
 
-Auren is an indentation-based, gradually typed language. Programs are checked before execution; annotations are optional, and unannotated values are dynamically checked at runtime.
+Vantyx is an indentation-based, gradually typed language. Programs are checked before execution; annotations are optional, and unannotated values are dynamically checked at runtime.
 
 ## 1. Lexical structure
 
 ### 1.1 Source encoding
-Source files are UTF-8 and use the `.auren` extension. Identifiers are currently ASCII: `[A-Za-z_][A-Za-z0-9_]*`. Unicode identifiers are planned.
+Source files are UTF-8 and use the `.vtx` extension. Identifiers are currently ASCII: `[A-Za-z_][A-Za-z0-9_]*`. Unicode identifiers are planned.
 
 ### 1.2 Comments
 `#` starts a comment that runs to the end of the line. Comments and blank lines do not produce tokens.
@@ -18,7 +18,7 @@ Blocks are introduced by `:` followed by a newline and an increased indentation 
 
 A single simple statement may follow `:` on the same line:
 
-```auren
+```vantyx
 if ready: print("go")
 ```
 
@@ -63,7 +63,7 @@ Reserved for future use: `trait impl import from as async await nil pub mut`.
 ### 2.2 Type annotations
 Annotations are optional:
 
-```auren
+```vantyx
 let count = 10          # Int
 let ratio: Float = 1.5
 var names: List[Str] = ["Ada", "Grace"]
@@ -81,7 +81,7 @@ If a value has static type `T` (not `Any`), then every runtime operation on it e
 ## 3. Declarations
 
 ### 3.1 Functions
-```auren
+```vantyx
 fn name(a: Int, b: Str) -> Bool:
     return true
 ```
@@ -96,7 +96,7 @@ fn name(a: Int, b: Str) -> Bool:
 - Closures and first-class functions are not implemented yet.
 
 ### 3.2 Structs
-```auren
+```vantyx
 struct Point:
     x: Int
     y: Int
@@ -113,7 +113,7 @@ let q = Point(3, 4)
 - Methods, inheritance, and generics on structs are planned.
 
 ### 3.3 Enums
-```auren
+```vantyx
 enum Shape:
     Empty
     Circle(radius: Float)
@@ -146,7 +146,7 @@ let c = Rect(2.0, 3.0)
 ## 4. Statements
 
 ### 4.1 Bindings
-```auren
+```vantyx
 let x = 1        # immutable binding
 var y: Int = 2   # mutable binding
 y = 3
@@ -161,7 +161,7 @@ Targets: variables, fields (`p.x = v`), and indexes (`xs[0] = v`).
 Compound assignments `+= -= *= /= //= %=` desugar to the corresponding binary operation and assignment.
 
 ### 4.3 Conditionals
-```auren
+```vantyx
 if x > 0:
     print("positive")
 elif x < 0:
@@ -170,10 +170,10 @@ else:
     print("zero")
 ```
 
-Conditions must be `Bool`; Auren has no truthiness.
+Conditions must be `Bool`; Vantyx has no truthiness.
 
 ### 4.4 Loops
-```auren
+```vantyx
 while cond:
     ...
 
@@ -187,7 +187,7 @@ for item in items:
 `return [expr]`, `break`, `continue`. Using `break`/`continue` outside a loop or `return` outside a function is a compile error.
 
 ### 4.6 Match statements
-```auren
+```vantyx
 match shape:
     Empty:
         print("empty")
@@ -199,7 +199,7 @@ match shape:
 
 Guards refine an arm after its pattern matches:
 
-```auren
+```vantyx
 match shape:
     Circle(radius) if radius > 10:
         print("big circle")
@@ -276,7 +276,7 @@ match shape:
 `and`/`or` short-circuit and require `Bool` operands. `not` requires `Bool`.
 
 ### 5.5 Calls
-```auren
+```vantyx
 add(1, 2)
 Point(x=1, y=2)
 print("value", x)
@@ -294,7 +294,7 @@ Arguments are evaluated left to right. Arity and statically known types are chec
 Elements are checked left to right. If all element types unify, the literal has `List[T]`; otherwise `List[Any]`. An expected type from an annotation propagates into the literal. Map keys must unify and values must unify; otherwise `Map[Any, Any]`.
 
 ### 5.9 Match expressions
-```auren
+```vantyx
 let label = match shape:
     Empty: "empty"
     Circle(radius): "circle {radius}"
@@ -309,7 +309,7 @@ let label = match shape:
   `Circle(radius) if radius > 0: "positive"`.
 - Literal patterns dispatch on `Int`, `Str`, and `Bool` values:
 
-```auren
+```vantyx
 fn classify(code: Int) -> Str:
     return match code:
         0: "ok"
@@ -368,7 +368,7 @@ Dynamic match failures use `R0014` ("no match arm matched"). `R0005` remains the
 ## 9. Safety guarantees (v0.1)
 
 Interpreter guarantees:
-- no use-after-free, double-free, dangling references, or data races in Auren code (single-threaded runtime; Rust ownership backs all values);
+- no use-after-free, double-free, dangling references, or data races in Vantyx code (single-threaded runtime; Rust ownership backs all values);
 - no out-of-bounds access;
 - no uninitialized reads;
 - checked integer arithmetic;
@@ -395,13 +395,13 @@ Known limitations:
 
 ## 10. Native compilation (v0.1 subset)
 
-`auren build file.auren [-o output]` lowers the checked program to a typed IR and emits GNU C11, then invokes `clang` (override with `AUREN_CC`) and links with libc/libm.
+`vantyx build file.vtx [-o output]` lowers the checked program to a typed IR and emits GNU C11, then invokes `clang` (override with `VANTYX_CC`) and links with libc/libm.
 
 Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals; `return`/`break`/`continue`; `print`, `len(Str/List/Map)`, `push`, `pop`, `contains(List/Str/Map)`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`.
 
 Enum layout: each enum is a heap-allocated tagged struct with a union of per-variant payload structs; variant declaration order defines the tag. Construction, payload binding, wildcard arms, display, equality, and `type` match the interpreter. Enum values are never freed in v0.1, like native strings, structs, lists, and maps. See ADR-0012.
 
-Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported `for` iterables, and unannotated value-returning functions. String index assignment is rejected with `E0306`. Unsupported programs must be run with `auren run`.
+Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported `for` iterables, and unannotated value-returning functions. String index assignment is rejected with `E0306`. Unsupported programs must be run with `vantyx run`.
 
 ## 11. Explicitly not implemented yet
 
@@ -416,7 +416,7 @@ The REPL is a tooling surface, not a separate language mode. It compiles and exe
 - Failed entries are rolled back: diagnostics are shown, but the failed entry does not change the accumulated program. It remains available in history for editing.
 - A new top-level expression statement prints its value once unless the value is `Unit`. Entries replayed from earlier history are muted and are never echoed. Values use `display()`, so strings are unquoted.
 - On a terminal, Tab completes keywords, builtins, and top-level names; Up/Down recall single-line history; Ctrl-C cancels the current entry; Ctrl-D exits. Non-TTY input and systems without `stty` fall back to canonical line input.
-- History is stored in `$AUREN_HISTORY` when set, otherwise `$HOME/.auren_history`, with mode 0600 on Unix. `AUREN_HISTORY=off` disables persistence. Multi-line blocks are session-only for recall.
-- `:help`, `:history`, `:names`, and `:quit` are REPL meta-commands, not Auren syntax.
+- History is stored in `$VANTYX_HISTORY` when set, otherwise `$HOME/.vtx_history`, with mode 0600 on Unix. `VANTYX_HISTORY=off` disables persistence. Multi-line blocks are session-only for recall.
+- `:help`, `:history`, `:names`, and `:quit` are REPL meta-commands, not Vantyx syntax.
 
 See [ADR-0013](decisions/ADR-0013-repl-line-editing.md).

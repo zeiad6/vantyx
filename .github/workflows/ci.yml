@@ -37,7 +37,7 @@ jobs:
 
       - name: Run tests
         env:
-          AUREN_CC: clang
+          VANTYX_CC: clang
         run: cargo test --locked
 
       - name: Lint
@@ -48,13 +48,13 @@ jobs:
 
       - name: Differential examples
         env:
-          AUREN_CC: clang
+          VANTYX_CC: clang
         run: |
           set -euo pipefail
-          for source in examples/*.auren; do
-            name="$(basename "$source" .auren)"
-            ./target/debug/auren run "$source" > "/tmp/${name}.interp"
-            ./target/debug/auren build "$source" -o "/tmp/${name}.native"
+          for source in examples/*.vtx; do
+            name="$(basename "$source" .vtx)"
+            ./target/debug/vantyx run "$source" > "/tmp/${name}.interp"
+            ./target/debug/vantyx build "$source" -o "/tmp/${name}.native"
             "/tmp/${name}.native" > "/tmp/${name}.native.out"
             diff -u "/tmp/${name}.interp" "/tmp/${name}.native.out"
             echo "ok: $source"

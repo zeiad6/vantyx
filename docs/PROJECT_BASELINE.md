@@ -1,7 +1,7 @@
-# Project Baseline — Auren (repository: RustZ)
+# Project Baseline — Vantyx (repository: RustZ)
 
 Date: 2026-11-23
-Session: re-baselined after the REPL upgrade (T-029), match guards (T-033), scalar literal patterns (T-032), native enums and `match` (T-030), the bracketed-match diagnostic (T-031), the sustainability research addendum (T-028), launch-kit preparation (T-035), and documentation reconciliation
+Session: re-baselined after the Vantyx rename, the AI host foundation and `vantyx ai` CLI (T-037–T-039), the REPL upgrade (T-029), match guards (T-033), scalar literal patterns (T-032), native enums and `match` (T-030), the bracketed-match diagnostic (T-031), the sustainability research addendum (T-028), launch-kit preparation (T-035), and documentation reconciliation
 
 ## Current re-baseline (2026-11-23)
 
@@ -15,13 +15,14 @@ The sections below record the original empty-repository inspection. The reposito
 | Interpreter | Full v0.1 language, reference semantics, checked operations, call-depth guard, enum values, match, scalar literal dispatch, and guarded arm selection |
 | Native path | Typed IR + GNU C11 backend for a statically typed subset (`Unit`/`Int`/`Float`/`Bool`/`Str`/`List[T]`/`Map[K,V]`/structs/enums) with UTF-8 string indexing/iteration, `match` with guards over enums and scalar literals, and cycle-safe structural equality |
 | Native exclusions | `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported loop forms → `E0401` |
-| Tests | 126 library unit + 7 CLI unit + 41 end-to-end + 67 differential native = 241 passing |
+| Tests | 208 library unit + 10 CLI unit + 14 AI integration + 41 end-to-end + 67 differential native = 340 passing |
 | Benchmarks | Six-workload baseline vs Python/C/Rust; raw results in `benchmarks/results/` (T-022); enums not yet benchmarked |
-| Build/tooling | `cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, `cargo test` clean; `auren run/check/build/repl`; REPL line editing, history, completion, and expression echo (T-029, ADR-0013); manual fuzz harness |
-| Launch assets | Public at https://github.com/zeiad6/auren; MIT license, green CI, v0.1.0 pre-release, pinned feedback issue, contribution/security/conduct policies, `CITATION.cff`, `llms.txt`, and an honest AI-recommendation/promotion kit under `docs/launch/` |
+| AI host | Dependency-free `src/ai/` foundation: strict JSON, providers, mock/echo, budgets, embeddings, vector index, BM25, JSON Schema subset, typed tools, bounded agents, redacted metrics, SSE, OpenAI-compatible HTTP adapter; `vantyx ai providers/doctor/models/chat/tokens` |
+| Build/tooling | `cargo build`, `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, `cargo test` clean; `vantyx run/check/build/repl/ai`; REPL line editing, history, completion, and expression echo (T-029, ADR-0013); manual fuzz harness |
+| Launch assets | Local tree renamed to Vantyx; public repository is still `zeiad6/auren` until the GitHub rename (T-042); MIT license, green CI on the old commit, v0.1.0 pre-release, pinned feedback issue, contribution/security/conduct policies, `CITATION.cff`, `llms.txt`, and an honest AI-recommendation/promotion kit under `docs/launch/` |
 | Maturity | **Functional prototype**, not production-ready |
-| Main risks | Intentional native leaks; O(n) native maps; unmeasured enum allocation; single-machine benchmark baseline only; docs drift; gradual `Any` erodes static guarantees |
-| Next task | Nested/or-patterns (T-029, T-030, T-031, T-032, T-033, and T-035 complete) |
+| Main risks | Intentional native leaks; O(n) native maps; unmeasured enum allocation; single-machine benchmark baseline only; docs drift; gradual `Any` erodes static guarantees; no live AI provider evidence; no model/tokenizer/GPU support |
+| Next task | GitHub repository rename and clean-clone CI (T-042); nested/or-patterns (T-029–T-033 and T-035 complete) |
 
 The source tree is tracked on branch `main`. Publication and CI status are recorded in `PROJECT_STATUS.md`; do not infer a public URL from this baseline.
 

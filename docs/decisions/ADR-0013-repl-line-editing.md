@@ -56,8 +56,8 @@ REPL does not search `PATH` for it.
 
 - History is an in-memory list capped at 1000 entries. Consecutive duplicates
   are ignored.
-- Entries are persisted one per line to `$AUREN_HISTORY` when set, otherwise to
-  `$HOME/.auren_history`. `AUREN_HISTORY=off` disables persistence.
+- Entries are persisted one per line to `$VANTYX_HISTORY` when set, otherwise to
+  `$HOME/.vtx_history`. `VANTYX_HISTORY=off` disables persistence.
 - The file is created with mode 0600 on Unix because REPL entries can contain
   secrets. Persistence is best-effort: a read-only home directory does not
   break the REPL.
