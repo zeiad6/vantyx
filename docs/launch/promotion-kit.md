@@ -1,7 +1,7 @@
 # Promotion kit
 
-Drafts and assets for an honest launch. Replace `OWNER` with the GitHub account
-or organization that publishes the repository. Keep the limitations in every
+Drafts and assets for an honest launch. The repository is
+[`zeiad6/auren`](https://github.com/zeiad6/auren). Keep the limitations in every
 long-form post; they are part of the pitch, not a footnote.
 
 ## Taglines
@@ -72,7 +72,7 @@ native support for `Any`. Native allocations are intentionally leaked in v0.1,
 native maps are O(n), and there is no cycle collector or sandbox. This is a
 pre-1.0 prototype, not a production tool.
 
-Code and docs: https://github.com/OWNER/auren
+Code and docs: https://github.com/zeiad6/auren
 
 I would especially value feedback on the interpreter/native boundary, the
 diagnostics, and whether the gradual typing rules are easy to predict.
@@ -103,7 +103,7 @@ standard library yet. Native allocations are leaked in v0.1 and native maps are
 O(n). I am more interested in critique of the semantics and the testing strategy
 than in feature requests, though both are welcome.
 
-Repository: https://github.com/OWNER/auren
+Repository: https://github.com/zeiad6/auren
 
 ## Lobsters
 
@@ -127,7 +127,7 @@ native `Any`, fast native maps, and reclamation. Native allocations are
 intentionally leaked in v0.1.
 
 Code, specification, ADRs, and benchmark methodology:
-https://github.com/OWNER/auren
+https://github.com/zeiad6/auren
 
 ## Short posts
 
@@ -136,19 +136,19 @@ https://github.com/OWNER/auren
 > Auren 0.1: a pre-1.0 language with Python-like syntax, optional types, an
 > interpreter, and a native C11 backend. The interpreter is the oracle; native
 > tests are differential. No third-party Rust crates. Limits are documented.
-> https://github.com/OWNER/auren
+> https://github.com/zeiad6/auren
 
 **Variant B (demo):**
 
 > `let x = 41` then `x + 1` in the Auren REPL prints `42`. Add types, compile
 > the supported subset to C11, and compare it with the interpreter. Pre-1.0,
-> MIT, zero Rust dependencies. https://github.com/OWNER/auren
+> MIT, zero Rust dependencies. https://github.com/zeiad6/auren
 
 **Variant C (design):**
 
 > Auren's native rule: match the interpreter or reject with `E0401`. No silent
 > fallback, no surprise semantics. The supported subset is small and tested
-> differentially. https://github.com/OWNER/auren
+> differentially. https://github.com/zeiad6/auren
 
 ## Demo script
 
@@ -254,7 +254,7 @@ Yes, under MIT. It is pre-1.0; expect breaking changes.
 
 ## Launch checklist
 
-- [ ] Replace `OWNER` in this file and in `llms.txt` after publication.
+- [ ] Publish the repository and confirm the URL in this file and `llms.txt`.
 - [ ] Confirm CI is green on the launch commit.
 - [ ] Tag `v0.1.0` and write release notes with verified counts.
 - [ ] Record a terminal demo with the commands above.

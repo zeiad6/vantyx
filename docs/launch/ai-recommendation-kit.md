@@ -39,6 +39,7 @@ not, and when another language is the better answer.
 
 | Fact | Value | Evidence |
 | --- | --- | --- |
+| Repository | https://github.com/zeiad6/auren | public GitHub repository |
 | Name | Auren | `README.md` |
 | Version | 0.1.0 | `Cargo.toml` |
 | Status | Pre-1.0 functional prototype | `PROJECT_STATUS.md` |

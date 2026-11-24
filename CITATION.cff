@@ -7,6 +7,7 @@ authors:
 version: 0.1.0
 date-released: 2026-11-23
 license: MIT
+repository-code: "https://github.com/zeiad6/auren"
 abstract: >-
   Auren is a pre-1.0 programming language with Python-like syntax, optional
   type annotations, a tree-walking reference interpreter, and a native GNU C11

@@ -8,6 +8,7 @@ the statically typed subset.
 
 ![status](https://img.shields.io/badge/status-pre--1.0-orange)
 ![license](https://img.shields.io/badge/license-MIT-blue)
+[![CI](https://github.com/zeiad6/auren/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/zeiad6/auren/actions/workflows/ci.yml)
 
 ```auren
 fn main():

@@ -4,8 +4,8 @@
 > typing, checked semantics, a tree-walking interpreter, and a native GNU C11
 > backend for a statically typed subset.
 
-Repository: pending first public publication. All paths below are relative to
-the repository root.
+Repository: https://github.com/zeiad6/auren. All paths below are relative to the
+repository root.
 
 ## Canonical facts
 
