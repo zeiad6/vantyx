@@ -13,8 +13,9 @@
 
 ## Last recorded repository state (2026-11-26)
 
-- `origin/main` and HEAD are at `779783c` (T-105), and CI run 45936065460
-  passed on it. `61cb9be` recorded the T-104 status-sync CI run and passed
+- `origin/main` and HEAD are at `a9a6d1a` (record the T-105 CI run), and CI
+  run 45936329476 passed on it. `779783c` contains T-105 and passed run
+  45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed
   45934367601. `8805381` recorded the T-104 CI run and passed 45934076343. `4269010` contains call-site native
   call-depth diagnostics (T-104), and CI run 45933776137 passed on it.
   `a263cb3` recorded the T-103 CI run and passed run 45928756101. `46b7d54` contains deterministic scalar-list
@@ -36,6 +37,16 @@
   45936065460 green. `len([])`,
   `print([])`, and unannotated empty-list bindings still infer `List[Any]` and
   remain under the native `E0401` boundary.
+- The T-106 working tree makes a direct empty list literal in `contains` or
+  `push` take the value's element type, so `contains([], 1)` and
+  `push([], 1)` build natively instead of failing with `E0401`. It passes 726
+  tests (402 library unit + 15 CLI unit + 47 AI integration + 118 e2e + 144
+  native), the full 144-test native suite under `VANTYX_CC=gcc`, clippy and
+  fmt clean, the release build, and five examples; seven Python self-tests,
+  100/100 seed-1 differential cases, fuzz smoke, the 13-skill validator, and
+  the link checker (117 links in 178 Markdown files) passed. Commit and CI are
+  pending. Non-empty arguments keep `E0301`; dynamic `Any` values and
+  still-untyped empty literals remain under the native `E0401` boundary.
 - The T-104 tree moves the native `R0012` depth-limit diagnostic to the
   failing call site, including across modules. It passed 723 tests
   (402 library unit + 15 CLI unit + 47 AI integration + 117 e2e + 142 native),

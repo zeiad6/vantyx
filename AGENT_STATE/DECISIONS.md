@@ -4,6 +4,20 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-26 — Empty list literals take the value type in `contains`/`push`
+
+- `contains([], value)` and `push([], value)` now check the empty literal as
+  `List[type(value)]`. The value is the only source of the element type, and
+  this matches the interpreter's result while letting the native backend
+  represent the list.
+- Keep the value-first check limited to a direct empty list literal. Non-empty
+  lists keep element-first inference and their existing diagnostics.
+- Do not default `pop([])`, `keys({})`, `values({})`, `contains({}, key)`,
+  `len([])`, `print([])`, or unannotated empty-list bindings. No element, key,
+  or value type is available; choosing one would be an arbitrary, visible
+  static type. These remain interpreter-only `List[Any]`/`Map[Any, Any]`
+  cases under the native `E0401` boundary.
+
 ## 2026-11-26 — Empty list literals take `join`'s parameter type
 
 - `join` is the only builtin whose first parameter has one unambiguous

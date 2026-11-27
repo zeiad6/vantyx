@@ -2549,6 +2549,15 @@ impl<'a> Checker<'a> {
                 if !arity(self, 2, 2) {
                     return Type::Unit;
                 }
+                // A direct empty list literal can take its element type from
+                // the value being pushed instead of defaulting to `List[Any]`,
+                // which the native backend cannot represent.
+                if matches!(&args[0].value.kind, ExprKind::List(elements) if elements.is_empty()) {
+                    let value_ty = arg_ty(self, 1, None);
+                    let expected = Type::List(Box::new(value_ty));
+                    arg_ty(self, 0, Some(&expected));
+                    return Type::Unit;
+                }
                 let list_ty = arg_ty(self, 0, None);
                 let element_ty = match &list_ty {
                     Type::List(inner) => Some((**inner).clone()),
@@ -2590,6 +2599,15 @@ impl<'a> Checker<'a> {
             }
             "contains" => {
                 if !arity(self, 2, 2) {
+                    return Type::Bool;
+                }
+                // As with `join`, a direct empty list literal has no element
+                // type of its own. The needle supplies it, so the literal can
+                // be checked as `List[needle]` instead of `List[Any]`.
+                if matches!(&args[0].value.kind, ExprKind::List(elements) if elements.is_empty()) {
+                    let needle_ty = arg_ty(self, 1, None);
+                    let expected = Type::List(Box::new(needle_ty));
+                    arg_ty(self, 0, Some(&expected));
                     return Type::Bool;
                 }
                 let collection_ty = arg_ty(self, 0, None);

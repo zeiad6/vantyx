@@ -93,11 +93,14 @@ python3 benchmarks/run.py --reps 5
   diagnostics are pushed in `4269010` with the 723-test gate and CI run
   45933776137 green; the status sync `8805381` passed run 45934076343, and
   `61cb9be` passed run 45934367601; T-105 empty-list `join` inference is
-  pushed in `779783c` with the 724-test gate and CI run 45936065460 green). The
+  pushed in `779783c` with the 724-test gate and CI run 45936065460 green;
+  the status sync `a9a6d1a` passed run 45936329476; T-106 empty-list
+  `contains`/`push` inference is locally verified with the 726-test gate
+  (commit and CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 724 passed (402 library unit + 15 CLI unit + 47 AI integration +
-  117 e2e + 143 native); the full native suite also passes with `VANTYX_CC=gcc`.
+- `cargo test`: 726 passed (402 library unit + 15 CLI unit + 47 AI integration +
+  118 e2e + 144 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
 - Native condition and short-circuit lowering match the interpreter:

@@ -1,5 +1,41 @@
 # Active Task
 
+## T-106 — Empty list literals adopt `contains`/`push` value types
+
+- Status: VERIFIED locally; commit and CI pending
+- Priority: P1 (core language typing and interpreter/native parity)
+- Dependencies: ADR-0009, ADR-0028
+
+### Implemented
+
+- `contains([], value)` and `push([], value)` checked the empty literal as
+  `List[Any]`, ran in the interpreter, and failed natively with `E0401`.
+- The `contains` and `push` arms in `src/checker.rs` now check a direct empty
+  list literal against `List[T]`, where `T` is the checked type of the needle
+  or pushed value. Non-empty lists keep the previous inference path.
+
+### Evidence
+
+- 2026-11-26: targeted native and e2e tests pass; negative probes still report
+  `E0301` for `contains([1, 2], "x")` and `push([1], "x")`; `contains([], x)`
+  with `x: Any` still reaches the native `E0401` boundary.
+- 2026-11-26 full gate: `cargo test` 726 passed (402 library unit + 15 CLI
+  unit + 47 AI integration + 118 e2e + 144 native); `VANTYX_CC=gcc cargo test
+  --test native` 144 passed; `cargo build --release` succeeded; all five
+  examples matched `vantyx run`; seven Python self-tests, 100/100 seed-1
+  differential cases, fuzz smoke (9 depth/limit + 400 random/mutated inputs),
+  the 13-skill validator, and the link checker (117 links in 178 Markdown
+  files) passed.
+
+### Remaining
+
+- Complete the full gate, update records, commit, push, and record CI.
+- Scope limits: only a direct empty list literal in the first argument of
+  `contains` or `push` is affected. `len([])`, `print([])`, `pop([])`,
+  `keys({})`, `values({})`, `contains({}, key)`, and unannotated empty-list
+  bindings still infer `List[Any]`/`Map[Any, Any]` and remain under the native
+  `E0401` boundary.
+
 ## T-105 — Empty list literal adopts `join`'s `List[Str]` type
 
 - Status: VERIFIED; pushed in `779783c`; CI run 45936065460 green

@@ -2,6 +2,17 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
+## In progress
+
+- T-106 — Empty list literals adopt `contains`/`push` value types. VERIFIED
+  locally; `contains([], value)` and `push([], value)` previously checked as
+  `List[Any]` and failed natively with `E0401`. The checker now checks the
+  empty literal as `List[type(value)]`; non-empty arguments keep the old
+  inference path and diagnostics. New native differential and e2e tests;
+  726-test gate, GCC native suite, release build, five examples, seven Python
+  self-tests, 100/100 differential cases, fuzz smoke, 13 skills, and 117
+  links; commit and CI pending.
+
 ## Completed in `779783c` (CI run 45936065460 green)
 
 - T-105 — Empty list literal adopts `join`'s `List[Str]` type. VERIFIED;

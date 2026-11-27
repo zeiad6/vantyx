@@ -735,6 +735,34 @@ fn join_accepts_empty_list_literals() {
 }
 
 #[test]
+fn contains_and_push_accept_empty_list_literals() {
+    // The needle or pushed value supplies the element type, so these direct
+    // empty literals no longer reach the native backend as `List[Any]`.
+    assert_same(
+        "empty-list-contains-push",
+        "var calls: Int = 0\n\
+         \n\
+         fn bump() -> Int:\n\
+         \x20   calls += 1\n\
+         \x20   return calls\n\
+         \n\
+         fn main():\n\
+         \x20   print(contains([], 1))\n\
+         \x20   print(contains([], \"x\"))\n\
+         \x20   print(contains([], 1.5))\n\
+         \x20   print(contains([], true))\n\
+         \x20   print(contains([], [1, 2]))\n\
+         \x20   push([], 7)\n\
+         \x20   print(contains([], bump()))\n\
+         \x20   push([], bump())\n\
+         \x20   print(calls)\n\
+         \x20   print(contains([1, 2], 1))\n\
+         \n\
+         main()\n",
+    );
+}
+
+#[test]
 fn sorted_scalar_lists_match() {
     assert_same(
         "sorted",

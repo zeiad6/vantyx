@@ -4,8 +4,9 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `779783c` (T-105); CI run 45936065460 green on it. T-104 status sync `61cb9be` passed run 45934367601.
-- Remote: `origin/main` at `779783c`; CI run 45936065460 green on `779783c`;
+- Last commit: `a9a6d1a` (record T-105 CI run 45936065460); CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
+- Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
+  CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
   CI run 45934076343 green on `8805381`;
   CI run 45933776137 green on `4269010`;
@@ -17,6 +18,23 @@
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
+
+T-106 — Empty list literals adopt `contains`/`push` value types. Status:
+VERIFIED locally; commit and CI pending. `contains([], value)` and
+`push([], value)` were accepted by the checker as `List[Any]`, ran in the
+interpreter, and were rejected by the native backend with `E0401`. The value
+argument supplies the missing element type, so the `contains` and `push` arms
+in `src/checker.rs` now check a direct empty list literal against `List[T]`;
+non-empty arguments keep the previous inference path, so `contains([1, 2],
+"x")` and `push([1], "x")` still report `E0301`. New
+`tests/native.rs::contains_and_push_accept_empty_list_literals` and
+`tests/e2e.rs::empty_list_literals_in_contains_and_push_are_typed` cover
+scalars, a nested list, effectful values, and the interpreter result. Dynamic
+`Any` needles/values and still-untyped empty literals remain under the native
+`E0401` boundary. 726-test gate; GCC native suite 144/144; release build and
+five examples; seven Python self-tests, 100/100 seed-1 differential cases,
+fuzz smoke, 13 skills, and 117 links in 178 Markdown files passed. See
+`ACTIVE_TASK.md`.
 
 T-105 — Empty list literal adopts `join`'s `List[Str]` type. Status: VERIFIED;
 pushed in `779783c`; CI run 45936065460 green. `join([], separator)` was accepted by the checker as
@@ -477,6 +495,7 @@ binaries or credentials are tracked.
 - CI run 45934076343 — success on `8805381` (T-104 status sync)
 - CI run 45934367601 — success on `61cb9be` (T-104 status-sync record)
 - CI run 45936065460 — success on `779783c` with T-105
+- CI run 45936329476 — success on `a9a6d1a` (T-105 status sync)
 
 ## Next steps
 

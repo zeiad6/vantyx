@@ -2096,6 +2096,23 @@ fn text_builtins_round_trip() {
 }
 
 #[test]
+fn empty_list_literals_in_contains_and_push_are_typed() {
+    let run = run_file(
+        "empty-list-contains-push",
+        "fn main():\n\
+         \x20   print(contains([], 1))\n\
+         \x20   print(contains([], \"x\"))\n\
+         \x20   print(contains([], 1.5))\n\
+         \x20   print(contains([], true))\n\
+         \x20   print(contains([], [1, 2]))\n\
+         \x20   push([], 7)\n\
+         \x20   print(\"ok\")\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "false\nfalse\nfalse\nfalse\nfalse\nok\n");
+}
+
+#[test]
 fn text_builtins_reject_non_str_arguments() {
     let run = check_file(
         "text-types",

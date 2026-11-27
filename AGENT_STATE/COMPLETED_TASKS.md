@@ -3,6 +3,14 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-106 — Empty list literals adopt `contains`/`push` value types (2026-11-26;
+  locally verified; 726-test gate; GCC native suite 144/144; release build and
+  five examples; commit and CI pending; `contains([], value)` and
+  `push([], value)` previously checked as `List[Any]` and failed natively with
+  `E0401`; the checker now checks a direct empty list literal against
+  `List[type(value)]`, while non-empty arguments keep the old inference path
+  and `E0301` diagnostics; dynamic `Any` values and still-untyped empty
+  literals remain under the native `E0401` boundary).
 - T-105 — Empty list literal adopts `join`'s `List[Str]` type (2026-11-26;
   pushed in `779783c`; CI run 45936065460 green; 724-test gate;
   `join([], separator)` previously checked as `List[Any]` and

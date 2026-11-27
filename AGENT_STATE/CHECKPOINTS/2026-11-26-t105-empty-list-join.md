@@ -58,7 +58,7 @@ After: both engines exit `0`, print the same three empty lines for
 - Skill validator — 13 skills valid; link checker — 117 links in 177 Markdown
   files OK.
 - `git push origin main` — `61cb9be..779783c`; CI run 45936065460 passed on
-  `779783c`.
+  `779783c`. The status-sync commit `a9a6d1a` passed run 45936329476.
 
 ## Blockers and limits
 

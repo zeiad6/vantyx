@@ -338,7 +338,7 @@ Arguments are evaluated left to right. Arity and statically known types are chec
 `value.field` requires a struct type; unknown fields are `E0304`. On `Any`, the runtime checks the actual value.
 
 ### 5.8 List and map literals
-Elements are checked left to right. If all element types unify, the literal has `List[T]`; otherwise `List[Any]`. An expected type from an annotation propagates into the literal. An empty list literal also adopts the parameter type in a builtin position where that type is unambiguous (`join`'s `List[Str]`); otherwise it remains `List[Any]`. Map keys must unify and values must unify; otherwise `Map[Any, Any]`.
+Elements are checked left to right. If all element types unify, the literal has `List[T]`; otherwise `List[Any]`. An expected type from an annotation propagates into the literal. An empty list literal also adopts an expected type from a builtin position when the other arguments determine it: `join`'s `List[Str]`, and the needle/value element type of `contains` or `push`. Otherwise it remains `List[Any]`. Map keys must unify and values must unify; otherwise `Map[Any, Any]`.
 
 ### 5.9 Match expressions
 ```vantyx
@@ -431,9 +431,9 @@ and binds the success payload field. See
 | `range(end: Int) -> List[Int]` | `0 .. end-1` |
 | `range(start: Int, end: Int) -> List[Int]` | `start .. end-1` |
 | `range(start: Int, end: Int, step: Int) -> List[Int]` | Step must be nonzero |
-| `push(list: List[T], value: T) -> Unit` | Appends in place |
+| `push(list: List[T], value: T) -> Unit` | Appends in place; an empty list literal adopts `T` from the value |
 | `pop(list: List[T]) -> T` | Removes and returns last element; empty is `R0003` |
-| `contains(list: List[T], value: T) -> Bool` | List membership |
+| `contains(list: List[T], value: T) -> Bool` | List membership; an empty list literal adopts `T` from the value |
 | `contains(text: Str, needle: Str) -> Bool` | Substring test |
 | `contains(map: Map[K, V], key: K) -> Bool` | Key membership |
 | `sorted(list: List[T]) -> List[T]` | Returns a new ascending list; `T` is `Int`, `Float`, `Str`, or `Bool`. The input is unchanged. Ordering is stable: equal values keep their input order, `-0.0` and `0.0` compare equal, and every `NaN` sorts after every non-`NaN` (ADR-0050) |
@@ -479,7 +479,10 @@ and binds the success payload field. See
 | `path_is_absolute(path: Str) -> Bool` | `true` exactly when the path starts with `/` |
 
 All three `contains` forms evaluate their arguments left to right, including in
-the native backend.
+the native backend. A direct empty list literal as the first argument of
+`contains` or `push` takes the element type of the needle or value, so
+`contains([], 1)` and `push([], 1)` build natively as `List[Int]`; an empty
+literal whose element type is still unknown remains `List[Any]`.
 
 `int(text)` and `float(text)` remove leading and trailing Unicode
 `White_Space`, then accept exactly the interpreter's strict grammar. For `Int`
