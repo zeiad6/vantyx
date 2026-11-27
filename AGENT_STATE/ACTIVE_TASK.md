@@ -2,7 +2,7 @@
 
 ## T-103 — Deterministic scalar-list sorting
 
-- Status: VERIFIED locally; commit, push, and CI pending
+- Status: VERIFIED; pushed in `46b7d54`; CI run 45928466694 green
 - Priority: P1 (standard library)
 - Dependencies: ADR-0008, ADR-0016, ADR-0039, ADR-0050
 
@@ -42,11 +42,11 @@
   non-ASCII), `Bool`, empty, singleton, duplicates, and a mutated result; the
   input list stayed unchanged.
 - Independent QA review was unavailable (subagent provider free-usage limit);
-  the change is VERIFIED locally, not independently reviewed.
+  the change is VERIFIED locally, not independently reviewed. CI run 45928466694
+  passed on `46b7d54`.
 
 ### Remaining
 
-- Commit, push, record the CI run, and update the commit/CI fields.
 - Scope limits: scalar element types only; no comparator, key function,
   descending/reverse flag, in-place variant, deduplication, or structural
   ordering; `O(n log n)` time and `O(n)` extra element storage; dynamic `Any`

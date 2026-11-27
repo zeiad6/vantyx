@@ -1,7 +1,7 @@
 # Checkpoint — T-103 deterministic scalar-list sorting
 
 Date: 2026-11-26
-Status: VERIFIED locally; commit, push, and CI pending
+Status: VERIFIED; pushed in `46b7d54`; CI run 45928466694 green
 
 ## What changed
 
@@ -54,6 +54,8 @@ Status: VERIFIED locally; commit, push, and CI pending
   `python3 tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100.
 - Skill validator: 13 skills valid; link checker: 117 links in 175 Markdown
   files OK.
+- CI run 45928466694 passed on `46b7d54`; the T-102 status commit `0a309c8`
+  passed run 45926037169.
 - Manual probes matched for `Int`, `Float` (`-0.0`, `0.0`, two `NaN`s), `Str`
   (empty, ASCII, non-ASCII), `Bool`, empty, singleton, duplicates, and a
   mutated result with the input unchanged.
@@ -71,6 +73,6 @@ Status: VERIFIED locally; commit, push, and CI pending
 
 ## Next
 
-Commit and push T-103, record the CI run, then check the CI result for the
-T-102 status-sync commit `0a309c8`. After that, continue targeted
-interpreter/native probes or pick the next bounded P1 standard-library task.
+T-103 is committed as `46b7d54`, pushed, and CI run 45928466694 passed.
+Continue with targeted interpreter/native probes or another bounded P1/P2
+task.

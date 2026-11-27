@@ -11,7 +11,7 @@ See `TASKS.md` for full acceptance criteria and evidence.
   types; dynamic `Any` values are runtime-checked in the interpreter and
   remain under the native `E0401` boundary; the native backend uses a stable
   merge sort instead of `qsort`; four e2e tests and one differential native
-  test; ADR-0050; commit and CI pending).
+  test; ADR-0050; commit `46b7d54`; CI run 45928466694 green).
 - T-102 — Label-stratified JSONL dataset splits (2026-11-26; 718-test gate;
   `vantyx ai split --stratify <field>` groups records by the compact JSON
   spelling of a top-level scalar, assigns exact per-label counts, keeps every

@@ -2,9 +2,9 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
-## Verified locally, pending commit/CI
+## Completed in `46b7d54` (CI run 45928466694 green)
 
-- T-103 — Deterministic scalar-list sorting. VERIFIED locally; `sorted(list)`
+- T-103 — Deterministic scalar-list sorting. VERIFIED; `sorted(list)`
   returns a new ascending `List[T]` for `T` in `Int`, `Float`, `Str`, or
   `Bool`, leaves the input unchanged, and is stable (`-0.0`/`0.0` equal, NaN
   last, UTF-8 byte order for strings, `false` before `true`). The checker
@@ -12,7 +12,7 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
   `Any` values are runtime-checked in the interpreter and remain under the
   native `E0401` boundary. The native backend uses a stable merge sort, not
   `qsort`. Four e2e tests, one differential native test, ADR-0050, 723-test
-  gate. Commit, push, and CI are pending.
+  gate.
 
 ## Completed in `a331f2d` (CI run 45925745650 green)
 

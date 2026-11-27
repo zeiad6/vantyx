@@ -4,16 +4,18 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `0a309c8` (record T-102 CI run 45925745650); T-103 deterministic scalar-list sorting is uncommitted in the working tree
-- Remote: `origin/main` at `0a309c8`; CI run 45925745650 green on `a331f2d`;
-  CI run 45923860569 green on `5d5655b`; CI run 45923211883 green on `c54c61c`;
-  the CI result for `0a309c8` has not been checked yet
+- Last commit: `46b7d54` (deterministic scalar-list sorting; T-103)
+- Remote: `origin/main` at `46b7d54`; CI run 45928466694 green on `46b7d54`;
+  CI run 45926037169 green on `0a309c8`; CI run 45925745650 green on
+  `a331f2d`; CI run 45923860569 green on `5d5655b`; CI run 45923211883 green
+  on `c54c61c`
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
 
-T-103 — Deterministic scalar-list sorting. Status: VERIFIED locally; commit,
-push, and CI pending. `sorted(list: List[T]) -> List[T]` returns a new
+T-103 — Deterministic scalar-list sorting. Status: VERIFIED; pushed in
+`46b7d54`; CI run 45928466694 green. `sorted(list: List[T]) -> List[T]`
+returns a new
 ascending list for `T` in `Int`, `Float`, `Str`, or `Bool`; the input is
 unchanged. Ordering is stable, `-0.0` and `0.0` compare equal, every `NaN`
 sorts after every non-`NaN`, strings compare by UTF-8 bytes, and `false`
@@ -437,10 +439,9 @@ binaries or credentials are tracked.
 
 ## Next steps
 
-1. Commit T-103, push it, record the CI run, and then update the commit/CI
-   fields in `TASKS.md`, `PROJECT_STATUS.md`, `AGENTS.md`, `docs/PROJECT_BASELINE.md`,
-   `ACTIVE_TASK.md`, `RECOVERY.md`, and this file. Also check the CI result for
-   the T-102 status-sync commit `0a309c8`.
+1. T-103 is committed as `46b7d54`, pushed, and CI run 45928466694 is green.
+   The T-102 status-sync commit `0a309c8` also passed CI run 45926037169. Keep
+   the commit/CI fields current as later status updates land.
 2. Continue targeted interpreter/native probes on surfaces not yet covered:
    map float/NaN keys, collection equality edges, enum payload aliasing,
    nested loop control flow, and file/directory builtins under unusual
