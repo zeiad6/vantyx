@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `bffe38f` (T-109); T-110 is locally verified with the commit pending. The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
+- Last commit: `02cdf10` (T-110); the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -19,8 +19,8 @@
 
 ## Current task
 
-T-110 — CI runs native sanitizers and fuzz smoke. Status: VERIFIED locally;
-commit and CI pending. `.github/workflows/ci.yml` adds a `sanitizers` job that
+T-110 — CI runs native sanitizers and fuzz smoke. Status: VERIFIED; committed
+as `02cdf10`; CI pending. `.github/workflows/ci.yml` adds a `sanitizers` job that
 installs clang and runs the native suite with `VANTYX_CC` pointing at
 `tools/clang-sanitize.sh`, which adds `-fsanitize=address,undefined
 -fno-sanitize-recover=all -fno-omit-frame-pointer -g`. Leak detection is

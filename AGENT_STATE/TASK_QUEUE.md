@@ -4,14 +4,18 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-110 — CI runs native sanitizers and fuzz smoke. VERIFIED locally;
-  `.github/workflows/ci.yml` adds a `sanitizers` job that installs clang and
-  runs the native suite with `VANTYX_CC` pointing at
+- None. The next task is selected after the T-110 status sync.
+
+## Completed in `02cdf10` (CI pending)
+
+- T-110 — CI runs native sanitizers and fuzz smoke. VERIFIED; committed as
+  `02cdf10`; `.github/workflows/ci.yml` adds a `sanitizers` job that installs
+  clang and runs the native suite with `VANTYX_CC` pointing at
   `tools/clang-sanitize.sh` (ASan + UBSan, leak detection disabled because
   v0.1 leaks native allocations intentionally), and the main `test` job now
   runs `tools/fuzz_smoke.py`. The exact sanitizer command passed all 147
   native tests locally; the fuzz smoke produced controlled diagnostics for 9
-  depth/limit cases and 400 random/mutated inputs. Commit and CI pending.
+  depth/limit cases and 400 random/mutated inputs.
 
 ## Completed in `bffe38f` (CI pending)
 

@@ -2,7 +2,7 @@
 
 ## T-110 — CI runs native sanitizers and fuzz smoke
 
-- Status: VERIFIED locally; commit and CI pending
+- Status: VERIFIED; commit `02cdf10`; CI pending
 - Priority: P1 (verification infrastructure for memory and undefined behavior)
 - Dependencies: ADR-0007, ADR-0008, `docs/security.md`
 
@@ -41,7 +41,7 @@
 
 ### Remaining
 
-- Commit and record CI.
+- Committed as `02cdf10`; CI pending.
 - Scope limits: only generated C programs are instrumented; the Rust compiler
   and test binary are not built with sanitizers. Leak detection is off because
   native allocations are intentionally leaked. The job is Linux/clang-only;

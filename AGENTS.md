@@ -111,7 +111,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   standard-descriptor sanitization is committed in `2104c55` with the 729-test
   gate (CI pending); T-109 module-graph file-cap boundary is committed in
   `bffe38f` with the 731-test gate (CI pending); T-110 CI sanitizer and fuzz
-  smoke coverage is locally verified with the 731-test gate (commit and CI
+  smoke coverage is committed in `02cdf10` with the 731-test gate (CI
   pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.

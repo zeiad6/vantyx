@@ -1,7 +1,7 @@
 # Checkpoint — T-110 CI sanitizers and fuzz smoke
 
 Date: 2026-11-27
-Status: VERIFIED locally; commit and CI pending
+Status: VERIFIED; committed as `02cdf10`; CI pending
 
 ## Objective
 
@@ -71,8 +71,7 @@ operations. A future reclamation design must add leak checks separately.
 
 ## Next exact commands
 
-1. `git diff --check`; review the diff; commit the CI and documentation
-   changes.
-2. Record the new CI run after a push is authorized.
-3. Continue P0/P1 work: probe other documented limits for boundary mismatches,
-   then evaluate native memory reclamation with measured evidence.
+1. Committed as `02cdf10`; record the CI run after a push is authorized.
+2. Continue P0/P1 work: run the differential fuzzer with sanitized native
+   builds, then probe other documented limits for boundary mismatches and
+   evaluate native memory reclamation with measured evidence.

@@ -3,11 +3,11 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
-- T-110 — CI runs native sanitizers and fuzz smoke (2026-11-27; locally
-  verified; 731-test gate; commit and CI pending; `tools/clang-sanitize.sh`
-  adds ASan/UBSan to generated native programs, CI runs the native suite
-  through it with leak detection disabled, and the main test job now runs the
-  400-input fuzz smoke).
+- T-110 — CI runs native sanitizers and fuzz smoke (2026-11-27; committed as
+  `02cdf10`; CI pending; 731-test gate; `tools/clang-sanitize.sh` adds
+  ASan/UBSan to generated native programs, CI runs the native suite through it
+  with leak detection disabled, and the main test job now runs the 400-input
+  fuzz smoke).
 - T-109 — Module graph accepts exactly 256 files (2026-11-27; committed as
   `bffe38f`; CI pending; 731-test gate; `Loader::unit` now rejects only when
   `self.units.len() >= MAX_MODULES`, so the entry file plus 255 imports loads
