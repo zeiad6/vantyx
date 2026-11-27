@@ -21,6 +21,7 @@ pub const BUILTINS: &[&str] = &[
     "push",
     "pop",
     "contains",
+    "sorted",
     "keys",
     "values",
     "str",
@@ -2628,6 +2629,46 @@ impl<'a> Checker<'a> {
                     }
                 }
                 Type::Bool
+            }
+            "sorted" => {
+                if !arity(self, 1, 1) {
+                    return Type::List(Box::new(Type::Any));
+                }
+                let list_ty = arg_ty(self, 0, None);
+                match &list_ty {
+                    Type::List(inner)
+                        if matches!(**inner, Type::Int | Type::Float | Type::Str | Type::Bool) =>
+                    {
+                        Type::List(inner.clone())
+                    }
+                    Type::List(inner) => {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E0301",
+                                format!(
+                                    "`sorted` requires a List of Int, Float, Str, or Bool, found `{list_ty}`"
+                                ),
+                                args[0].span,
+                            )
+                            .with_help(
+                                "sort a homogeneous scalar list; structural values have no defined order",
+                            ),
+                        );
+                        Type::List(inner.clone())
+                    }
+                    Type::Any => Type::Any,
+                    other => {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E0301",
+                                format!("`sorted` expects a List, found `{other}`"),
+                                args[0].span,
+                            )
+                            .with_help("pass a list of Int, Float, Str, or Bool"),
+                        );
+                        Type::List(Box::new(Type::Any))
+                    }
+                }
             }
             "split" => {
                 if !arity(self, 2, 2) {

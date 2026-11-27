@@ -13,12 +13,19 @@
 
 ## Last recorded repository state (2026-11-26)
 
-- `origin/main` and HEAD are at `a331f2d` (label-stratified JSONL dataset
-  splits; T-102). `5d5655b` recorded the T-101 CI run, and run 45923860569
-  passed on it. `c54c61c` contains deterministic JSONL dataset shuffling
-  (T-101), and `33c966e` contains the native parity fixes, dataset tooling, and
-  agent skills (T-078 through T-100); CI runs 45923211883 and 45920832199
-  passed. T-102 is pushed and CI run 45925745650 passed on `a331f2d`.
+- `origin/main` and HEAD are at `0a309c8` (record the T-102 CI run). `a331f2d`
+  contains label-stratified JSONL dataset splits (T-102), and CI run
+  45925745650 passed on it. `5d5655b` recorded the T-101 CI run, and run
+  45923860569 passed on it. `c54c61c` contains deterministic JSONL dataset
+  shuffling (T-101), and `33c966e` contains the native parity fixes, dataset
+  tooling, and agent skills (T-078 through T-100); CI runs 45923211883 and
+  45920832199 passed. The CI result for `0a309c8` has not been checked yet.
+- The T-103 working tree adds deterministic scalar-list sorting and passes 723
+  tests (402 library unit + 15 CLI unit + 47 AI integration + 117 e2e + 142
+  native), clippy and fmt clean, debug and release builds, five examples,
+  seven Python self-tests, 100/100 fuzz cases on seed 1, and the
+  thirteen-skill validator. T-103 is not yet committed; ADR-0050 records the
+  decision.
 - Earlier commits: `1aba7ba` contains T-077 differential-fuzzer control-flow
   coverage and bounded shrinking (run 45507195701 green), `de0bac7` contains
   the rustfmt baseline and CI formatting gate (run 45504177763 green),

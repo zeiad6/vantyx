@@ -86,12 +86,14 @@ python3 benchmarks/run.py --reps 5
   `de0bac7` with the rustfmt gate, run 45507195701 passed on `1aba7ba`
   with T-077, and run 45920832199 passed on `33c966e` with T-078–T-100 and the
   skill validator, run 45923211883 passed on `c54c61c` with T-101, run
-  45923860569 passed on `5d5655b`, and T-102 label-stratified splits are pushed
-  in `a331f2d` with the 718-test gate and CI run 45925745650 green). The
+  45923860569 passed on `5d5655b`, T-102 label-stratified splits are pushed
+  in `a331f2d` with the 718-test gate and CI run 45925745650 green, and T-103
+  deterministic scalar-list sorting is verified locally with the 723-test gate
+  and a commit/CI pending). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 718 passed (402 library unit + 15 CLI unit + 47 AI integration +
-  113 e2e + 141 native); the full native suite also passes with `VANTYX_CC=gcc`.
+- `cargo test`: 723 passed (402 library unit + 15 CLI unit + 47 AI integration +
+  117 e2e + 142 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
 - Native condition and short-circuit lowering match the interpreter:
@@ -143,7 +145,9 @@ python3 benchmarks/run.py --reps 5
   recursive directory creation and symlink-safe removal, lexical glob
   expansion, rename and byte-preserving file copy, recursive directory copy,
   UTF-8 text builtins, lexical path builtins whose trailing-dot stem and
-  extension behavior matches the interpreter (T-086), checked arithmetic,
+  extension behavior matches the interpreter (T-086), deterministic
+  scalar-list sorting over a stable merge sort for `Int`/`Float`/`Str`/`Bool`
+  (T-103, ADR-0050), checked arithmetic,
   bounds checks, structural equality.
 - Native rejects: `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads,
   `match` on `Any`, dynamically typed file/directory/glob/recursive-copy/
@@ -185,10 +189,13 @@ python3 benchmarks/run.py --reps 5
   `docs/ai/LIVE_VERIFICATION.md`.
 - Known gaps: no reclamation, O(n) structural-key native maps and a fixed hash
   seed for scalar keys, no generics/closures/async/FFI, no formatter or LSP,
-  the linter has only three conservative rules with no suppression or fixes,
+  the linter has only four conservative rules with no suppression or fixes,
   basic whole-file I/O,
   single-level and recursive directory operations, lexical glob expansion,
-  rename/copy, recursive directory copy, metadata probes, text builtins, and
+  rename/copy, recursive directory copy, metadata probes, text builtins,
+  deterministic scalar-list sorting (scalar element types only; no comparator,
+  key, descending flag, in-place variant, deduplication, or structural
+  ordering), and
   lexical POSIX-style path helpers only (no escaping/braces/case folding in
   globs and no metadata objects or preservation, recursive move, streaming,
   atomic copy/write, error conversion or expression-position `?`, or sandbox; glob materializes sorted

@@ -1,5 +1,58 @@
 # Active Task
 
+## T-103 — Deterministic scalar-list sorting
+
+- Status: VERIFIED locally; commit, push, and CI pending
+- Priority: P1 (standard library)
+- Dependencies: ADR-0008, ADR-0016, ADR-0039, ADR-0050
+
+### Implemented
+
+- `src/checker.rs` registers `sorted` and checks one `List` argument whose
+  element type is `Int`, `Float`, `Str`, or `Bool`; non-list arguments and
+  other element types are `E0301`, wrong arity is `E0302`, and an `Any`
+  argument defers to runtime.
+- `src/interp.rs` adds `sort_scalar_values` and the builtin arm. It copies the
+  input list, uses Rust's stable `sort_by`, and applies an explicit comparator:
+  `NaN` after every non-`NaN`, `-0.0` equal to `0.0`, byte-wise strings, and
+  `false` before `true`.
+- `src/ir.rs` validates the element type and returns `List[T]`; non-scalar
+  element types are rejected with `E0401` as defense in depth.
+- `src/codegen_c.rs` emits `vantyx_list_sorted_int/float/str/bool` over a
+  stable merge sort with a temporary buffer. It does not use `qsort`, so equal
+  elements keep input order on every C library.
+- `docs/language_specification.md`, README, and
+  `docs/decisions/ADR-0050-deterministic-scalar-list-sorting.md` document the
+  contract and limits.
+
+### Evidence
+
+- 2026-11-26: `cargo fmt --check --all` and
+  `cargo clippy --all-targets -- -D warnings` clean; `cargo test` = 723
+  passed (402 library unit + 15 CLI unit + 47 AI integration + 117 e2e + 142
+  native, 0 failed); the full 142-test native suite also passed with
+  `VANTYX_CC=gcc`; `cargo build --release` succeeded; all five examples
+  built natively and matched `vantyx run` with `cmp`; seven Python self-tests
+  OK; `differential_fuzz.py --iterations 100 --seed 1` = 100/100 agree; the
+  13-skill validator and the link checker passed.
+- Targeted: `cargo test --test e2e sorted_` = 4 passed;
+  `cargo test --test native sorted_scalar_lists_match` = 1 passed.
+- Pre-documentation probes: interpreter/native output matched for `Int`,
+  `Float` (including `-0.0`, `0.0`, and two `NaN`s), `Str` (empty, ASCII, and
+  non-ASCII), `Bool`, empty, singleton, duplicates, and a mutated result; the
+  input list stayed unchanged.
+- Independent QA review was unavailable (subagent provider free-usage limit);
+  the change is VERIFIED locally, not independently reviewed.
+
+### Remaining
+
+- Commit, push, record the CI run, and update the commit/CI fields.
+- Scope limits: scalar element types only; no comparator, key function,
+  descending/reverse flag, in-place variant, deduplication, or structural
+  ordering; `O(n log n)` time and `O(n)` extra element storage; dynamic `Any`
+  sorting is interpreter-only because native rejects `Any` bindings at
+  `E0401`.
+
 ## T-102 — Label-stratified JSONL dataset splits
 
 - Status: VERIFIED; pushed in `a331f2d`; CI run 45925745650 green

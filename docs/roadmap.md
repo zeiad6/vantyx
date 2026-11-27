@@ -32,6 +32,7 @@ Language identity, syntax, gradual type model, memory strategy, compiler pipelin
 - [x] Tree-walking runtime
 - [x] Values, environments, functions, recursion
 - [x] Control flow, structs, collections, builtins, basic UTF-8 file I/O (T-058), and text builtins (T-060)
+- [x] Deterministic scalar-list sorting with stable ties, NaN-last floats, and UTF-8 byte order (T-103, ADR-0050)
 - [x] Runtime errors with spans and stack traces
 - [x] Basic REPL
 - [x] REPL persistence and error recovery (T-009)

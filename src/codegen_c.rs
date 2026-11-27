@@ -2144,6 +2144,19 @@ impl<'a> Emitter<'a> {
                 }
                 _ => unreachable!("IR rejected contains on this type"),
             },
+            "sorted" => {
+                let IrType::List(inner) = &args[0].ty else {
+                    unreachable!("IR rejected sorted on this type");
+                };
+                let function = match &**inner {
+                    IrType::Int => "vantyx_list_sorted_int",
+                    IrType::Float => "vantyx_list_sorted_float",
+                    IrType::Str => "vantyx_list_sorted_str",
+                    IrType::Bool => "vantyx_list_sorted_bool",
+                    _ => unreachable!("IR rejected sorted on this element type"),
+                };
+                format!("{function}({})", self.expr(&args[0]))
+            }
             "split" => {
                 let text = self.expr(&args[0]);
                 let separator = self.expr(&args[1]);
@@ -3432,6 +3445,103 @@ static void vantyx_list_pop_raw(VantyxList* list, void* out, int line, int colum
     if (list->len == 0) vantyx_rt_error("R0003", "`pop` on an empty list", line, column);
     list->len--;
     memcpy(out, (char*)list->items + list->len * list->elem_size, (size_t)list->elem_size);
+}
+
+/* Stable scalar-list sorting for the `sorted` builtin. The interpreter uses a
+   stable sort, so ties (-0.0/0.0 and NaN) keep their input order. A merge sort
+   also keeps the result deterministic across C libraries, unlike qsort. */
+typedef int (*VantyxSortCmp)(const void*, const void*);
+
+static int vantyx_sort_cmp_int(const void* left, const void* right) {
+    int64_t a = *(const int64_t*)left;
+    int64_t b = *(const int64_t*)right;
+    return (a > b) - (a < b);
+}
+
+static int vantyx_sort_cmp_float(const void* left, const void* right) {
+    double a = *(const double*)left;
+    double b = *(const double*)right;
+    bool a_nan = isnan(a);
+    bool b_nan = isnan(b);
+    if (a_nan || b_nan) return (int)a_nan - (int)b_nan;
+    return (a > b) - (a < b);
+}
+
+static int vantyx_sort_cmp_str(const void* left, const void* right) {
+    return strcmp(*(vantyx_str const*)left, *(vantyx_str const*)right);
+}
+
+static int vantyx_sort_cmp_bool(const void* left, const void* right) {
+    return (int)*(const bool*)left - (int)*(const bool*)right;
+}
+
+static void vantyx_merge_sort(void* base, size_t count, size_t size,
+                              VantyxSortCmp compare, unsigned char* temp) {
+    if (count < 2) return;
+    unsigned char* bytes = (unsigned char*)base;
+    size_t middle = count / 2;
+    vantyx_merge_sort(bytes, middle, size, compare, temp);
+    vantyx_merge_sort(bytes + middle * size, count - middle, size, compare, temp);
+    size_t left = 0;
+    size_t right = middle;
+    size_t out = 0;
+    while (left < middle && right < count) {
+        const void* a = bytes + left * size;
+        const void* b = bytes + right * size;
+        if (compare(a, b) <= 0) {
+            memcpy(temp + out * size, a, size);
+            left++;
+        } else {
+            memcpy(temp + out * size, b, size);
+            right++;
+        }
+        out++;
+    }
+    while (left < middle) {
+        memcpy(temp + out * size, bytes + left * size, size);
+        left++;
+        out++;
+    }
+    while (right < count) {
+        memcpy(temp + out * size, bytes + right * size, size);
+        right++;
+        out++;
+    }
+    memcpy(base, temp, count * size);
+}
+
+static VantyxList* vantyx_list_sorted(VantyxList* list, int64_t elem_size,
+                                     const VantyxTypeDesc* elem_desc,
+                                     VantyxSortCmp compare) {
+    VantyxList* result = vantyx_list_new(elem_size, elem_desc);
+    vantyx_list_reserve(result, list->len, 0, 0);
+    if (list->len > 0) {
+        memcpy(result->items, list->items, (size_t)(list->len * elem_size));
+    }
+    result->len = list->len;
+    if (result->len > 1) {
+        unsigned char* temp =
+            (unsigned char*)vantyx_alloc_array((size_t)result->len, (size_t)elem_size);
+        vantyx_merge_sort(result->items, (size_t)result->len, (size_t)elem_size, compare, temp);
+        free(temp);
+    }
+    return result;
+}
+
+static VantyxList* vantyx_list_sorted_int(VantyxList* list) {
+    return vantyx_list_sorted(list, sizeof(int64_t), &vantyx_desc_int, vantyx_sort_cmp_int);
+}
+
+static VantyxList* vantyx_list_sorted_float(VantyxList* list) {
+    return vantyx_list_sorted(list, sizeof(double), &vantyx_desc_float, vantyx_sort_cmp_float);
+}
+
+static VantyxList* vantyx_list_sorted_str(VantyxList* list) {
+    return vantyx_list_sorted(list, sizeof(vantyx_str), &vantyx_desc_str, vantyx_sort_cmp_str);
+}
+
+static VantyxList* vantyx_list_sorted_bool(VantyxList* list) {
+    return vantyx_list_sorted(list, sizeof(bool), &vantyx_desc_bool, vantyx_sort_cmp_bool);
 }
 
 /* Text builtins (ADR-0028). Strings are UTF-8 and immutable; helpers may

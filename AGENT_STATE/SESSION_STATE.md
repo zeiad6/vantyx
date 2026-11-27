@@ -4,12 +4,26 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `a331f2d` (label-stratified JSONL dataset splits; T-102)
-- Remote: `origin/main` at `a331f2d`; CI run 45925745650 green on `a331f2d`;
-  CI run 45923860569 green on `5d5655b`; CI run 45923211883 green on `c54c61c`
+- Last commit: `0a309c8` (record T-102 CI run 45925745650); T-103 deterministic scalar-list sorting is uncommitted in the working tree
+- Remote: `origin/main` at `0a309c8`; CI run 45925745650 green on `a331f2d`;
+  CI run 45923860569 green on `5d5655b`; CI run 45923211883 green on `c54c61c`;
+  the CI result for `0a309c8` has not been checked yet
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
+
+T-103 — Deterministic scalar-list sorting. Status: VERIFIED locally; commit,
+push, and CI pending. `sorted(list: List[T]) -> List[T]` returns a new
+ascending list for `T` in `Int`, `Float`, `Str`, or `Bool`; the input is
+unchanged. Ordering is stable, `-0.0` and `0.0` compare equal, every `NaN`
+sorts after every non-`NaN`, strings compare by UTF-8 bytes, and `false`
+precedes `true`. The checker rejects non-list arguments, wrong arity, and other
+element types with `E0301`/`E0302`; dynamic `Any` values are runtime-checked in
+the interpreter and remain under the native `E0401` boundary. The native
+backend uses a stable merge sort instead of `qsort`. Four e2e tests, one
+differential native test, ADR-0050, and a 723-test gate. See `ACTIVE_TASK.md`,
+`docs/decisions/ADR-0050-deterministic-scalar-list-sorting.md`, and
+`docs/language_specification.md` §6.
 
 T-102 — Label-stratified JSONL dataset splits. Status: VERIFIED; pushed in
 `a331f2d`; CI run 45925745650 green. `vantyx ai split <file> --out-dir <dir> --stratify <field>` runs
@@ -423,24 +437,29 @@ binaries or credentials are tracked.
 
 ## Next steps
 
-1. T-101 is committed as `c54c61c`, pushed, and CI run 45923211883 is green;
-   no Git action is pending. T-078 through T-100 remain committed as `33c966e`
-   with CI run 45920832199 green.
-2. Continue targeted interpreter/native probes. Remaining native surfaces
-   include file/directory builtins under unusual conditions, recursive
-   copy/rename, modules, and deeper match/nesting interactions; audit any
-   lowering that can render a constant or omit an operand, and build effectful
-   cases with both clang and GCC.
-3. Extend offline dataset tooling with tokenizer-aware counts and label
-   stratification; exact duplicate detection shipped in T-100, schema/
-   required-field validation shipped in T-094, and deterministic seeded
-   shuffling shipped in T-101. Keep tokenization and stratification as separate
-   bounded tasks with their own tests.
-4. Keep `docs/AGENT_SKILLS.md` synchronized when a skill is added or changed;
+1. Commit T-103, push it, record the CI run, and then update the commit/CI
+   fields in `TASKS.md`, `PROJECT_STATUS.md`, `AGENTS.md`, `docs/PROJECT_BASELINE.md`,
+   `ACTIVE_TASK.md`, `RECOVERY.md`, and this file. Also check the CI result for
+   the T-102 status-sync commit `0a309c8`.
+2. Continue targeted interpreter/native probes on surfaces not yet covered:
+   map float/NaN keys, collection equality edges, enum payload aliasing,
+   nested loop control flow, and file/directory builtins under unusual
+   conditions. Audit lowering that can render a constant or omit an operand,
+   and build effectful cases with both clang and GCC.
+3. Continue P1 standard-library work. `sorted` is now limited to scalar lists;
+   comparator/key/reverse/in-place variants need first-class functions or a new
+   design, so prefer bounded candidates first: map/filter/reduce over scalar
+   lists, string search/split-whitespace helpers, numeric formatting, and
+   `Option`-style helpers once the type system supports them.
+4. Extend offline dataset tooling with tokenizer-aware counts; exact duplicate
+   detection shipped in T-100, schema validation in T-094, deterministic
+   shuffling in T-101, and label-stratified splits in T-102. Keep tokenization
+   as a separate bounded task with its own tests.
+5. Keep `docs/AGENT_SKILLS.md` synchronized when a skill is added or changed;
    CI validates frontmatter, required sections, size, and unique IDs.
-5. Continue remaining P1/P2 candidates: metadata objects/preservation,
+6. Continue remaining P1/P2 candidates: metadata objects/preservation,
    recursive move, REPL multi-line history and field completion, linter
    follow-ups, and string performance with measured benchmarks.
-6. Retry independent subagent review when provider capacity returns.
-7. T-040 remains blocked on a local inference server/model; cloud access is
+7. Retry independent subagent review when provider capacity returns.
+8. T-040 remains blocked on a local inference server/model; cloud access is
    not guaranteed.

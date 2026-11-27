@@ -3,6 +3,15 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-103 — Deterministic scalar-list sorting (2026-11-26; 723-test gate;
+  `sorted(list)` returns a new ascending `List[T]` for `Int`, `Float`, `Str`,
+  or `Bool`, leaves the input unchanged, and is stable with `-0.0`/`0.0`
+  equal, NaN last, UTF-8 byte order for strings, and `false` before `true`;
+  the checker rejects non-list arguments, wrong arity, and other element
+  types; dynamic `Any` values are runtime-checked in the interpreter and
+  remain under the native `E0401` boundary; the native backend uses a stable
+  merge sort instead of `qsort`; four e2e tests and one differential native
+  test; ADR-0050; commit and CI pending).
 - T-102 — Label-stratified JSONL dataset splits (2026-11-26; 718-test gate;
   `vantyx ai split --stratify <field>` groups records by the compact JSON
   spelling of a top-level scalar, assigns exact per-label counts, keeps every

@@ -2133,6 +2133,116 @@ fn text_replace_rejects_empty_pattern() {
 }
 
 #[test]
+fn sorted_orders_scalar_lists_stably() {
+    let run = run_file(
+        "sorted",
+        "fn main():\n\
+         \x20   let ints: List[Int] = [3, -1, 2, 0, -1]\n\
+         \x20   print(sorted(ints))\n\
+         \x20   print(ints)\n\
+         \x20   let ordered = sorted(ints)\n\
+         \x20   push(ordered, 99)\n\
+         \x20   print(ordered)\n\
+         \x20   print(ints)\n\
+         \x20   let strings: List[Str] = [\"b\", \"a\", \"aa\", \"\", \"A\", \"z\", \"é\"]\n\
+         \x20   print(sorted(strings))\n\
+         \x20   let flags: List[Bool] = [true, false, true]\n\
+         \x20   print(sorted(flags))\n\
+         \x20   let floats: List[Float] = [2.5, -0.0, 0.0, 1.5, float(\"NaN\"), -1.0, float(\"NaN\")]\n\
+         \x20   print(sorted(floats))\n\
+         \x20   print(sorted([0.0, -0.0]))\n\
+         \x20   let empty: List[Int] = []\n\
+         \x20   print(sorted(empty))\n\
+         \x20   let one: List[Str] = [\"only\"]\n\
+         \x20   print(sorted(one))\n\
+         \x20   let duplicates: List[Int] = [1, 1, 0, 0, 2, 2]\n\
+         \x20   print(sorted(duplicates))\n\
+         \x20   print(sorted([3, 1, 2]))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "[-1, -1, 0, 2, 3]\n\
+         [3, -1, 2, 0, -1]\n\
+         [-1, -1, 0, 2, 3, 99]\n\
+         [3, -1, 2, 0, -1]\n\
+         [\"\", \"A\", \"a\", \"aa\", \"b\", \"z\", \"é\"]\n\
+         [false, true, true]\n\
+         [-1.0, -0.0, 0.0, 1.5, 2.5, NaN, NaN]\n\
+         [0.0, -0.0]\n\
+         []\n\
+         [\"only\"]\n\
+         [0, 0, 1, 1, 2, 2]\n\
+         [1, 2, 3]\n"
+    );
+}
+
+#[test]
+fn sorted_rejects_non_scalar_lists_and_wrong_arity() {
+    let run = check_file(
+        "sorted-types",
+        "struct Point:\n\
+         \x20   x: Int\n\
+         \n\
+         fn main():\n\
+         \x20   print(sorted(3))\n\
+         \x20   print(sorted())\n\
+         \x20   print(sorted([[1, 2]]))\n\
+         \x20   let points: List[Point] = [Point(x=2), Point(x=1)]\n\
+         \x20   print(sorted(points))\n\
+         \x20   let mixed: List[Any] = [1, \"a\"]\n\
+         \x20   print(sorted(mixed))\n",
+    );
+    assert_eq!(run.code, 1);
+    assert_eq!(
+        run.stderr.matches("error[E0301]").count(),
+        4,
+        "{}",
+        run.stderr
+    );
+    assert!(run.stderr.contains("error[E0302]"), "{}", run.stderr);
+    for message in [
+        "`sorted` expects a List, found `Int`",
+        "`sorted` expects 1 argument(s), found 0",
+        "`sorted` requires a List of Int, Float, Str, or Bool, found `List[List[Int]]`",
+        "`sorted` requires a List of Int, Float, Str, or Bool, found `List[Point]`",
+        "`sorted` requires a List of Int, Float, Str, or Bool, found `List[Any]`",
+    ] {
+        assert!(run.stderr.contains(message), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn sorted_dynamic_any_value_uses_runtime_type_checks() {
+    let run = run_file(
+        "sorted-any",
+        "fn main():\n\
+         \x20   let value: Any = [3, 1, 2]\n\
+         \x20   print(sorted(value))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "[1, 2, 3]\n");
+}
+
+#[test]
+fn sorted_dynamic_any_value_rejects_mixed_lists() {
+    let run = run_file(
+        "sorted-any-mixed",
+        "fn main():\n\
+         \x20   let value: Any = [1, \"a\"]\n\
+         \x20   print(sorted(value))\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0005]"), "{}", run.stderr);
+    assert!(
+        run.stderr
+            .contains("homogeneous List of Int, Float, Str, or Bool"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
 fn path_builtins_round_trip() {
     let run = run_file(
         "path-builtins",

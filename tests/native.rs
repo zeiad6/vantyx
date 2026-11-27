@@ -721,6 +721,35 @@ fn list_builtins_match() {
 }
 
 #[test]
+fn sorted_scalar_lists_match() {
+    assert_same(
+        "sorted",
+        "fn main():\n\
+         \x20   let ints: List[Int] = [3, -1, 2, 0, -1]\n\
+         \x20   print(sorted(ints))\n\
+         \x20   print(ints)\n\
+         \x20   let ordered = sorted(ints)\n\
+         \x20   push(ordered, 99)\n\
+         \x20   print(ordered)\n\
+         \x20   print(ints)\n\
+         \x20   let strings: List[Str] = [\"b\", \"a\", \"aa\", \"\", \"A\", \"z\", \"é\"]\n\
+         \x20   print(sorted(strings))\n\
+         \x20   let flags: List[Bool] = [true, false, true]\n\
+         \x20   print(sorted(flags))\n\
+         \x20   let floats: List[Float] = [2.5, -0.0, 0.0, 1.5, float(\"NaN\"), -1.0, float(\"NaN\")]\n\
+         \x20   print(sorted(floats))\n\
+         \x20   print(sorted([0.0, -0.0]))\n\
+         \x20   let empty: List[Int] = []\n\
+         \x20   print(sorted(empty))\n\
+         \x20   let one: List[Str] = [\"only\"]\n\
+         \x20   print(sorted(one))\n\
+         \x20   let duplicates: List[Int] = [1, 1, 0, 0, 2, 2]\n\
+         \x20   print(sorted(duplicates))\n\
+         \x20   print(sorted([3, 1, 2]))\n",
+    );
+}
+
+#[test]
 fn float_display_matches() {
     assert_same(
         "float-display",

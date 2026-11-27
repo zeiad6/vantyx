@@ -9,6 +9,7 @@ use crate::checker::{Entry, FnSig, SemanticModel, is_builtin};
 use crate::span::Span;
 use crate::types::{Type, VariantInfo, resolve_type_expr};
 use crate::value::{FieldSlot, Value, format_float, map_get, map_insert};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::rc::Rc;
@@ -44,6 +45,56 @@ fn float_max(left: f64, right: f64) -> f64 {
         return right;
     }
     if left > right { left } else { right }
+}
+
+/// Sorts a homogeneous scalar list in place with the shared `sorted` contract:
+/// ascending order, stable ties, `-0.0` equal to `0.0`, and NaN after every
+/// non-NaN value. The native backend implements the same stable merge sort.
+fn sort_scalar_values(values: &mut [Value]) -> Result<(), &'static str> {
+    let mut kind: Option<&'static str> = None;
+    for value in values.iter() {
+        let current = match value {
+            Value::Int(_) => "Int",
+            Value::Float(_) => "Float",
+            Value::Str(_) => "Str",
+            Value::Bool(_) => "Bool",
+            _ => return Err("a List of Int, Float, Str, or Bool"),
+        };
+        match kind {
+            None => kind = Some(current),
+            Some(existing) if existing == current => {}
+            Some(_) => return Err("a homogeneous List of Int, Float, Str, or Bool"),
+        }
+    }
+    match kind {
+        None => {}
+        Some("Int") => values.sort_by(|left, right| match (left, right) {
+            (Value::Int(left), Value::Int(right)) => left.cmp(right),
+            _ => Ordering::Equal,
+        }),
+        Some("Float") => values.sort_by(|left, right| match (left, right) {
+            (Value::Float(left), Value::Float(right)) => match left.partial_cmp(right) {
+                Some(ordering) => ordering,
+                None => match (left.is_nan(), right.is_nan()) {
+                    (true, true) => Ordering::Equal,
+                    (true, false) => Ordering::Greater,
+                    (false, true) => Ordering::Less,
+                    (false, false) => Ordering::Equal,
+                },
+            },
+            _ => Ordering::Equal,
+        }),
+        Some("Str") => values.sort_by(|left, right| match (left, right) {
+            (Value::Str(left), Value::Str(right)) => left.cmp(right),
+            _ => Ordering::Equal,
+        }),
+        Some("Bool") => values.sort_by(|left, right| match (left, right) {
+            (Value::Bool(left), Value::Bool(right)) => left.cmp(right),
+            _ => Ordering::Equal,
+        }),
+        Some(_) => unreachable!("the scalar kind scan covers every supported type"),
+    }
+    Ok(())
 }
 
 /// Unicode `White_Space` code points, shared by `trim` in both engines.
@@ -2011,6 +2062,17 @@ impl<'a> Interpreter<'a> {
                         span,
                     )),
                 }
+            }
+            "sorted" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let Value::List(items) = &args[0] else {
+                    return Err(self.type_error(" in `sorted`", "`List`", &args[0], span));
+                };
+                let mut sorted = items.borrow().clone();
+                if let Err(expected) = sort_scalar_values(&mut sorted) {
+                    return Err(self.type_error(" in `sorted`", expected, &args[0], span));
+                }
+                Ok(Value::list(sorted))
             }
             "split" => {
                 self.arity(name, &args, 2, 2, span)?;

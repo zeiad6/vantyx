@@ -2,6 +2,18 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
+## Verified locally, pending commit/CI
+
+- T-103 — Deterministic scalar-list sorting. VERIFIED locally; `sorted(list)`
+  returns a new ascending `List[T]` for `T` in `Int`, `Float`, `Str`, or
+  `Bool`, leaves the input unchanged, and is stable (`-0.0`/`0.0` equal, NaN
+  last, UTF-8 byte order for strings, `false` before `true`). The checker
+  rejects non-list arguments, wrong arity, and other element types; dynamic
+  `Any` values are runtime-checked in the interpreter and remain under the
+  native `E0401` boundary. The native backend uses a stable merge sort, not
+  `qsort`. Four e2e tests, one differential native test, ADR-0050, 723-test
+  gate. Commit, push, and CI are pending.
+
 ## Completed in `a331f2d` (CI run 45925745650 green)
 
 - T-102 — Label-stratified JSONL dataset splits. VERIFIED locally;

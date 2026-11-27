@@ -4,6 +4,28 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-26 — `sorted` uses a stable merge sort over scalar lists
+
+- Define `sorted(list: List[T]) -> List[T]` for `T` in `Int`, `Float`, `Str`,
+  or `Bool`. The result is a new list, the input is unchanged, and ordering is
+  stable. `-0.0` and `0.0` compare equal, every `NaN` sorts after every
+  non-`NaN`, strings use UTF-8 byte order, and `false` precedes `true`.
+- Implement the native sort as a deterministic stable merge sort with a
+  temporary buffer rather than C `qsort`. `qsort` is unstable and its tie
+  order can vary by libc, which would make equal floats and NaNs diverge from
+  the interpreter.
+- Reject non-scalar element types statically instead of inventing an order for
+  lists, maps, structs, or enums. Structural ordering would freeze display or
+  serialization choices that deserve separate design.
+- Keep the interpreter's dynamic `Any` path runtime-checked (`R0005` on mixed
+  or non-scalar input) while native keeps its existing `E0401` `Any`
+  boundary. This is the same gradual-typing split used by other builtins.
+- Defer comparator/key/reverse/in-place variants. A comparator needs
+  first-class functions or closures, and an in-place variant changes the
+  aliasing contract; both are separate decisions.
+- Document the `O(n log n)` time and `O(n)` extra element storage, and do not
+  claim deduplication or structural sorting.
+
 ## 2026-11-26 — Label stratification assigns exact per-label counts
 
 - Group records by the compact JSON spelling of one top-level scalar field

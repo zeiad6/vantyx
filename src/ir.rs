@@ -2590,6 +2590,31 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
+            "sorted" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal("`sorted` arity was not validated", span));
+                }
+                let IrType::List(inner) = &lowered[0].ty else {
+                    return Err(IrError::internal(
+                        "`sorted` argument is not a List",
+                        args[0].value.span,
+                    ));
+                };
+                if !matches!(
+                    **inner,
+                    IrType::Int | IrType::Float | IrType::Str | IrType::Bool
+                ) {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `sorted` requires a List of Int, Float, Str, or Bool, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "sort the list manually or run this program with `vantyx run`",
+                    ));
+                }
+                IrType::List(inner.clone())
+            }
             "split" => {
                 if lowered.len() != 2 {
                     return Err(IrError::internal("`split` arity was not validated", span));
