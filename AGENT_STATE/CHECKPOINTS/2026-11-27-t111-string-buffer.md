@@ -1,7 +1,7 @@
 # T-111 checkpoint — single-buffer native string construction
 
 Date: 2026-11-27
-Status: VERIFIED locally; commit pending; CI pending
+Status: VERIFIED locally; commit `45c438b`; CI pending
 Related: ADR-0052, TASKS.md, PROJECT_STATUS.md
 
 ## Objective
@@ -59,12 +59,13 @@ semantics, evaluation order, or diagnostics.
 
 ## Remaining
 
-1. Commit the T-111 tree (do not push).
-2. Sync status to the T-111 commit hash and record CI as pending.
-3. Record the independent `qa-verifier` outcome: attempted on 2026-11-27 but
-   the provider returned a free-usage limit error before the subagent did any
-   work; no independent review result is claimed.
-4. Select the next task.
+1. T-111 is committed as `45c438b`; CI is pending.
+2. Select the next task.
+
+## Independent review
+
+Attempted on 2026-11-27 but the provider returned a free-usage limit error
+before the subagent did any work; no independent review result is claimed.
 
 ## Risks / limits
 

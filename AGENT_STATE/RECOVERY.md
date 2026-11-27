@@ -25,9 +25,9 @@
   leak detection disabled, clippy and fmt clean, the release build, five
   examples, seven Python self-tests, 100/100 seed-1 differential cases, fuzz
   smoke, the 13-skill validator, and the link checker (122 links in 188
-  Markdown files). Commit pending; CI pending. Focused median 59.893 ms →
-  34.414 ms and peak RSS 33,396 KiB → 17,564 KiB.
-- HEAD is at `02cdf10` (T-110); the remote is at `a9a6d1a` (record the T-105
+  Markdown files). Committed as `45c438b`; CI pending. Focused median
+  59.893 ms → 34.414 ms and peak RSS 33,396 KiB → 17,564 KiB.
+- HEAD is at `45c438b` (T-111); the remote is at `a9a6d1a` (record the T-105
   CI run), and CI run 45936329476 passed on it. `779783c` contains T-105 and passed run
   45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed
   45934367601. `8805381` recorded the T-104 CI run and passed 45934076343. `4269010` contains call-site native

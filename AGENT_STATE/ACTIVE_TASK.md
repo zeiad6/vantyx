@@ -2,7 +2,7 @@
 
 ## T-111 — Single-buffer native string construction
 
-- Status: VERIFIED; commit pending; CI pending
+- Status: VERIFIED; commit `45c438b`; CI pending
 - Priority: P1 (native memory efficiency and string-heavy loop performance)
 - Dependencies: ADR-0008, ADR-0039, ADR-0052
 
@@ -55,8 +55,9 @@
 
 ### Remaining
 
-- Commit T-111, then sync status to the commit hash (do not push).
-- Record the independent review outcome.
+- T-111 is committed as `45c438b`; CI is pending. Do not push unless
+  explicitly asked.
+- The independent review outcome is recorded above as unavailable.
 
 ## T-110 — CI runs native sanitizers and fuzz smoke
 

@@ -3,8 +3,8 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
-- T-111 — Single-buffer native string construction (2026-11-27; commit
-  pending; CI pending; 733-test gate; interpolation and multi-operand string
+- T-111 — Single-buffer native string construction (2026-11-27; committed as
+  `45c438b`; CI pending; 733-test gate; interpolation and multi-operand string
   `+` chains append typed parts into one growable `VantyxStrBuilder` in source
   order, preserving effects and runtime-error order while avoiding retained
   intermediate strings; two differential native tests; ADR-0052; focused

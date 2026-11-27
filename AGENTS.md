@@ -112,8 +112,8 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   gate (CI pending); T-109 module-graph file-cap boundary is committed in
   `bffe38f` with the 731-test gate (CI pending); T-110 CI sanitizer and fuzz
   smoke coverage is committed in `02cdf10` with the 731-test gate (CI
-  pending); T-111 single-buffer native string construction is part of the
-  T-111 change with the 733-test gate (CI pending)). The
+  pending); T-111 single-buffer native string construction is committed in
+  `45c438b` with the 733-test gate (CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 733 passed (404 library unit + 15 CLI unit + 47 AI integration +
