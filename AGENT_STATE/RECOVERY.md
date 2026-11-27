@@ -13,9 +13,9 @@
 
 ## Last recorded repository state (2026-11-27)
 
-- The T-112 working tree adds single-buffer native collection and nominal
-  display: list, map, struct, and enum rendering append every part into one
-  growable `VantyxStrBuilder` in source order, removing quadratic prefix
+- T-112 is committed as `8911235` and adds single-buffer native collection and
+  nominal display: list, map, struct, and enum rendering append every part into
+  one growable `VantyxStrBuilder` in source order, removing quadratic prefix
   copying and retained prefixes while preserving exact bytes, ordering,
   quoting, cycle markers, depth limits, and early returns. One differential
   native test, ADR-0053, a new `display_ops` benchmark workload, and a focused
@@ -24,7 +24,7 @@
   native suite under `VANTYX_CC=gcc` and under clang ASan/UBSan with leak
   detection disabled, clippy and fmt clean, the release build, five examples,
   seven Python self-tests, 100/100 seed-1 differential cases, fuzz smoke, the
-  13-skill validator, and the link checker. Commit pending; CI pending.
+  13-skill validator, and the link checker. CI pending.
   Focused median 754.707 ms → 5.737 ms and peak RSS 568,244 KiB → 2,520 KiB.
 - The T-111 working tree adds single-buffer native string construction:
   interpolation and multi-operand string `+` chains append typed parts into
@@ -40,8 +40,9 @@
   smoke, the 13-skill validator, and the link checker (122 links in 188
   Markdown files). Committed as `45c438b`; CI pending. Focused median
   59.893 ms → 34.414 ms and peak RSS 33,396 KiB → 17,564 KiB.
-- HEAD is at `45c438b` (T-111); the remote is at `a9a6d1a` (record the T-105
-  CI run), and CI run 45936329476 passed on it. `779783c` contains T-105 and passed run
+- HEAD is at `8911235` (T-112); the remote is at `a9a6d1a` (record the T-105
+  CI run), and CI run 45936329476 passed on it. T-112 is committed with CI
+  pending. `779783c` contains T-105 and passed run
   45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed
   45934367601. `8805381` recorded the T-104 CI run and passed 45934076343. `4269010` contains call-site native
   call-depth diagnostics (T-104), and CI run 45933776137 passed on it.

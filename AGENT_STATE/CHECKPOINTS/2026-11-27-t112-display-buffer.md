@@ -1,6 +1,6 @@
 # Checkpoint — T-112 single-buffer native display
 
-Status: VERIFIED locally; commit pending; CI pending
+Status: VERIFIED locally; commit `8911235`; CI pending
 Date: 2026-11-27
 
 ## Objective
@@ -75,12 +75,12 @@ never frees native allocations.
 
 ## Remaining
 
-1. Commit the T-112 tree (do not push).
-2. Sync status to the T-112 commit hash and record CI as pending.
-3. Record the independent `qa-verifier` outcome: attempted on 2026-11-27 but
+1. Record the CI outcome when the unpushed commits are pushed (do not push
+   without authorization).
+2. Record the independent `qa-verifier` outcome: attempted on 2026-11-27 but
    the provider returned a free-usage limit error before the subagent did any
    work; no independent review result is claimed.
-4. Select the next task.
+3. Select the next task.
 
 ## Risks
 
@@ -94,9 +94,8 @@ never frees native allocations.
 ## Next exact command
 
 ```sh
-git add src/codegen_c.rs tests/native.rs benchmarks docs README.md AGENTS.md \
-  PROJECT_STATUS.md TASKS.md RESEARCH AGENT_STATE
-git commit -F - <<'EOF'
-Build native collection display in one buffer
-EOF
+git status --short
+git log -2 --oneline
 ```
+
+T-112 is committed as `8911235`; the status-sync commit records that hash.

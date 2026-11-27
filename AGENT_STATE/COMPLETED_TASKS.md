@@ -4,7 +4,7 @@ Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
 - T-112 — Single-buffer native collection and nominal display (2026-11-27;
-  commit pending; CI pending; 734-test gate; list, map, struct, and enum
+  committed as `8911235`; CI pending; 734-test gate; list, map, struct, and enum
   display append into one growable `VantyxStrBuilder` in source order,
   removing quadratic prefix copying and retained prefixes while preserving
   exact bytes, ordering, quoting, cycle markers, and depth limits; one

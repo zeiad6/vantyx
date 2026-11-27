@@ -2,7 +2,7 @@
 
 ## T-112 — Single-buffer native collection and nominal display
 
-- Status: VERIFIED; commit pending; CI pending
+- Status: VERIFIED; commit `8911235`; CI pending
 - Priority: P1 (native memory efficiency and interpreter/native parity)
 - Dependencies: ADR-0010, ADR-0012, ADR-0052, ADR-0053
 
@@ -57,8 +57,8 @@
 
 ### Remaining
 
-- Commit T-112, then sync status to the commit hash (do not push).
-- Record the independent review outcome.
+- Record the CI outcome when it runs (do not push without authorization).
+- Record the independent review outcome if subagent capacity returns.
 
 ## T-111 — Single-buffer native string construction
 

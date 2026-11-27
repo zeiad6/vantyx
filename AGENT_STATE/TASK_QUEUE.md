@@ -4,12 +4,17 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-112 — Single-buffer native collection and nominal display. VERIFIED; commit
-  pending. List, map, struct, and enum display append into one growable
-  `VantyxStrBuilder` in source order, removing quadratic prefix copying and
-  retained prefixes while preserving exact bytes, ordering, cycle markers, and
-  depth limits. One differential native test; ADR-0053; 734-test gate; focused
-  measurement median 754.707 ms → 5.737 ms and peak RSS 568,244 KiB → 2,520 KiB.
+- None. The next task is selected after the T-112 status sync.
+
+## Completed in `8911235` (CI pending)
+
+- T-112 — Single-buffer native collection and nominal display. VERIFIED;
+  committed as `8911235`; list, map, struct, and enum display append into one
+  growable `VantyxStrBuilder` in source order, removing quadratic prefix
+  copying and retained prefixes while preserving exact bytes, ordering, cycle
+  markers, and depth limits. One differential native test; ADR-0053; 734-test
+  gate; focused measurement median 754.707 ms → 5.737 ms and peak RSS
+  568,244 KiB → 2,520 KiB.
 
 ## Completed in `45c438b` (CI pending)
 

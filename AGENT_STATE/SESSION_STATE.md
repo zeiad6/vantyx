@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `45c438b` (T-111); the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. The T-112 working tree is verified locally and is being committed; CI is pending.
+- Last commit: `8911235` (T-112); the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-112 is committed with CI pending; the status sync follows.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -20,7 +20,7 @@
 ## Current task
 
 T-112 — Single-buffer native collection and nominal display. Status: VERIFIED
-locally; commit pending; CI pending. Native list, map, struct, and enum display
+locally; commit `8911235`; CI pending. Native list, map, struct, and enum display
 now append into one growable `VantyxStrBuilder` buffer in source order instead
 of concatenating the growing result once per element or field, removing
 quadratic prefix copying and retained prefixes while preserving exact bytes,

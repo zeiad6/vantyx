@@ -114,7 +114,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   smoke coverage is committed in `02cdf10` with the 731-test gate (CI
   pending); T-111 single-buffer native string construction is committed in
   `45c438b` with the 733-test gate (CI pending); T-112 single-buffer native
-  collection and nominal display is part of the T-112 change with the
+  collection and nominal display is committed in `8911235` with the
   734-test gate (CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
