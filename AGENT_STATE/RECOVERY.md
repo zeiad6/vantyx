@@ -13,9 +13,11 @@
 
 ## Last recorded repository state (2026-11-26)
 
-- `origin/main` and HEAD are at `4269010` (call-site native call-depth
-  diagnostics; T-104), and CI run 45933776137 passed on it. `a263cb3` recorded
-  the T-103 CI run and passed run 45928756101. `46b7d54` contains deterministic scalar-list
+- `origin/main` and HEAD are at `8805381` (record the T-104 CI run), and CI
+  run 45934076343 passed on it. A later docs-only status commit may exist; use
+  `git log -1` for the exact HEAD. `4269010` contains call-site native
+  call-depth diagnostics (T-104), and CI run 45933776137 passed on it.
+  `a263cb3` recorded the T-103 CI run and passed run 45928756101. `46b7d54` contains deterministic scalar-list
   sorting (T-103), and CI run 45928466694 passed on it. `0a309c8` recorded the T-102 CI
   run and passed run 45926037169. `a331f2d`
   contains label-stratified JSONL dataset splits (T-102), and CI run

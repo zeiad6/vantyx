@@ -4,8 +4,9 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `4269010` (call-site native call-depth diagnostics; T-104)
-- Remote: `origin/main` at `4269010`; CI run 45933776137 green on `4269010`;
+- Last commit: `8805381` (record T-104 CI run 45933776137); CI run 45934076343 green on it. A later docs-only status commit may exist; use `git log -1` for the exact HEAD.
+- Remote: `origin/main` at `8805381`; CI run 45934076343 green on `8805381`;
+  CI run 45933776137 green on `4269010`;
   CI run 45928756101 green on `a263cb3`;
   CI run 45928466694 green on `46b7d54`; CI run 45926037169 green on
   `0a309c8`; CI run 45925745650 green on
@@ -16,7 +17,8 @@
 ## Current task
 
 T-104 — Native call-depth diagnostics report the call site. Status: VERIFIED;
-pushed in `4269010`; CI run 45933776137 green. The native `R0012` guard reported the
+pushed in `4269010`; CI run 45933776137 green; the status sync `8805381`
+passed run 45934076343. The native `R0012` guard reported the
 callee declaration and, on a cross-file call, the callee's file; the
 interpreter reports the failing call site. `src/codegen_c.rs` adds
 `vantyx_call_line`/`vantyx_call_column`, sets them immediately after argument
@@ -455,14 +457,17 @@ binaries or credentials are tracked.
 - CI run 45926037169 — success on `0a309c8` (T-102 status sync)
 - CI run 45928466694 — success on `46b7d54` with T-103
 - CI run 45928756101 — success on `a263cb3` (T-103 status sync)
+- CI run 45933776137 — success on `4269010` with T-104
+- CI run 45934076343 — success on `8805381` (T-104 status sync)
 
 ## Next steps
 
-1. T-104 is committed as `4269010`, pushed, and CI run 45933776137 is green.
-   T-103 is committed as `46b7d54`, pushed, and CI run 45928466694 is green;
-   its status sync `a263cb3` passed run 45928756101. The T-102 status-sync
-   commit `0a309c8` also passed CI run 45926037169. Keep the commit/CI fields
-   current as later status updates land.
+1. T-104 is committed as `4269010`, pushed, and CI run 45933776137 is green;
+   the status sync `8805381` passed run 45934076343. T-103 is committed as
+   `46b7d54`, pushed, and CI run 45928466694 is green; its status sync
+   `a263cb3` passed run 45928756101. The T-102 status-sync commit `0a309c8`
+   also passed CI run 45926037169. Keep the commit/CI fields current as later
+   status updates land.
 2. Continue targeted interpreter/native probes on surfaces not yet covered:
    map float/NaN keys, collection equality edges, enum payload aliasing, and
    nested loop control flow now match; next probe file/directory builtins

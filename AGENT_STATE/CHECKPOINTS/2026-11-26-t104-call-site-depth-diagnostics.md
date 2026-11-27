@@ -1,7 +1,8 @@
 # Checkpoint — T-104 native call-depth diagnostics report the call site
 
 Date: 2026-11-26
-Status: VERIFIED; pushed in `4269010`; CI run 45933776137 green
+Status: VERIFIED; pushed in `4269010`; CI run 45933776137 green; status sync
+`8805381` passed run 45934076343
 
 ## Objective
 
@@ -63,6 +64,7 @@ failing call is in `b.vtx` at line 5, column 16): both engines print
 - Skill validator — 13 skills valid; link checker — 117 links in 177 Markdown
   files OK.
 - CI run 45933776137 passed on `4269010`.
+- CI run 45934076343 passed on the status-sync commit `8805381`.
 
 ## Blockers and limits
 
