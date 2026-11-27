@@ -13,8 +13,9 @@
 
 ## Last recorded repository state (2026-11-26)
 
-- `origin/main` and HEAD are at `a263cb3` (record the T-103 CI run), and CI
-  run 45928756101 passed on it. `46b7d54` contains deterministic scalar-list
+- `origin/main` and HEAD are at `4269010` (call-site native call-depth
+  diagnostics; T-104), and CI run 45933776137 passed on it. `a263cb3` recorded
+  the T-103 CI run and passed run 45928756101. `46b7d54` contains deterministic scalar-list
   sorting (T-103), and CI run 45928466694 passed on it. `0a309c8` recorded the T-102 CI
   run and passed run 45926037169. `a331f2d`
   contains label-stratified JSONL dataset splits (T-102), and CI run
@@ -23,13 +24,12 @@
   shuffling (T-101), and `33c966e` contains the native parity fixes, dataset
   tooling, and agent skills (T-078 through T-100); CI runs 45923211883 and
   45920832199 passed.
-- The T-104 working tree moves the native `R0012` depth-limit diagnostic to
-  the failing call site, including across modules. It passes 723 tests
+- The T-104 tree moves the native `R0012` depth-limit diagnostic to the
+  failing call site, including across modules. It passes 723 tests
   (402 library unit + 15 CLI unit + 47 AI integration + 117 e2e + 142 native),
   the full native suite under `VANTYX_CC=gcc`, clippy and fmt clean, debug and
   release builds, five examples, seven Python self-tests, 100/100 fuzz cases on
-  seed 1, fuzz smoke, and the thirteen-skill validator. T-104 is not yet
-  committed.
+  seed 1, fuzz smoke, and the thirteen-skill validator.
 - The T-103 tree adds deterministic scalar-list sorting and passes the same
   723-test gate. ADR-0050 records the decision.
 - Earlier commits: `1aba7ba` contains T-077 differential-fuzzer control-flow

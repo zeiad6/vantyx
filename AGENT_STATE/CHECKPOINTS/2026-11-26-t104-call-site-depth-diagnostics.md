@@ -1,7 +1,7 @@
 # Checkpoint — T-104 native call-depth diagnostics report the call site
 
 Date: 2026-11-26
-Status: VERIFIED locally; commit, push, and CI pending
+Status: VERIFIED; pushed in `4269010`; CI run 45933776137 green
 
 ## Objective
 
@@ -60,8 +60,9 @@ failing call is in `b.vtx` at line 5, column 16): both engines print
 - `python3 tools/differential_fuzz.py --iterations 100 --seed 1` — 100/100.
 - `python3 tools/fuzz_smoke.py` — 9 depth/limit cases and 400 random/mutated
   inputs produced controlled diagnostics.
-- Skill validator — 13 skills valid; link checker — 117 links in 176 Markdown
+- Skill validator — 13 skills valid; link checker — 117 links in 177 Markdown
   files OK.
+- CI run 45933776137 passed on `4269010`.
 
 ## Blockers and limits
 
@@ -75,13 +76,9 @@ failing call is in `b.vtx` at line 5, column 16): both engines print
 
 ## Next exact commands
 
-1. `git diff --check && git status --short`
-2. `git add -A && git commit -m "Report native call-depth errors at the call site"`
-3. `git push origin main`
-4. `gh run watch <new-run-id> --exit-status` and record the result in
-   `TASKS.md`, `PROJECT_STATUS.md`, `AGENTS.md`, `docs/PROJECT_BASELINE.md`,
-   `AGENT_STATE/SESSION_STATE.md`, `AGENT_STATE/RECOVERY.md`, and this
-   checkpoint.
+T-104 is committed as `4269010`, pushed, and CI run 45933776137 passed.
+Continue with targeted interpreter/native probes or another bounded P1/P2
+task; keep the commit/CI fields current as later status updates land.
 
 ## Risks
 

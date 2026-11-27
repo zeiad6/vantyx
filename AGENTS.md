@@ -90,8 +90,8 @@ python3 benchmarks/run.py --reps 5
   in `a331f2d` with the 718-test gate and CI run 45925745650 green, T-103
   deterministic scalar-list sorting is pushed in `46b7d54` with the 723-test
   gate and CI run 45928466694 green, and T-104 call-site depth-limit
-  diagnostics are verified locally with the 723-test gate and a commit/CI
-  pending). The
+  diagnostics are pushed in `4269010` with the 723-test gate and CI run
+  45933776137 green). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 723 passed (402 library unit + 15 CLI unit + 47 AI integration +

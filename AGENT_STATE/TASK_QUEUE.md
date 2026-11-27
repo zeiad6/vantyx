@@ -2,13 +2,13 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
-## Verified locally, pending commit/CI
+## Completed in `4269010` (CI run 45933776137 green)
 
-- T-104 — Native call-depth diagnostics report the call site. VERIFIED
-  locally; `vantyx_call_line`/`vantyx_call_column` are set immediately before
-  each user-function invocation, the entry guard reports them, and the
-  callee's source name is assigned only after the guard so cross-file failures
-  name the caller's file. Direct recursion and a two-module probe match the
+- T-104 — Native call-depth diagnostics report the call site. VERIFIED;
+  `vantyx_call_line`/`vantyx_call_column` are set immediately before each
+  user-function invocation, the entry guard reports them, and the callee's
+  source name is assigned only after the guard so cross-file failures name the
+  caller's file. Direct recursion and a two-module probe match the
   interpreter; `native_call_depth_limit_exits_two` compares the headline and
   location lines. 723-test gate.
 

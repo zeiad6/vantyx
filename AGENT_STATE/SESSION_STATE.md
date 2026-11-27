@@ -4,8 +4,9 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `a263cb3` (record T-103 CI run 45928466694); T-104 call-site depth-limit diagnostics are uncommitted in the working tree
-- Remote: `origin/main` at `a263cb3`; CI run 45928756101 green on `a263cb3`;
+- Last commit: `4269010` (call-site native call-depth diagnostics; T-104)
+- Remote: `origin/main` at `4269010`; CI run 45933776137 green on `4269010`;
+  CI run 45928756101 green on `a263cb3`;
   CI run 45928466694 green on `46b7d54`; CI run 45926037169 green on
   `0a309c8`; CI run 45925745650 green on
   `a331f2d`; CI run 45923860569 green on `5d5655b`; CI run 45923211883 green
@@ -14,8 +15,8 @@
 
 ## Current task
 
-T-104 — Native call-depth diagnostics report the call site. Status: VERIFIED
-locally; commit, push, and CI pending. The native `R0012` guard reported the
+T-104 — Native call-depth diagnostics report the call site. Status: VERIFIED;
+pushed in `4269010`; CI run 45933776137 green. The native `R0012` guard reported the
 callee declaration and, on a cross-file call, the callee's file; the
 interpreter reports the failing call site. `src/codegen_c.rs` adds
 `vantyx_call_line`/`vantyx_call_column`, sets them immediately after argument
@@ -24,7 +25,7 @@ assigns the callee's source name only after the guard. Argument preludes are
 used whenever any argument has effects so a nested call cannot leave stale
 coordinates. `tests/native.rs::native_call_depth_limit_exits_two` compares the
 headline and location lines; a two-module probe reported `b.vtx:5:16` in both
-engines. 723-test gate. See `ACTIVE_TASK.md` and the new checkpoint.
+engines. 723-test gate. See `ACTIVE_TASK.md` and the checkpoint.
 
 T-103 — Deterministic scalar-list sorting. Status: VERIFIED; pushed in
 `46b7d54`; CI run 45928466694 green; status sync `a263cb3` passed run
@@ -457,11 +458,11 @@ binaries or credentials are tracked.
 
 ## Next steps
 
-1. T-104 is verified locally; commit, push, record the CI run, and update the
-   commit/CI fields. T-103 is committed as `46b7d54`, pushed, and CI run
-   45928466694 is green; its status sync `a263cb3` passed run 45928756101. The
-   T-102 status-sync commit `0a309c8` also passed CI run 45926037169. Keep the
-   commit/CI fields current as later status updates land.
+1. T-104 is committed as `4269010`, pushed, and CI run 45933776137 is green.
+   T-103 is committed as `46b7d54`, pushed, and CI run 45928466694 is green;
+   its status sync `a263cb3` passed run 45928756101. The T-102 status-sync
+   commit `0a309c8` also passed CI run 45926037169. Keep the commit/CI fields
+   current as later status updates land.
 2. Continue targeted interpreter/native probes on surfaces not yet covered:
    map float/NaN keys, collection equality edges, enum payload aliasing, and
    nested loop control flow now match; next probe file/directory builtins

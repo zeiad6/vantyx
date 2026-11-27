@@ -2,7 +2,7 @@
 
 ## T-104 — Native call-depth diagnostics report the call site
 
-- Status: VERIFIED locally; commit, push, and CI pending
+- Status: VERIFIED; pushed in `4269010`; CI run 45933776137 green
 - Priority: P0 (correctness and interpreter/native diagnostic parity)
 - Dependencies: ADR-0008, ADR-0009
 
@@ -37,7 +37,6 @@
 
 ### Remaining
 
-- Commit, push, record the CI run, and update the commit/CI fields.
 - Scope limits: only the depth-limit location changes; native still omits the
   interpreter's source excerpt and stack trace, and the guard remains an
   entry check.
