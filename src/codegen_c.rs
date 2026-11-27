@@ -1039,6 +1039,11 @@ impl<'a> Emitter<'a> {
                     value
                 ));
             }
+            IrStmtKind::GlobalInit { name, value } => {
+                let value = self.expr(value);
+                self.line(&format!("{} = {};", self.global(name), value));
+                self.line(&format!("{} = true;", self.init_flag(name)));
+            }
             IrStmtKind::Try {
                 operand,
                 bind,
@@ -1078,8 +1083,26 @@ impl<'a> Emitter<'a> {
                     self.line(&format!("{} = {};", self.local(name), value));
                 }
                 IrPlace::Global(name) => {
-                    let value = self.expr(value);
-                    self.line(&format!("{} = {};", self.global(name), value));
+                    // The interpreter evaluates the right side before
+                    // resolving the assignment place, so side effects in the
+                    // value still happen when the global is uninitialized.
+                    // Materialize the value first, then apply the same R0009
+                    // check as a global read.
+                    let (line, column) = self.position(stmt.span);
+                    let value_text = self.expr(value);
+                    let value_name = self.fresh("value");
+                    self.line(&format!(
+                        "{} {} = {};",
+                        self.ctype(&value.ty),
+                        value_name,
+                        value_text
+                    ));
+                    self.line(&format!(
+                        "vantyx_check_init({}, {}, {line}, {column});",
+                        self.init_flag(name),
+                        c_string(name)
+                    ));
+                    self.line(&format!("{} = {};", self.global(name), value_name));
                     self.line(&format!("{} = true;", self.init_flag(name)));
                 }
                 IrPlace::Field { base, field } => {
@@ -1452,8 +1475,13 @@ impl<'a> Emitter<'a> {
                 let base = self.expr(base);
                 format!("({base})->{}", self.field(name))
             }
-            IrExprKind::Construct { name, args } => {
-                self.call_expr(&self.constructor_name(name), args, None)
+            IrExprKind::Construct {
+                name,
+                args,
+                eval_order,
+            } => {
+                let callee = self.constructor_name(name);
+                self.construct_expr(&callee, args, eval_order)
             }
             IrExprKind::ConstructVariant {
                 enum_name,
@@ -1596,12 +1624,21 @@ impl<'a> Emitter<'a> {
 
     fn display_expr(&mut self, expr: &IrExpr) -> String {
         let value = self.expr(expr);
-        match &expr.ty {
-            IrType::Str => value,
+        self.display_value(&value, &expr.ty)
+    }
+
+    /// Renders an already-evaluated C expression as its display string.
+    fn display_value(&mut self, value: &str, ty: &IrType) -> String {
+        match ty {
+            IrType::Str => value.to_string(),
             IrType::Int => format!("vantyx_str_from_int({value})"),
             IrType::Float => format!("vantyx_str_from_float({value})"),
             IrType::Bool => format!("vantyx_str_from_bool({value})"),
-            IrType::Unit => "vantyx_str_from_unit()".to_string(),
+            // Rendering a Unit is already evaluated by the caller in `print`,
+            // but interpolation passes an unevaluated expression here. Keep
+            // the evaluation so calls, nested output, and runtime errors are
+            // observable; the value itself renders as `()`.
+            IrType::Unit => format!("((void)({value}), vantyx_str_from_unit())"),
             IrType::List(_) => format!("vantyx_list_to_str({value})"),
             IrType::Map(_, _) => format!("vantyx_map_to_str({value})"),
             IrType::Struct(name) => format!("{}({value}, 0)", self.display_name(name)),
@@ -1707,7 +1744,12 @@ impl<'a> Emitter<'a> {
             return format!("(({left_value}) {symbol} ({right_value}))");
         }
 
-        if has_effects(lhs) && has_effects(rhs) {
+        // Bind both operands whenever either one has effects. Semantically
+        // both are always evaluated left to right, and some lowerings (Unit
+        // equality) render a constant result and would otherwise drop an
+        // effectful operand entirely. Hoisting both also guarantees the
+        // source order regardless of the C compiler's argument order.
+        if has_effects(lhs) || has_effects(rhs) {
             let left_name = self.fresh("lhs");
             let right_name = self.fresh("rhs");
             let left_value = self.expr(lhs);
@@ -1870,21 +1912,65 @@ impl<'a> Emitter<'a> {
         )
     }
 
+    /// Calls a struct constructor while preserving the order in which its
+    /// named arguments were written. `args` is in declaration order, while
+    /// `eval_order` lists argument indices in source order. Positional
+    /// constructors have an identity order and use the ordinary call path.
+    fn construct_expr(&mut self, callee: &str, args: &[IrExpr], eval_order: &[usize]) -> String {
+        let identity = eval_order.len() == args.len()
+            && eval_order
+                .iter()
+                .enumerate()
+                .all(|(index, position)| index == *position);
+        if identity || !args.iter().any(has_effects) {
+            return self.call_expr(callee, args, None);
+        }
+        let mut values: Vec<Option<String>> = vec![None; args.len()];
+        let mut prelude = String::new();
+        for &index in eval_order {
+            let value = self.expr(&args[index]);
+            let name = self.fresh("arg");
+            let _ = write!(
+                prelude,
+                "{} {name} = {value}; ",
+                self.ctype(&args[index].ty)
+            );
+            values[index] = Some(name);
+        }
+        let rendered = values
+            .into_iter()
+            .map(|value| {
+                value.expect("constructor evaluation order covers every argument exactly once")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("({{ {prelude}{callee}({rendered}); }})")
+    }
+
     fn builtin_expr(&mut self, name: &str, args: &[IrExpr], call: &IrExpr) -> String {
         let (line, column) = self.position(call.span);
         match name {
             "print" => {
-                let mut parts = Vec::new();
+                // Match the interpreter: evaluate every argument first, then
+                // render and write the whole line. Rendering as arguments are
+                // evaluated would (a) leak partial output when a later
+                // argument fails and (b) display collections before later
+                // arguments can mutate them.
+                let mut init = Vec::new();
+                let mut calls = Vec::new();
                 for (index, arg) in args.iter().enumerate() {
+                    let value = self.expr(arg);
+                    let name = self.fresh("print_arg");
+                    init.push(format!("{} {name} = {value};", self.ctype(&arg.ty)));
                     if index > 0 {
-                        parts.push("vantyx_print_sep()".to_string());
+                        calls.push("vantyx_print_sep()".to_string());
                     }
-                    let rendered = self.display_expr(arg);
-                    parts.push(format!("vantyx_print_text({rendered})"));
+                    let rendered = self.display_value(&name, &arg.ty);
+                    calls.push(format!("vantyx_print_text({rendered})"));
                 }
-                parts.push(format!("vantyx_print_end({line}, {column})"));
-                parts.push("(vantyx_unit)0".to_string());
-                format!("({})", parts.join(", "))
+                calls.push(format!("vantyx_print_end({line}, {column})"));
+                calls.push("(vantyx_unit)0".to_string());
+                format!("({{ {} {}; }})", init.join(" "), calls.join(", "))
             }
             "len" => {
                 let value = self.expr(&args[0]);
@@ -1915,16 +2001,34 @@ impl<'a> Emitter<'a> {
                 }
             }
             "bool" => {
+                // Like `type`, `bool` is an ordinary call: the interpreter
+                // evaluates the argument before accepting a Bool or raising
+                // R0007. Bind first so calls, output, mutation, and runtime
+                // errors inside the argument are observable.
                 let value = self.expr(&args[0]);
+                let name = self.fresh("bool_arg");
                 match &args[0].ty {
-                    IrType::Bool => value,
+                    IrType::Bool => format!("({{ bool {name} = {value}; {name}; }})"),
                     other => format!(
-                        "vantyx_bool_from_other({}, {line}, {column})",
+                        "({{ {} {name} = {value}; (void){name}; vantyx_bool_from_other({}, {line}, {column}); }})",
+                        self.ctype(&args[0].ty),
                         c_string(&other.name())
                     ),
                 }
             }
-            "type" => c_string(&args[0].ty.runtime_name()),
+            "type" => {
+                // `type` reports a static type name, but it is still an
+                // ordinary call: the interpreter evaluates its argument, so
+                // native code must preserve observable side effects (calls,
+                // output, runtime errors) before yielding the name.
+                let value = self.expr(&args[0]);
+                let name = self.fresh("type_arg");
+                format!(
+                    "({{ {} {name} = {value}; (void){name}; {}; }})",
+                    self.ctype(&args[0].ty),
+                    c_string(&args[0].ty.runtime_name())
+                )
+            }
             "read_file" => format!(
                 "vantyx_read_file({}, {line}, {column})",
                 self.expr(&args[0])
@@ -2017,9 +2121,16 @@ impl<'a> Emitter<'a> {
                     )
                 }
                 IrType::Str => {
+                    // C does not specify argument evaluation order, and GCC
+                    // evaluates these right to left. Bind both operands in
+                    // order so effectful arguments agree with the interpreter.
                     let haystack = self.expr(&args[0]);
                     let needle = self.expr(&args[1]);
-                    format!("vantyx_str_contains({haystack}, {needle})")
+                    let haystack_name = self.fresh("haystack");
+                    let needle_name = self.fresh("needle");
+                    format!(
+                        "({{ vantyx_str {haystack_name} = {haystack}; vantyx_str {needle_name} = {needle}; vantyx_str_contains({haystack_name}, {needle_name}); }})"
+                    )
                 }
                 IrType::Map(_, _) => {
                     let map_text = self.expr(&args[0]);
@@ -2097,6 +2208,28 @@ impl<'a> Emitter<'a> {
             }
             "path_is_absolute" => {
                 format!("vantyx_path_is_absolute({})", self.expr(&args[0]))
+            }
+            "range" => {
+                // Bind the bounds left to right before building the list so
+                // effectful arguments match the interpreter.
+                let mut init = Vec::new();
+                let mut names = Vec::new();
+                for arg in args {
+                    let value = self.expr(arg);
+                    let name = self.fresh("range_arg");
+                    init.push(format!("int64_t {name} = {value};"));
+                    names.push(name);
+                }
+                let (start, end, step) = match names.as_slice() {
+                    [end] => ("0".to_string(), end.clone(), "1".to_string()),
+                    [start, end] => (start.clone(), end.clone(), "1".to_string()),
+                    [start, end, step] => (start.clone(), end.clone(), step.clone()),
+                    _ => unreachable!("IR rejected range arity"),
+                };
+                format!(
+                    "({{ {} vantyx_range_list({start}, {end}, {step}, {line}, {column}); }})",
+                    init.join(" ")
+                )
             }
             "keys" | "values" => {
                 let IrType::Map(key, value) = &args[0].ty else {
@@ -2187,6 +2320,7 @@ fn collect_stmt_desc_types(stmt: &IrStmt, out: &mut Vec<IrType>) {
             register_desc_type(ty, out);
             collect_expr_desc_types(init, out);
         }
+        IrStmtKind::GlobalInit { value, .. } => collect_expr_desc_types(value, out),
         IrStmtKind::Try { operand, .. } => collect_expr_desc_types(operand, out),
         IrStmtKind::Assign { target, value } => {
             collect_place_desc_types(target, out);
@@ -2562,6 +2696,17 @@ static vantyx_str vantyx_strndup(const char* text, size_t length) {
     return copy;
 }
 
+/* Rust's `std::io::Error` Display appends `(os error N)` on Unix. The native
+   runtime must use the same suffix so filesystem diagnostics match the
+   interpreter instead of printing only `strerror`. */
+static vantyx_str vantyx_os_error(int error_number) {
+    const char* text = strerror(error_number);
+    if (text == NULL) text = "Unknown error";
+    char buffer[512];
+    snprintf(buffer, sizeof buffer, "%s (os error %d)", text, error_number);
+    return vantyx_strdup(buffer);
+}
+
 /* File I/O (ADR-0026). Reads are capped so a runaway file cannot exhaust the
    process, contents must be valid UTF-8 without NUL bytes, and writes use the
    host filesystem with the caller's privileges. There is no sandbox. */
@@ -2609,7 +2754,7 @@ static vantyx_str vantyx_read_file(vantyx_str path, int line, int column) {
     FILE* file = fopen(path, "rb");
     if (file == NULL) {
         char message[512];
-        snprintf(message, sizeof message, "cannot read file `%.200s`: %.200s", path, strerror(errno));
+        snprintf(message, sizeof message, "cannot read file `%.200s`: %.200s", path, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     size_t capacity = 8192;
@@ -2619,7 +2764,10 @@ static vantyx_str vantyx_read_file(vantyx_str path, int line, int column) {
         if (length == capacity) {
             if (capacity > VANTYX_MAX_FILE_BYTES) {
                 fclose(file);
-                vantyx_rt_error("R0015", "file exceeds the 64 MiB read limit", line, column);
+                char message[512];
+                snprintf(message, sizeof message,
+                         "file `%.200s` exceeds the 64 MiB read limit", path);
+                vantyx_rt_error("R0015", message, line, column);
             }
             size_t grown = capacity * 2;
             if (grown > VANTYX_MAX_FILE_BYTES + 1) grown = VANTYX_MAX_FILE_BYTES + 1;
@@ -2640,28 +2788,36 @@ static vantyx_str vantyx_read_file(vantyx_str path, int line, int column) {
                 fclose(file);
                 char message[512];
                 snprintf(message, sizeof message,
-                         "cannot read file `%.200s`: %.200s", path, strerror(error_number));
+                         "cannot read file `%.200s`: %.200s", path, vantyx_os_error(error_number));
                 vantyx_rt_error("R0015", message, line, column);
             }
             break;
         }
         if (length > VANTYX_MAX_FILE_BYTES) {
             fclose(file);
-            vantyx_rt_error("R0015", "file exceeds the 64 MiB read limit", line, column);
+            char message[512];
+            snprintf(message, sizeof message,
+                     "file `%.200s` exceeds the 64 MiB read limit", path);
+            vantyx_rt_error("R0015", message, line, column);
         }
     }
     if (fclose(file) != 0) {
         int error_number = errno;
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot read file `%.200s`: %.200s", path, strerror(error_number));
+                 "cannot read file `%.200s`: %.200s", path, vantyx_os_error(error_number));
         vantyx_rt_error("R0015", message, line, column);
     }
     if (memchr(buffer, '\0', length) != NULL) {
-        vantyx_rt_error("R0015", "file contains a NUL byte", line, column);
+        char message[512];
+        snprintf(message, sizeof message, "file `%.200s` contains a NUL byte", path);
+        vantyx_rt_error("R0015", message, line, column);
     }
     if (!vantyx_utf8_valid((const unsigned char*)buffer, length)) {
-        vantyx_rt_error("R0015", "file contents are not valid UTF-8", line, column);
+        char message[512];
+        snprintf(message, sizeof message,
+                 "file `%.200s` contents are not valid UTF-8", path);
+        vantyx_rt_error("R0015", message, line, column);
     }
     char* result = (char*)realloc(buffer, length + 1);
     if (result == NULL) {
@@ -2678,7 +2834,7 @@ static vantyx_unit vantyx_write_file(vantyx_str path, vantyx_str text, int appen
     FILE* file = fopen(path, append ? "ab" : "wb");
     if (file == NULL) {
         char message[512];
-        snprintf(message, sizeof message, "cannot write file `%.200s`: %.200s", path, strerror(errno));
+        snprintf(message, sizeof message, "cannot write file `%.200s`: %.200s", path, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     size_t length = strlen(text);
@@ -2687,14 +2843,14 @@ static vantyx_unit vantyx_write_file(vantyx_str path, vantyx_str text, int appen
         fclose(file);
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot write file `%.200s`: %.200s", path, strerror(error_number));
+                 "cannot write file `%.200s`: %.200s", path, vantyx_os_error(error_number));
         vantyx_rt_error("R0015", message, line, column);
     }
     if (fclose(file) != 0) {
         int error_number = errno;
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot write file `%.200s`: %.200s", path, strerror(error_number));
+                 "cannot write file `%.200s`: %.200s", path, vantyx_os_error(error_number));
         vantyx_rt_error("R0015", message, line, column);
     }
     return (vantyx_unit)0;
@@ -2712,7 +2868,7 @@ static int64_t vantyx_file_size(vantyx_str path, int line, int column) {
     if (stat(path, &info) != 0) {
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot read metadata for `%.200s`: %.200s", path, strerror(errno));
+                 "cannot read metadata for `%.200s`: %.200s", path, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     if (!S_ISREG(info.st_mode)) {
@@ -3030,8 +3186,22 @@ static int64_t vantyx_abs_int(int64_t value, int line, int column) {
 }
 
 static double vantyx_abs_float(double value) { return fabs(value); }
-static double vantyx_min_float(double left, double right) { return fmin(left, right); }
-static double vantyx_max_float(double left, double right) { return fmax(left, right); }
+
+// Vantyx min/max use the interpreter's explicit rule: a single NaN operand
+// yields the other operand, and ties (including -0.0/0.0) return the second
+// operand. C fmin/fmax return the first operand on ties, so they cannot be
+// used directly.
+static double vantyx_min_float(double left, double right) {
+    if (isnan(right)) return left;
+    if (isnan(left)) return right;
+    return left < right ? left : right;
+}
+
+static double vantyx_max_float(double left, double right) {
+    if (isnan(right)) return left;
+    if (isnan(left)) return right;
+    return left > right ? left : right;
+}
 
 static double vantyx_sqrt(double value, int line, int column) {
     if (value < 0.0) vantyx_rt_error("R0004", "`sqrt` of a negative number", line, column);
@@ -3056,22 +3226,67 @@ static int64_t vantyx_ceil_int(double value, int line, int column) {
 
 static int64_t vantyx_int_from_float(double value, int line, int column) {
     if (!isfinite(value) || value != trunc(value) || value < -9223372036854775808.0 || value >= 9223372036854775808.0) {
-        vantyx_rt_error("R0007", "cannot convert Float to Int exactly", line, column);
+        char message[512];
+        snprintf(message, sizeof message, "cannot convert `%s` to Int exactly", vantyx_float_str(value));
+        vantyx_rt_error("R0007", message, line, column);
     }
     return (int64_t)value;
 }
 
-static int64_t vantyx_int_from_str(vantyx_str text, int line, int column) {
-    errno = 0;
-    char* end = NULL;
-    long long value = strtoll(text, &end, 10);
-    if (end == text || errno == ERANGE) {
-        char message[512];
-        snprintf(message, sizeof message, "cannot convert `%s` to Int", text);
-        vantyx_rt_error("R0007", message, line, column);
+static vantyx_str vantyx_text_trim(vantyx_str text);
+
+/* The interpreter trims Unicode whitespace and then uses Rust's strict
+   integer/float grammars. `strtoll`/`strtod` alone accept forms Rust rejects
+   (hex floats, `nan(payload)`) and reject Unicode whitespace, so validate the
+   exact grammar before delegating the conversion. */
+static bool vantyx_ascii_prefix_ci(const char* text, const char* lower) {
+    while (*lower != '\0') {
+        char c = *text++;
+        if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+        if (c != *lower++) return false;
     }
-    while (isspace((unsigned char)*end)) end++;
-    if (*end != '\0') {
+    return true;
+}
+
+static bool vantyx_valid_int_text(const char* text) {
+    if (*text == '+' || *text == '-') text++;
+    if (*text < '0' || *text > '9') return false;
+    while (*text >= '0' && *text <= '9') text++;
+    return *text == '\0';
+}
+
+static bool vantyx_valid_float_text(const char* text) {
+    if (*text == '+' || *text == '-') text++;
+    if (vantyx_ascii_prefix_ci(text, "infinity") && text[8] == '\0') return true;
+    if (vantyx_ascii_prefix_ci(text, "inf") && text[3] == '\0') return true;
+    if (vantyx_ascii_prefix_ci(text, "nan") && text[3] == '\0') return true;
+    bool mantissa_digit = false;
+    while (*text >= '0' && *text <= '9') {
+        text++;
+        mantissa_digit = true;
+    }
+    if (*text == '.') {
+        text++;
+        while (*text >= '0' && *text <= '9') {
+            text++;
+            mantissa_digit = true;
+        }
+    }
+    if (!mantissa_digit) return false;
+    if (*text == 'e' || *text == 'E') {
+        text++;
+        if (*text == '+' || *text == '-') text++;
+        if (*text < '0' || *text > '9') return false;
+        while (*text >= '0' && *text <= '9') text++;
+    }
+    return *text == '\0';
+}
+
+static int64_t vantyx_int_from_str(vantyx_str text, int line, int column) {
+    vantyx_str trimmed = vantyx_text_trim(text);
+    errno = 0;
+    long long value = strtoll(trimmed, NULL, 10);
+    if (!vantyx_valid_int_text(trimmed) || errno == ERANGE) {
         char message[512];
         snprintf(message, sizeof message, "cannot convert `%s` to Int", text);
         vantyx_rt_error("R0007", message, line, column);
@@ -3082,21 +3297,15 @@ static int64_t vantyx_int_from_str(vantyx_str text, int line, int column) {
 static double vantyx_float_from_int(int64_t value) { return (double)value; }
 
 static double vantyx_float_from_str(vantyx_str text, int line, int column) {
-    errno = 0;
-    char* end = NULL;
-    double value = strtod(text, &end);
-    if (end == text) {
+    vantyx_str trimmed = vantyx_text_trim(text);
+    if (!vantyx_valid_float_text(trimmed)) {
         char message[512];
         snprintf(message, sizeof message, "cannot convert `%s` to Float", text);
         vantyx_rt_error("R0007", message, line, column);
     }
-    while (isspace((unsigned char)*end)) end++;
-    if (*end != '\0') {
-        char message[512];
-        snprintf(message, sizeof message, "cannot convert `%s` to Float", text);
-        vantyx_rt_error("R0007", message, line, column);
-    }
-    return value;
+    /* Rust parses overflow to infinity and underflow to zero, so ERANGE is
+       not an error here. */
+    return strtod(trimmed, NULL);
 }
 
 static bool vantyx_bool_from_other(const char* type_name, int line, int column) {
@@ -3139,7 +3348,11 @@ static int64_t vantyx_range_count(int64_t start, int64_t end, int64_t step, int 
         count = s <= e ? 0 : (s - e - st - 1) / -st;
     }
     if (count > 10000000) {
-        vantyx_rt_error("R0004", "`range` exceeds the native limit of 10000000 elements", line, column);
+        char message[128];
+        snprintf(message, sizeof message,
+                 "`range` would produce %llu elements, exceeding the limit of 10000000",
+                 (unsigned long long)count);
+        vantyx_rt_error("R0004", message, line, column);
     }
     return (int64_t)count;
 }
@@ -3202,6 +3415,19 @@ static void vantyx_list_push_raw(VantyxList* list, const void* value, int line, 
     list->len++;
 }
 
+static VantyxList* vantyx_range_list(int64_t start, int64_t end, int64_t step, int line, int column) {
+    int64_t count = vantyx_range_count(start, end, step, line, column);
+    VantyxList* list = vantyx_list_new(sizeof(int64_t), &vantyx_desc_int);
+    if (count > 0) vantyx_list_reserve(list, count, line, column);
+    __int128 value = start;
+    for (int64_t index = 0; index < count; index++) {
+        int64_t item = (int64_t)value;
+        vantyx_list_push_raw(list, &item, line, column);
+        value += step;
+    }
+    return list;
+}
+
 static void vantyx_list_pop_raw(VantyxList* list, void* out, int line, int column) {
     if (list->len == 0) vantyx_rt_error("R0003", "`pop` on an empty list", line, column);
     list->len--;
@@ -3231,6 +3457,31 @@ static uint32_t vantyx_utf8_decode(const unsigned char* text, int* bytes) {
          | ((uint32_t)(text[1] & 0x3F) << 12)
          | ((uint32_t)(text[2] & 0x3F) << 6)
          | (uint32_t)(text[3] & 0x3F);
+}
+
+/* Encodes one Unicode scalar value into `out` (at least 4 bytes) and returns
+   the byte length. Used for diagnostics that quote pattern characters. */
+static size_t vantyx_utf8_encode(uint32_t code, char* out) {
+    if (code < 0x80) {
+        out[0] = (char)code;
+        return 1;
+    }
+    if (code < 0x800) {
+        out[0] = (char)(0xC0 | (code >> 6));
+        out[1] = (char)(0x80 | (code & 0x3F));
+        return 2;
+    }
+    if (code < 0x10000) {
+        out[0] = (char)(0xE0 | (code >> 12));
+        out[1] = (char)(0x80 | ((code >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (code & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (code >> 18));
+    out[1] = (char)(0x80 | ((code >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((code >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (code & 0x3F));
+    return 4;
 }
 
 static bool vantyx_text_is_whitespace(uint32_t code) {
@@ -3416,14 +3667,25 @@ static vantyx_str vantyx_path_name(vantyx_str path) {
     return vantyx_strndup(path + start, length);
 }
 
+/* Match the interpreter exactly: the final dot in the component is the
+   extension separator, but a dot or pair of dots at the very end (and a
+   leading dot) is part of the stem, not an extension. The interpreter finds
+   the last dot first and then rejects it when it is trailing, so an earlier
+   dot in `a..` must not be treated as a separator either. */
+static size_t vantyx_path_extension_dot(vantyx_str path, size_t start, size_t length) {
+    size_t dot = SIZE_MAX;
+    for (size_t index = 1; index < length; index++) {
+        if (path[start + index] == '.') dot = index;
+    }
+    if (dot == SIZE_MAX || dot + 1 >= length) return SIZE_MAX;
+    return dot;
+}
+
 static vantyx_str vantyx_path_stem(vantyx_str path) {
     size_t start = 0;
     size_t length = 0;
     vantyx_path_name_range(path, &start, &length);
-    size_t dot = SIZE_MAX;
-    for (size_t index = 1; index + 1 < length; index++) {
-        if (path[start + index] == '.') dot = index;
-    }
+    size_t dot = vantyx_path_extension_dot(path, start, length);
     if (dot == SIZE_MAX) return vantyx_strndup(path + start, length);
     return vantyx_strndup(path + start, dot);
 }
@@ -3432,10 +3694,7 @@ static vantyx_str vantyx_path_extension(vantyx_str path) {
     size_t start = 0;
     size_t length = 0;
     vantyx_path_name_range(path, &start, &length);
-    size_t dot = SIZE_MAX;
-    for (size_t index = 1; index + 1 < length; index++) {
-        if (path[start + index] == '.') dot = index;
-    }
+    size_t dot = vantyx_path_extension_dot(path, start, length);
     if (dot == SIZE_MAX) return vantyx_strdup("");
     return vantyx_strndup(path + start + dot + 1, length - dot - 1);
 }
@@ -3457,7 +3716,7 @@ static VantyxList* vantyx_list_dir(vantyx_str path, int line, int column) {
     if (directory == NULL) {
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot list directory `%.200s`: %.200s", path, strerror(errno));
+                 "cannot list directory `%.200s`: %.200s", path, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     size_t length = 0;
@@ -3474,7 +3733,7 @@ static VantyxList* vantyx_list_dir(vantyx_str path, int line, int column) {
                 char message[512];
                 snprintf(message, sizeof message,
                          "cannot list directory `%.200s`: %.200s",
-                         path, strerror(error_number));
+                         path, vantyx_os_error(error_number));
                 vantyx_rt_error("R0015", message, line, column);
             }
             break;
@@ -3485,8 +3744,11 @@ static VantyxList* vantyx_list_dir(vantyx_str path, int line, int column) {
         if (!vantyx_utf8_valid((const unsigned char*)entry->d_name,
                                strlen(entry->d_name))) {
             (void)closedir(directory);
-            vantyx_rt_error("R0015", "directory entry name is not valid UTF-8",
-                            line, column);
+            char message[512];
+            snprintf(message, sizeof message,
+                     "directory `%.200s` contains a name that is not valid UTF-8",
+                     path);
+            vantyx_rt_error("R0015", message, line, column);
         }
         if (length == capacity) {
             if (capacity > SIZE_MAX / 2 / sizeof(vantyx_str)) {
@@ -3654,9 +3916,15 @@ static VantyxGlobComponent vantyx_glob_component(const char* text, size_t length
                     uint32_t last = vantyx_utf8_decode(
                         (const unsigned char*)text + index + 1, &last_bytes);
                     if (last < first) {
-                        vantyx_rt_error("R0016",
-                                        "descending range in glob character class",
-                                        line, column);
+                        char first_text[5] = {0};
+                        char last_text[5] = {0};
+                        vantyx_utf8_encode(first, first_text);
+                        vantyx_utf8_encode(last, last_text);
+                        char message[256];
+                        snprintf(message, sizeof message,
+                                 "invalid glob pattern: descending character range `%s-%s`",
+                                 first_text, last_text);
+                        vantyx_rt_error("R0016", message, line, column);
                     }
                     if (token.range_count == range_capacity) {
                         token.ranges = (VantyxGlobRange*)vantyx_glob_grow(
@@ -3677,11 +3945,13 @@ static VantyxGlobComponent vantyx_glob_component(const char* text, size_t length
                 }
             }
             if (!closed) {
-                vantyx_rt_error("R0016", "unclosed character class in glob pattern",
+                vantyx_rt_error("R0016",
+                                "invalid glob pattern: unclosed character class",
                                 line, column);
             }
             if (token.range_count == 0) {
-                vantyx_rt_error("R0016", "empty character class in glob pattern",
+                vantyx_rt_error("R0016",
+                                "invalid glob pattern: empty character class",
                                 line, column);
             }
         } else {
@@ -3802,7 +4072,7 @@ static bool vantyx_glob_read_names(vantyx_str path, VantyxGlobNames* names,
         char message[512];
         snprintf(message, sizeof message,
                  "cannot list directory `%.200s`: %.200s", target,
-                 strerror(error_number));
+                 vantyx_os_error(error_number));
         vantyx_rt_error("R0015", message, line, column);
     }
     for (;;) {
@@ -3816,7 +4086,7 @@ static bool vantyx_glob_read_names(vantyx_str path, VantyxGlobNames* names,
                 char message[512];
                 snprintf(message, sizeof message,
                          "cannot list directory `%.200s`: %.200s", target,
-                         strerror(error_number));
+                         vantyx_os_error(error_number));
                 vantyx_rt_error("R0015", message, line, column);
             }
             break;
@@ -3828,8 +4098,10 @@ static bool vantyx_glob_read_names(vantyx_str path, VantyxGlobNames* names,
                                strlen(entry->d_name))) {
             (void)closedir(directory);
             vantyx_glob_names_free(names);
-            vantyx_rt_error("R0015", "directory entry name is not valid UTF-8",
-                            line, column);
+            char message[512];
+            snprintf(message, sizeof message,
+                     "directory `%.200s` contains a non-UTF-8 entry name", target);
+            vantyx_rt_error("R0015", message, line, column);
         }
         if (names->length == names->capacity) {
             names->names = (char**)vantyx_glob_grow(
@@ -3965,7 +4237,7 @@ static void vantyx_glob_collect_descendants(vantyx_str base, size_t depth,
             char message[512];
             snprintf(message, sizeof message,
                      "cannot inspect `%.200s`: %.200s", child,
-                     strerror(error_number));
+                     vantyx_os_error(error_number));
             vantyx_glob_names_free(&names);
             vantyx_rt_error("R0015", message, line, column);
         }
@@ -4014,7 +4286,7 @@ static void vantyx_glob_walk(const VantyxGlobPattern* pattern, size_t index,
                 char message[512];
                 snprintf(message, sizeof message,
                          "cannot inspect `%.200s`: %.200s", child,
-                         strerror(error_number));
+                         vantyx_os_error(error_number));
                 vantyx_glob_names_free(&names);
                 free((void*)child);
                 vantyx_rt_error("R0015", message, line, column);
@@ -4115,7 +4387,7 @@ static vantyx_unit vantyx_make_dir(vantyx_str path, int line, int column) {
     if (mkdir(path, 0777) != 0) {
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot create directory `%.200s`: %.200s", path, strerror(errno));
+                 "cannot create directory `%.200s`: %.200s", path, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     return (vantyx_unit)0;
@@ -4125,7 +4397,7 @@ static vantyx_unit vantyx_remove_file(vantyx_str path, int line, int column) {
     if (unlink(path) != 0) {
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot remove file `%.200s`: %.200s", path, strerror(errno));
+                 "cannot remove file `%.200s`: %.200s", path, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     return (vantyx_unit)0;
@@ -4135,7 +4407,7 @@ static vantyx_unit vantyx_remove_dir(vantyx_str path, int line, int column) {
     if (rmdir(path) != 0) {
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot remove directory `%.200s`: %.200s", path, strerror(errno));
+                 "cannot remove directory `%.200s`: %.200s", path, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     return (vantyx_unit)0;
@@ -4150,7 +4422,7 @@ static _Noreturn void vantyx_directory_error(
     const char* action, const char* path, int error_number, int line, int column) {
     char message[512];
     snprintf(message, sizeof message,
-             "cannot %s `%.200s`: %.200s", action, path, strerror(error_number));
+             "cannot %s `%.200s`: %.200s", action, path, vantyx_os_error(error_number));
     vantyx_rt_error("R0015", message, line, column);
 }
 
@@ -4327,7 +4599,7 @@ static vantyx_unit vantyx_rename(vantyx_str from, vantyx_str to, int line, int c
         char message[512];
         snprintf(message, sizeof message,
                  "cannot rename `%.200s` to `%.200s`: %.200s",
-                 from, to, strerror(errno));
+                 from, to, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     return (vantyx_unit)0;
@@ -4341,7 +4613,7 @@ static vantyx_unit vantyx_copy_file(vantyx_str from, vantyx_str to, int line, in
     if (stat(from, &info) != 0) {
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot copy file `%.200s`: %.200s", from, strerror(errno));
+                 "cannot copy file `%.200s`: %.200s", from, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     if (!S_ISREG(info.st_mode)) {
@@ -4350,11 +4622,26 @@ static vantyx_unit vantyx_copy_file(vantyx_str from, vantyx_str to, int line, in
                  "cannot copy file `%.200s`: not a regular file", from);
         vantyx_rt_error("R0015", message, line, column);
     }
+    /* Opening the target for writing truncates it before any bytes are read.
+       Refuse a target that already resolves to the source, including a hard
+       link or symbolic-link alias. This is a best-effort guard against an
+       accidental self-copy, not an atomic transaction: a caller can still race
+       the check. Metadata failures are left to fopen to report. */
+    struct stat target_info;
+    if (stat(to, &target_info) == 0 &&
+        target_info.st_dev == info.st_dev &&
+        target_info.st_ino == info.st_ino) {
+        char message[512];
+        snprintf(message, sizeof message,
+                 "cannot copy file `%.200s` to `%.200s`: source and target are the same file",
+                 from, to);
+        vantyx_rt_error("R0015", message, line, column);
+    }
     FILE* source = fopen(from, "rb");
     if (source == NULL) {
         char message[512];
         snprintf(message, sizeof message,
-                 "cannot copy file `%.200s`: %.200s", from, strerror(errno));
+                 "cannot copy file `%.200s`: %.200s", from, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     FILE* target = fopen(to, "wb");
@@ -4364,7 +4651,7 @@ static vantyx_unit vantyx_copy_file(vantyx_str from, vantyx_str to, int line, in
         char message[512];
         snprintf(message, sizeof message,
                  "cannot copy file `%.200s` to `%.200s`: %.200s",
-                 from, to, strerror(error_number));
+                 from, to, vantyx_os_error(error_number));
         vantyx_rt_error("R0015", message, line, column);
     }
     char buffer[65536];
@@ -4391,7 +4678,7 @@ static vantyx_unit vantyx_copy_file(vantyx_str from, vantyx_str to, int line, in
         char message[512];
         snprintf(message, sizeof message,
                  "cannot copy file `%.200s` to `%.200s`: %.200s",
-                 from, to, strerror(error_number));
+                 from, to, vantyx_os_error(error_number));
         vantyx_rt_error("R0015", message, line, column);
     }
     return (vantyx_unit)0;
@@ -4412,7 +4699,7 @@ static void vantyx_copy_tree(
         char message[512];
         snprintf(message, sizeof message,
                  "cannot read directory `%.200s`: %.200s",
-                 source, strerror(errno));
+                 source, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     for (;;) {
@@ -4425,7 +4712,7 @@ static void vantyx_copy_tree(
                 char message[512];
                 snprintf(message, sizeof message,
                          "cannot read directory `%.200s`: %.200s",
-                         source, strerror(error_number));
+                         source, vantyx_os_error(error_number));
                 vantyx_rt_error("R0015", message, line, column);
             }
             break;
@@ -4459,7 +4746,7 @@ static void vantyx_copy_tree(
             char message[512];
             snprintf(message, sizeof message,
                      "cannot inspect `%.200s`: %.200s",
-                     child_source, strerror(error_number));
+                     child_source, vantyx_os_error(error_number));
             free(child_source);
             free(child_target);
             (void)closedir(directory);
@@ -4489,7 +4776,7 @@ static void vantyx_copy_tree(
                 char message[512];
                 snprintf(message, sizeof message,
                          "cannot create directory `%.200s`: %.200s",
-                         child_target, strerror(error_number));
+                         child_target, vantyx_os_error(error_number));
                 free(child_source);
                 free(child_target);
                 (void)closedir(directory);
@@ -4515,7 +4802,7 @@ static void vantyx_copy_tree(
         char message[512];
         snprintf(message, sizeof message,
                  "cannot read directory `%.200s`: %.200s",
-                 source, strerror(errno));
+                 source, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
 }
@@ -4529,7 +4816,7 @@ static vantyx_unit vantyx_copy_dir_all(vantyx_str from, vantyx_str to, int line,
         char message[512];
         snprintf(message, sizeof message,
                  "cannot copy directory `%.200s`: %.200s",
-                 from, strerror(errno));
+                 from, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     if (!S_ISDIR(info.st_mode)) {
@@ -4596,7 +4883,7 @@ static vantyx_unit vantyx_copy_dir_all(vantyx_str from, vantyx_str to, int line,
         char message[512];
         snprintf(message, sizeof message,
                  "cannot inspect target `%.200s` for directory copy: %.200s",
-                 to, strerror(errno));
+                 to, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
 
@@ -4605,7 +4892,7 @@ static vantyx_unit vantyx_copy_dir_all(vantyx_str from, vantyx_str to, int line,
         char message[512];
         snprintf(message, sizeof message,
                  "cannot resolve source `%.200s`: %.200s",
-                 from, strerror(errno));
+                 from, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     char* parent_real = realpath(parent, NULL);
@@ -4613,7 +4900,7 @@ static vantyx_unit vantyx_copy_dir_all(vantyx_str from, vantyx_str to, int line,
         char message[512];
         snprintf(message, sizeof message,
                  "cannot resolve target parent `%.200s`: %.200s",
-                 parent, strerror(errno));
+                 parent, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     size_t source_length = strlen(source_real);
@@ -4652,7 +4939,7 @@ static vantyx_unit vantyx_copy_dir_all(vantyx_str from, vantyx_str to, int line,
         char message[512];
         snprintf(message, sizeof message,
                  "cannot create target directory `%.200s`: %.200s",
-                 to, strerror(errno));
+                 to, vantyx_os_error(errno));
         vantyx_rt_error("R0015", message, line, column);
     }
     size_t entries = 0;
@@ -4914,7 +5201,12 @@ static int64_t vantyx_map_len(VantyxMap* map) { return map->len; }
 static void* vantyx_map_get(VantyxMap* map, const void* key, int line, int column) {
     int64_t index = vantyx_map_find(map, key);
     if (index < 0) {
-        vantyx_str rendered = vantyx_value_display(key, map->key_desc, 0);
+        // The interpreter renders map keys with top-level display, so a Str
+        // key appears without quotes here even though it is quoted inside a
+        // displayed collection.
+        vantyx_str rendered = map->key_desc->kind == VANTYX_T_STR
+                                  ? *(const vantyx_str*)key
+                                  : vantyx_value_display(key, map->key_desc, 0);
         char message[256];
         snprintf(message, sizeof message, "key `%s` is not present in the map", rendered);
         vantyx_rt_error("R0008", message, line, column);

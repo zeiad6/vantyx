@@ -231,6 +231,34 @@ fn globals_and_mutation_match() {
 }
 
 #[test]
+fn functions_use_lexical_globals_matching() {
+    // A callee resolves names against its own frame and the program's global
+    // scope. Caller locals with the same name must not shadow the global.
+    assert_same(
+        "lexical-globals",
+        "var total = 10\n\
+         var other = 20\n\n\
+         fn read_total() -> Int:\n\
+         \x20   return total\n\n\
+         fn bump_total() -> Int:\n\
+         \x20   total = total + 1\n\
+         \x20   return total\n\n\
+         fn bump_other() -> Int:\n\
+         \x20   other = other + 1\n\
+         \x20   return other\n\n\
+         fn main():\n\
+         \x20   var total = 100\n\
+         \x20   let other = \"caller-immutable\"\n\
+         \x20   print(read_total())\n\
+         \x20   print(bump_total())\n\
+         \x20   print(total)\n\
+         \x20   print(bump_other())\n\
+         \x20   print(other)\n\n\
+         main()\n",
+    );
+}
+
+#[test]
 fn evaluation_order_matches() {
     assert_same(
         "order",
@@ -240,6 +268,107 @@ fn evaluation_order_matches() {
          fn main():\n\
          \x20   print(mark(1) + mark(2))\n\
          \x20   print(\"vals {mark(3)} {mark(4)}\")\n",
+    );
+}
+
+#[test]
+fn named_constructor_arguments_evaluate_in_source_order() {
+    // Named struct-constructor arguments may be written in any order, but
+    // evaluation follows the source text. The native backend used to reorder
+    // them into declaration order before emitting the C call.
+    assert_same(
+        "named-constructor-order",
+        "struct Pair:\n\
+         \x20   left: Int\n\
+         \x20   right: Int\n\n\
+         struct Triple:\n\
+         \x20   a: Int\n\
+         \x20   b: Int\n\
+         \x20   c: Int\n\n\
+         fn note(label: Str, value: Int) -> Int:\n\
+         \x20   print(label)\n\
+         \x20   return value\n\n\
+         fn main():\n\
+         \x20   let p = Pair(right=note(\"right\", 2), left=note(\"left\", 1))\n\
+         \x20   print(p)\n\
+         \x20   let q = Triple(c=note(\"c\", 3), a=note(\"a\", 1), b=note(\"b\", 2))\n\
+         \x20   print(q)\n\
+         \x20   let r = Pair(note(\"first\", 10), note(\"second\", 20))\n\
+         \x20   print(r)\n",
+    );
+    assert_same(
+        "named-constructor-error-order",
+        "struct Pair:\n\
+         \x20   left: Int\n\
+         \x20   right: Int\n\n\
+         fn note(label: Str, value: Int) -> Int:\n\
+         \x20   print(label)\n\
+         \x20   return value\n\n\
+         fn fail() -> Int:\n\
+         \x20   assert(false)\n\
+         \x20   return 0\n\n\
+         fn main():\n\
+         \x20   let p = Pair(right=fail(), left=note(\"left\", 1))\n\
+         \x20   print(p)\n",
+    );
+}
+
+#[test]
+fn bool_evaluates_its_argument() {
+    // The native backend used to drop a statically non-Bool `bool` argument
+    // when emitting the R0007 failure, losing its observable side effects.
+    assert_same(
+        "bool-argument-evaluation",
+        "fn flag() -> Bool:\n\
+         \x20   print(\"flag\")\n\
+         \x20   return true\n\n\
+         fn side() -> Int:\n\
+         \x20   print(\"side\")\n\
+         \x20   return 1\n\n\
+         fn main():\n\
+         \x20   print(bool(flag()))\n\
+         \x20   print(bool(side()))\n",
+    );
+}
+
+#[test]
+fn unit_equality_evaluates_both_operands() {
+    // Unit equality is statically true (or false for `!=`), but the language
+    // still evaluates both operands left to right. The native backend used to
+    // drop a sole effectful operand because it only hoisted when both sides
+    // had effects and then rendered a constant.
+    assert_same(
+        "unit-equality-operands",
+        "fn side(tag: Str) -> Unit:\n\
+         \x20   print(tag)\n\n\
+         fn main():\n\
+         \x20   let u: Unit = side(\"decl\")\n\
+         \x20   print(u)\n\
+         \x20   print(u == side(\"cmp\"))\n\
+         \x20   print(u != side(\"cmp2\"))\n\
+         \x20   print(side(\"l\") == side(\"r\"))\n\
+         \x20   print(side(\"l2\") != side(\"r2\"))\n",
+    );
+}
+
+#[test]
+fn unit_interpolation_evaluates_expressions() {
+    // A Unit renders as `()`, but an interpolated expression is still an
+    // expression: the interpreter evaluates it, so native code must too.
+    assert_same(
+        "unit-interpolation",
+        "fn single() -> Unit:\n\
+         \x20   print(\"s1\")\n\n\
+         fn multi1() -> Unit:\n\
+         \x20   print(\"m1\")\n\n\
+         fn multi2() -> Unit:\n\
+         \x20   print(\"m2\")\n\n\
+         fn main():\n\
+         \x20   let a = \"{single()}\"\n\
+         \x20   print(a)\n\
+         \x20   let b = \"x{multi1()}y{multi2()}z\"\n\
+         \x20   print(b)\n\
+         \x20   print(\"pre{multi1()}post\")\n",
     );
 }
 
@@ -255,6 +384,99 @@ fn conversions_and_strings_match() {
          \x20   print(abs(-5), min(2, 3), max(2, 3))\n\
          \x20   print()\n",
     );
+}
+
+#[test]
+fn float_min_max_ties_match() {
+    assert_same(
+        "float-min-max-ties",
+        "fn main():\n\
+         \x20   print(min(-0.0, 0.0), max(-0.0, 0.0), min(0.0, -0.0), max(0.0, -0.0))\n\
+         \x20   print(min(-1.0, -0.0), max(-1.0, -0.0), min(-0.0, -1.0), max(-0.0, -1.0))\n\
+         \x20   let n = float(\"NaN\")\n\
+         \x20   print(min(n, 1.0), max(n, 1.0), min(1.0, n), max(1.0, n))\n",
+    );
+}
+
+#[test]
+fn print_evaluates_arguments_before_writing() {
+    assert_same(
+        "print-two-phase",
+        "fn bump(xs: List[Int]) -> Int:\n\
+         \x20   push(xs, 9)\n\
+         \x20   return 1\n\n\
+         fn main():\n\
+         \x20   let xs = [1]\n\
+         \x20   print(xs, bump(xs))\n\
+         \x20   print(\"partial\", floor(5e300))\n",
+    );
+}
+
+#[test]
+fn type_evaluates_arguments() {
+    assert_same(
+        "type-side-effects",
+        "fn bump(xs: List[Int]) -> Int:\n\
+         \x20   push(xs, 2)\n\
+         \x20   return len(xs)\n\n\
+         fn main():\n\
+         \x20   let xs = [1]\n\
+         \x20   print(type(bump(xs)), xs)\n\
+         \x20   print(type(print(\"inner\")))\n\
+         \x20   print(type(assert(true)))\n\
+         \x20   print(type(assert(false)))\n",
+    );
+}
+
+#[test]
+fn numeric_string_grammar_matches() {
+    // The interpreter trims Unicode whitespace and then applies Rust's strict
+    // integer/float grammar. `strtoll`/`strtod` accept extra C forms and
+    // reject Unicode whitespace, so the native runtime validates the grammar.
+    assert_same(
+        "numeric-grammar-accepted",
+        "fn main():\n\
+         \x20   print(int(\" 12 \"), int(\"\u{a0}12\u{a0}\"), int(\"+7\"), int(\"-0\"))\n\
+         \x20   print(float(\"1.\"), float(\".5\"), float(\"1.e3\"), float(\".5e2\"))\n\
+         \x20   print(float(\"1e999\"), float(\"-1e999\"), float(\"1e-999\"))\n\
+         \x20   print(float(\"inf\"), float(\"-Infinity\"), float(\"NaN\"), float(\"+nan\"))\n",
+    );
+    for (name, source) in [
+        ("hex-float", "fn main():\n    print(float(\"0x1p3\"))\n"),
+        ("nan-payload", "fn main():\n    print(float(\"nan(1)\"))\n"),
+        ("trailing-garbage", "fn main():\n    print(int(\"12x\"))\n"),
+        ("underscore", "fn main():\n    print(int(\"1_0\"))\n"),
+        (
+            "int-overflow",
+            "fn main():\n    print(int(\"9223372036854775808\"))\n",
+        ),
+    ] {
+        let Some(engines) = run_engines(name, source) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "native build failed for `{name}`:\n{}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        assert_eq!(
+            engines.interpreter.status.code(),
+            Some(2),
+            "interpreter accepted `{name}`"
+        );
+        let native = engines
+            .native
+            .expect("native output after successful build");
+        assert_eq!(native.status.code(), Some(2), "native accepted `{name}`");
+        assert!(
+            String::from_utf8_lossy(&engines.interpreter.stderr).contains("error[R0007]"),
+            "interpreter diagnostic missing for `{name}`"
+        );
+        assert!(
+            String::from_utf8_lossy(&native.stderr).contains("error[R0007]"),
+            "native diagnostic missing for `{name}`"
+        );
+    }
 }
 
 #[test]
@@ -276,6 +498,29 @@ fn range_loops_match() {
          \x20       print(i)\n\
          \x20   for i in range(2, 2):\n\
          \x20       print(i)\n",
+    );
+}
+
+#[test]
+fn range_values_match() {
+    assert_same(
+        "range-values",
+        "fn mark(label: Str, value: Int) -> Int:\n\
+         \x20   print(label)\n\
+         \x20   return value\n\
+         fn main():\n\
+         \x20   print(range(5))\n\
+         \x20   print(range(2, 5))\n\
+         \x20   print(range(5, 0, -2))\n\
+         \x20   print(range(0))\n\
+         \x20   print(range(2, 2))\n\
+         \x20   print(len(range(7)))\n\
+         \x20   let xs = range(4)\n\
+         \x20   print(xs[2])\n\
+         \x20   print(xs)\n\
+         \x20   print(range(5)[2])\n\
+         \x20   print(range(1 + 1, 2 * 3, 2))\n\
+         \x20   print(range(mark(\"a\", 1), mark(\"b\", 5), mark(\"c\", 2)))\n",
     );
 }
 
@@ -361,6 +606,71 @@ fn uninitialized_global_read_exits_two() {
     assert_eq!(native.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&native.stderr).contains("error[R0009]"));
     assert_eq!(engines.interpreter.status.code(), Some(2));
+}
+
+#[test]
+fn uninitialized_global_write_exits_two() {
+    // The native backend used to initialize a global through an ordinary
+    // assignment even when its declaration statement had not run yet. The
+    // interpreter raises R0009, and side effects in the right side still
+    // happen before the failure because the value is evaluated first.
+    let source = "fn setg() -> Int:\n\
+                  \x20   g = note()\n\
+                  \x20   return 0\n\n\
+                  fn note() -> Int:\n\
+                  \x20   print(\"rhs\")\n\
+                  \x20   return 5\n\n\
+                  print(setg())\n\
+                  var g = 1\n\
+                  print(g)\n";
+    let Some(engines) = run_engines("uninitialized-global-write", source) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "rhs\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), "rhs\n");
+    assert!(String::from_utf8_lossy(&native.stderr).contains("error[R0009]"));
+
+    // A global declaration whose own initializer calls a function that writes
+    // the same global must fail too, rather than letting the declaration win.
+    let self_init = "fn setg() -> Int:\n\
+                     \x20   g = 5\n\
+                     \x20   return 0\n\n\
+                     var g = setg()\n\
+                     print(g)\n";
+    let Some(engines) = run_engines("uninitialized-global-self-init", self_init) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    assert!(engines.interpreter.stdout.is_empty());
+    assert!(native.stdout.is_empty());
+
+    assert_same(
+        "global-write-after-declaration",
+        "fn setg() -> Int:\n\
+         \x20   g = 5\n\
+         \x20   return 0\n\n\
+         var g = 1\n\
+         print(setg())\n\
+         print(g)\n",
+    );
 }
 
 #[test]
@@ -2863,7 +3173,10 @@ fn text_builtins_evaluate_arguments_left_to_right() {
                   fn main():\n\
                   \x20   print(split(note(\"a-b\"), note(\"-\")))\n\
                   \x20   print(join([note(\"x\"), note(\"y\")], note(\":\")))\n\
-                  \x20   print(replace(note(\"a-b\"), note(\"a\"), note(\"c\")))\n";
+                  \x20   print(replace(note(\"a-b\"), note(\"a\"), note(\"c\")))\n\
+                  \x20   print(contains(note(\"banana\"), note(\"ana\")))\n\
+                  \x20   print(starts_with(note(\"hello\"), note(\"he\")))\n\
+                  \x20   print(ends_with(note(\"hello\"), note(\"lo\")))\n";
     let directory = workspace("text-argument-order", source);
     let Some(engines) = run_engines_in_mode(directory, "text-argument-order", true) else {
         return;
@@ -2876,12 +3189,81 @@ fn text_builtins_evaluate_arguments_left_to_right() {
     let native = engines.native.expect("native output");
     assert_eq!(engines.interpreter.status.code(), Some(0));
     assert_eq!(native.status.code(), Some(0));
-    let expected = "a-b\n-\n[\"a\", \"b\"]\nx\ny\n:\nx:y\na-b\na\nc\nc-b\n";
+    let expected = "a-b\n-\n[\"a\", \"b\"]\nx\ny\n:\nx:y\na-b\na\nc\nc-b\nbanana\nana\ntrue\nhello\nhe\ntrue\nhello\nlo\ntrue\n";
     assert_eq!(
         String::from_utf8_lossy(&engines.interpreter.stdout),
         expected
     );
     assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+fn gcc_available() -> bool {
+    Command::new("gcc")
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn string_contains_argument_order_is_compiler_independent() {
+    if !compiler_available() || !gcc_available() {
+        eprintln!(
+            "skipping native test `string_contains_argument_order_is_compiler_independent`: clang and gcc are required"
+        );
+        return;
+    }
+    let source = "fn note(label: Str) -> Str:\n\
+                  \x20   print(label)\n\
+                  \x20   return label\n\
+                  \n\
+                  fn main():\n\
+                  \x20   print(contains(note(\"banana\"), note(\"ana\")))\n\
+                  \x20   print(contains(note(\"banana\"), note(\"zzz\")))\n";
+    let directory = workspace("contains-order-compilers", source);
+    let source_path = directory.join("main.vtx");
+
+    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("run")
+        .arg(&source_path)
+        .output()
+        .expect("run interpreter");
+    assert_eq!(interpreter.status.code(), Some(0));
+    let expected = "banana\nana\ntrue\nbanana\nzzz\nfalse\n";
+    assert_eq!(
+        String::from_utf8_lossy(&interpreter.stdout),
+        expected,
+        "interpreter output"
+    );
+
+    for compiler in ["clang", "gcc"] {
+        let executable = directory.join(format!("program-{compiler}"));
+        let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+            .arg("build")
+            .arg(&source_path)
+            .arg("-o")
+            .arg(&executable)
+            .env("VANTYX_CC", compiler)
+            .output()
+            .expect("run native build");
+        assert!(
+            build.status.success(),
+            "{compiler} build failed: {}",
+            String::from_utf8_lossy(&build.stderr)
+        );
+        let native = Command::new(&executable).output().expect("run native");
+        assert_eq!(
+            native.status.code(),
+            Some(0),
+            "{compiler} program failed: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&native.stdout),
+            expected,
+            "{compiler} stdout differs"
+        );
+    }
 }
 
 #[test]
@@ -2917,6 +3299,10 @@ fn path_builtins_match() {
                   \x20   print(path_stem(\"..\"))\n\
                   \x20   print(path_stem(\".hidden.txt\"))\n\
                   \x20   print(path_stem(\"a..b\"))\n\
+                  \x20   print(path_stem(\"a/b..\"))\n\
+                  \x20   print(path_stem(\"a/...\"))\n\
+                  \x20   print(path_stem(\"a.b.\"))\n\
+                  \x20   print(path_stem(\"a.b..\"))\n\
                   \x20   print(path_extension(\"a/b.tar.gz\"))\n\
                   \x20   print(path_extension(\".bashrc\"))\n\
                   \x20   print(path_extension(\"a.\"))\n\
@@ -2924,6 +3310,10 @@ fn path_builtins_match() {
                   \x20   print(path_extension(\"archive.tar\"))\n\
                   \x20   print(path_extension(\".hidden.txt\"))\n\
                   \x20   print(path_extension(\"a..b\"))\n\
+                  \x20   print(path_extension(\"a/b..\"))\n\
+                  \x20   print(path_extension(\"a/...\"))\n\
+                  \x20   print(path_extension(\"a.b.\"))\n\
+                  \x20   print(path_extension(\"a.b..\"))\n\
                   \x20   print(path_is_absolute(\"/a\"))\n\
                   \x20   print(path_is_absolute(\"a\"))\n\
                   \x20   print(path_is_absolute(\"\"))\n\
@@ -2944,8 +3334,47 @@ fn path_builtins_match() {
     let expected = "a/b\na/b\n/b\nb\na\na//b\n/a\n\nnaïve/文件.txt\n\
                     a/b\n.\n/\n/\na\na\n.\n.\n/\nb\n\n\nb\n文件.txt\n\
                     b.tar\n.bashrc\na.\narchive\n..\n.hidden\na.\n\
-                    gz\n\n\n\ntar\ntxt\nb\n\
+                    b..\n...\na.b.\na.b..\n\
+                    gz\n\n\n\ntar\ntxt\nb\n\n\n\n\n\
                     true\nfalse\nfalse\ntrue\nfalse\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn path_trailing_dot_names_keep_the_whole_stem() {
+    let source = "fn main():\n\
+                  \x20   print(path_stem(\"a/b..\"))\n\
+                  \x20   print(path_stem(\"a/...\"))\n\
+                  \x20   print(path_stem(\"a.b.\"))\n\
+                  \x20   print(path_stem(\"a.b..\"))\n\
+                  \x20   print(path_stem(\"..a.\"))\n\
+                  \x20   print(path_stem(\".a.\"))\n\
+                  \x20   print(path_extension(\"a/b..\"))\n\
+                  \x20   print(path_extension(\"a/...\"))\n\
+                  \x20   print(path_extension(\"a.b.\"))\n\
+                  \x20   print(path_extension(\"a.b..\"))\n\
+                  \x20   print(path_extension(\"..a.\"))\n\
+                  \x20   print(path_extension(\".a.\"))\n";
+    let directory = workspace("path-trailing-dots", source);
+    let Some(engines) = run_engines_in_mode(directory, "path-trailing-dots", false) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let mut expected = String::from("b..\n...\na.b.\na.b..\n..a.\n.a.\n");
+    for _ in 0..6 {
+        expected.push('\n');
+    }
     assert_eq!(
         String::from_utf8_lossy(&engines.interpreter.stdout),
         expected
@@ -3123,6 +3552,71 @@ fn copy_file_preserves_bytes_match() {
         fs::read(output_directory.join("blob-copy.bin")).expect("read copied bytes"),
         bytes
     );
+}
+
+#[test]
+fn copy_file_rejects_self_copies_in_both_engines() {
+    let mut targets = vec![("same", "source.txt".to_string())];
+    #[cfg(unix)]
+    targets.push(("symlink", "link.txt".to_string()));
+    #[cfg(unix)]
+    targets.push(("hardlink", "hard.txt".to_string()));
+
+    for (label, target) in targets {
+        let name = format!("copy-self-{label}");
+        let source = format!("fn main():\n    copy_file(\"source.txt\", \"{target}\")\n");
+        let directory = workspace(&name, &source);
+        fs::write(directory.join("source.txt"), "keep me").expect("write source");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            match label {
+                "symlink" => {
+                    symlink("source.txt", directory.join("link.txt")).expect("create symlink")
+                }
+                "hardlink" => {
+                    fs::hard_link(directory.join("source.txt"), directory.join("hard.txt"))
+                        .expect("create hard link")
+                }
+                _ => {}
+            }
+        }
+
+        let Some(engines) = run_engines_in_mode(directory.clone(), &name, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "{label} build failed: {}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let native = engines
+            .native
+            .expect("native output after successful build");
+        assert_eq!(
+            engines.interpreter.status.code(),
+            Some(2),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert_eq!(native.status.code(), Some(2), "{label} native exit code");
+        assert!(
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+                .contains("source and target are the same file"),
+            "{label} interpreter stderr: {}",
+            String::from_utf8_lossy(&engines.interpreter.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&native.stderr).contains("source and target are the same file"),
+            "{label} native stderr: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("source.txt")).expect("read preserved source"),
+            "keep me",
+            "{label} changed the source"
+        );
+    }
 }
 
 #[test]
@@ -4045,4 +4539,203 @@ fn native_try_requires_a_result_enum() {
     let stderr = String::from_utf8_lossy(&engines.build.stderr);
     assert!(stderr.contains("error[E0319]"), "{stderr}");
     assert!(stderr.contains("exactly two variants"), "{stderr}");
+}
+
+fn first_error_line(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .find(|line| line.starts_with("error["))
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn assert_error_headlines_match(name: &str, source: &str) {
+    let Some(engines) = run_engines(name, source) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed for `{name}`: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(
+        engines.interpreter.status.code(),
+        Some(2),
+        "interpreter did not fail for `{name}`: {}",
+        String::from_utf8_lossy(&engines.interpreter.stderr)
+    );
+    assert_eq!(
+        native.status.code(),
+        Some(2),
+        "native did not fail for `{name}`: {}",
+        String::from_utf8_lossy(&native.stderr)
+    );
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        first_error_line(&native),
+        "error headline differs for `{name}`"
+    );
+}
+
+#[test]
+fn runtime_error_headlines_match_interpreter() {
+    // Scalar conversion errors include the offending value in both engines.
+    assert_error_headlines_match(
+        "error-headline-int-float",
+        "fn main():\n    print(int(2.5))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-int-float-huge",
+        "fn main():\n    print(int(1e20))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-int-float-boundary",
+        "fn main():\n    print(int(9223372036854775808.0))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-int-float-infinity",
+        "fn main():\n    print(int(1.0 / 0.0))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-int-float-nan",
+        "fn main():\n    print(int(0.0 / 0.0))\n",
+    );
+    // A missing map key renders a top-level string without quotes.
+    assert_error_headlines_match(
+        "error-headline-map-key",
+        "fn main():\n    var m: Map[Str, Int] = {}\n    print(m[\"missing\"])\n",
+    );
+    // A `range` loop reports the requested element count, not a native limit.
+    assert_error_headlines_match(
+        "error-headline-range-limit",
+        "fn main():\n    for i in range(0, 10000001):\n        print(i)\n",
+    );
+    // `range(...)` as a value uses the same checks and messages.
+    assert_error_headlines_match(
+        "error-headline-range-value-step",
+        "fn main():\n    print(range(0, 3, 0))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-range-value-limit",
+        "fn main():\n    print(range(0, 10000001))\n",
+    );
+    // Filesystem failures carry Rust's `(os error N)` suffix in both engines.
+    assert_error_headlines_match(
+        "error-headline-remove-missing",
+        "fn main():\n    remove_file(\"missing\")\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-make-dir-existing",
+        "fn main():\n    make_dir(\".\")\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-rename-missing",
+        "fn main():\n    rename(\"missing\", \"target\")\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-copy-missing",
+        "fn main():\n    copy_file(\"missing\", \"target\")\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-file-size-missing",
+        "fn main():\n    print(file_size(\"missing\"))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-list-dir-missing",
+        "fn main():\n    print(list_dir(\"missing\"))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-read-directory",
+        "fn main():\n    print(read_file(\".\"))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-write-directory",
+        "fn main():\n    write_file(\".\", \"x\")\n",
+    );
+    // Malformed glob patterns use the shared parser wording.
+    assert_error_headlines_match(
+        "error-headline-glob-unclosed",
+        "fn main():\n    print(glob(\"[\"))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-glob-unclosed-long",
+        "fn main():\n    print(glob(\"[a\"))\n",
+    );
+    assert_error_headlines_match(
+        "error-headline-glob-descending",
+        "fn main():\n    print(glob(\"[z-a]\"))\n",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn file_error_headlines_match_interpreter() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = workspace(
+        "error-headline-read-nul",
+        "fn main():\n    print(read_file(\"nul.bin\"))\n",
+    );
+    fs::write(directory.join("nul.bin"), b"a\0b").expect("write nul fixture");
+    let engines = run_engines_in_mode(directory, "error-headline-read-nul", true)
+        .expect("clang is available");
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        first_error_line(engines.native.as_ref().expect("native"))
+    );
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        "error[R0015]: file `nul.bin` contains a NUL byte"
+    );
+
+    let directory = workspace(
+        "error-headline-read-utf8",
+        "fn main():\n    print(read_file(\"bad.bin\"))\n",
+    );
+    fs::write(directory.join("bad.bin"), b"\xff\xfe").expect("write utf8 fixture");
+    let engines = run_engines_in_mode(directory, "error-headline-read-utf8", true)
+        .expect("clang is available");
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        first_error_line(engines.native.as_ref().expect("native"))
+    );
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        "error[R0015]: file `bad.bin` contents are not valid UTF-8"
+    );
+
+    let directory = workspace(
+        "error-headline-read-large",
+        "fn main():\n    print(read_file(\"big.bin\"))\n",
+    );
+    let big = fs::File::create(directory.join("big.bin")).expect("create sparse file");
+    big.set_len(64 * 1024 * 1024 + 1).expect("size sparse file");
+    let engines = run_engines_in_mode(directory, "error-headline-read-large", true)
+        .expect("clang is available");
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        first_error_line(engines.native.as_ref().expect("native"))
+    );
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        "error[R0015]: file `big.bin` exceeds the 64 MiB read limit"
+    );
+
+    let directory = workspace(
+        "error-headline-list-dir-utf8",
+        "fn main():\n    print(list_dir(\".\"))\n",
+    );
+    fs::create_dir(directory.join(OsStr::from_bytes(b"bad-\xff"))).expect("create invalid name");
+    let engines = run_engines_in_mode(directory, "error-headline-list-dir-utf8", true)
+        .expect("clang is available");
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        first_error_line(engines.native.as_ref().expect("native"))
+    );
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        "error[R0015]: directory `.` contains a name that is not valid UTF-8"
+    );
 }

@@ -58,7 +58,7 @@ python3 benchmarks/run.py --reps 5
 | `src/module.rs` | File-based module loader, path confinement, cycles, declaration flattening |
 | `src/checker.rs` | Scopes, gradual typing, enums, exhaustiveness, reachability-aware return checking |
 | `src/interp.rs` | Reference tree-walking runtime |
-| `src/lint.rs` | Read-only static lints over the checked AST (`L0001`–`L0003`, ADR-0037) |
+| `src/lint.rs` | Read-only static lints over the checked AST (`L0001`–`L0004`, ADR-0037) |
 | `src/copy_tree.rs` | Recursive directory copy, source containment, entry/depth caps (ADR-0034) |
 | `src/glob.rs` | Lexical glob parser, matcher, and bounded walk (ADR-0033) |
 | `src/ir.rs` | Typed, backend-neutral IR; `E0401` boundary |
@@ -72,7 +72,7 @@ python3 benchmarks/run.py --reps 5
 | `tests/native.rs` | Differential interpreter vs native tests |
 | `tests/ai.rs` | Offline AI CLI and loopback HTTP integration tests |
 
-## Current verified baseline (2026-11-24)
+## Current verified baseline (2026-11-26)
 
 - Public repository: https://github.com/zeiad6/vantyx (MIT; renamed from
   `zeiad6/auren`; CI run 45365926013 green on `e3d8bdd` with 457 tests; a clean
@@ -82,12 +82,13 @@ python3 benchmarks/run.py --reps 5
   `0491c63` also passed run 45489360135; run 45493833079 passed on `a4fe86b`
   with 584 tests, run 45496041422 passed on `5e1092f` with 613 tests, and run
   45499019615 passed on `53a8b82` with the expanded fuzzer, and run
-  45503321172 passed on `66b4efc` with T-075, and run 45504177763 passed on
-  `de0bac7` with the rustfmt gate). The
+  45503321172 passed on `66b4efc` with T-075, run 45504177763 passed on
+  `de0bac7` with the rustfmt gate, and run 45507195701 passed on `1aba7ba`
+  with T-077). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 621 passed (348 library unit + 15 CLI unit + 32 AI integration +
-  101 e2e + 125 native).
+- `cargo test`: 707 passed (395 library unit + 15 CLI unit + 43 AI integration +
+  113 e2e + 141 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
 - Native condition and short-circuit lowering match the interpreter:
@@ -101,28 +102,52 @@ python3 benchmarks/run.py --reps 5
   iteration, early returns, and guard side effects added by T-077); 180/180
   cases agreed on each of seeds 1, 500, and 1000 with nine shapes, the tenth
   shape matched 20/20 generated programs on seeds 1–20, and the full ten-shape
-  run agreed 200/200 on seeds 1, 2, 3, 500, and 1000. `--shrink` performs bounded line-oriented
-  minimization, and `tools/test_differential_fuzz.py` covers the comparison
-  and shrink logic. CI runs the self-tests and 80 iterations on seed 1.
+  run agreed 200/200 on seeds 1, 2, 3, 500, and 1000. `--shrink` performs
+  bounded line-oriented minimization, and `tools/test_differential_fuzz.py`
+  covers the comparison and shrink logic. The numeric and runtime-error
+  shapes include accepted and rejected numeric-string conversions after T-078.
+  Native `print` now evaluates every argument into a temporary before rendering
+  and writing, and float `min`/`max` use one explicit tie/NaN rule in both
+  engines (T-079, ADR-0039). Native `type` now evaluates its argument before
+  yielding the type name, so calls, output, mutation, and runtime errors inside
+  the argument match the interpreter (T-080); the fuzzer covers both the
+  side-effecting success path and a failing argument. Native string `contains`
+  binds both operands in source order so GCC and clang agree (T-081), and
+  `Unit` equality and `Unit` interpolation still evaluate their expressions
+  (T-082/T-083); the fuzzer covers all three. CI runs the self-tests
+  and 80 iterations on seed 1.
 - Tooling: `vantyx lint` reports `L0001` unused binding, `L0002` `var` never
-  reassigned, and `L0003` unreachable statement, with compile errors still
-  exiting `1` and lint-only findings exiting `0` (T-073, ADR-0037). The
-  checker no longer reports a false `E0309` for dead code after a reachable
-  `return` (T-074, ADR-0037).
+  reassigned, `L0003` unreachable statement, and `L0004` unused parameter, with
+  compile errors still exiting `1` and lint-only findings exiting `0` (T-073,
+  T-085, ADR-0037). The checker no longer reports a false `E0309` for dead code
+  after a reachable `return` (T-074, ADR-0037).
 - Native support: scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key
   hash index, structs, enums, `match` with nested payload patterns, top-level
   or-patterns, integer range patterns and guards, calls and short-circuit
   expressions in `if`/`elif`/`while` conditions, statement-position result-enum
-  `?` propagation, imported modules, basic
+  `?` propagation, `range(...)` as a `List[Int]` value outside `for` loops
+  (T-099), strict numeric-string conversion matching the interpreter
+  (T-078), deterministic two-phase `print` evaluation and float `min`/`max`
+  tie/NaN semantics (T-079, ADR-0039), argument evaluation in `type` (T-080),
+  source-order evaluation of named constructor arguments (T-088), lexical
+  function frames where a callee resolves names in its own frame and
+  the top-level bindings, never caller locals (T-087, ADR-0040), matching
+  first-line runtime diagnostics for float-to-int conversion, missing map keys,
+  `range` limits, and file/directory failures, including Rust's `(os error N)`
+  filesystem suffix and the shared glob parser wording (T-096, T-097), imported
+  modules, basic
   UTF-8 file I/O, file metadata probes, single-level directory operations,
   recursive directory creation and symlink-safe removal, lexical glob
   expansion, rename and byte-preserving file copy, recursive directory copy,
-  UTF-8 text builtins, lexical path builtins, checked arithmetic, bounds
-  checks, structural equality.
+  UTF-8 text builtins, lexical path builtins whose trailing-dot stem and
+  extension behavior matches the interpreter (T-086), checked arithmetic,
+  bounds checks, structural equality.
 - Native rejects: `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads,
   `match` on `Any`, dynamically typed file/directory/glob/recursive-copy/
   rename/copy/metadata/text/path arguments, tuple/float patterns, unannotated
-  value-returning functions.
+  value-returning functions. Same-file `copy_file` targets are refused with
+  `R0015` in both engines before the target is opened, including symlink and
+  hard-link aliases (T-089).
 - AI host support: offline mock/echo chat, OpenAI-compatible chat and model
   listing, streamed text chat with SSE and incremental HTTP/curl transport,
   strict JSON and JSON Schema subset, validated structured extraction with
@@ -131,6 +156,16 @@ python3 benchmarks/run.py --reps 5
   OpenAI-compatible `/v1/embeddings`, in-memory vector index, BM25, local RAG
   ingestion/chunking/citations, lexical/semantic/hybrid retrieval, retrieval
   evaluation, typed tools with capabilities, bounded agents, redacted metrics,
+  offline GGUF v2/v3 and Safetensors inspection with tensor-range validation,
+  Safetensors shard-index aggregation with index/header cross-checks and
+  per-shard SHA-256 provenance (T-091, ADR-0042), bounded JSONL dataset
+  validation with sorted field/type summaries and a streamed SHA-256 (T-092,
+  ADR-0043), optional dataset validation against the supported JSON Schema
+  subset with numbered violations (T-094, ADR-0044), deterministic train/
+  held-out splits with seeded content-hash assignment, validation gates,
+  overwrite refusal, and output digests (T-098, ADR-0046), exact byte-based
+  duplicate-record removal with validation gates, overwrite refusal, a
+  1,000,000-record digest cap, and input/output provenance (T-100, ADR-0047),
   and `vantyx ai`. A live cloud OpenAI-compatible run on 2026-11-24 covered
   model discovery, chat, streaming, validated extraction, 768-dimension
   embeddings, semantic RAG/search, and retrieval evaluation; the 401/429/
@@ -165,8 +200,11 @@ python3 benchmarks/run.py --reps 5
   guaranteed), no
   streaming tool calls or interactive cancellation, no constrained
   decoding/model manager/keyring, no PDF/HTML/Office ingestion, or grounded
-  generation, no language-level AI syntax,
-  no tensors or GPU support.
+  generation, dataset inspection is JSONL-only and does not tokenize, shuffle,
+  stratify by label, or implement full JSON Schema; deduplication is exact-byte
+  only (no JSON canonicalization or near-duplicate detection), and splits are
+  deterministic but not shuffled, no language-level AI
+  syntax, no tensors or GPU support.
 - Attribution: the developer is **Zeidex** (`zeiad6`,
   https://zeidexlink.zeidexsoft.com/zeidex). The 2026-11-24 history correction
   replaced the historical placeholder identity `Auren Contributors` with
@@ -183,7 +221,9 @@ done.
 
 ## Subagents
 
-Specialized agents live in `.opencode/agents/`. Use `spec-sync-auditor` after
-large changes to detect documentation drift; use `qa-verifier` for independent
-verification; use `compiler-architect` for read-only design review. The
-interpreter remains the oracle regardless of which agent writes code.
+Specialized agents live in `.opencode/agents/`. Reusable workflows live in
+`.opencode/skills/` and are listed in `docs/AGENT_SKILLS.md`; the harness
+advertises them by ID. Use `spec-sync-auditor` after large changes to detect
+documentation drift; use `qa-verifier` for independent verification; use
+`compiler-architect` for read-only design review. The interpreter remains the
+oracle regardless of which agent writes code.

@@ -1,0 +1,3 @@
+{"text":"Vantyx is a gradual-typing language with a native C11 backend.","label":"docs"}
+{"text":"The interpreter is the semantic oracle for native behavior.","label":"docs"}
+{"text":"Malformed dataset lines should fail before training starts.","label":"safety"}

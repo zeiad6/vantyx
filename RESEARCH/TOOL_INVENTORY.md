@@ -1,6 +1,6 @@
 # Tool Inventory
 
-Date: 2026-11-24
+Date: 2026-11-26
 Host: Linux x86_64, Python 3.14.10, Git 2.53.0, GitHub CLI 2.105.0
 
 ## Available and used
@@ -10,12 +10,14 @@ Host: Linux x86_64, Python 3.14.10, Git 2.53.0, GitHub CLI 2.105.0
 | `rustc` | 1.100.0 | Compiler |
 | `cargo` | 1.100.0 | Build, test, clippy, fmt |
 | `cargo clippy` | clean with `-D warnings` | Lint gate |
-| `rustfmt` | available | `cargo fmt --check` currently fails with 224 diff locations (G-01) |
+| `rustfmt` | available; `cargo fmt --check --all` clean (2026-11-25) | Formatting gate |
 | `clang` | 21.1.8 | Native backend compiler; ASan/UBSan available |
+| `gcc` | 16.2.0 | Second native compiler; `VANTYX_CC=gcc cargo test --test native` passes |
 | `python3` | 3.14.10 | Differential fuzzer, fuzz smoke, AI harnesses, link checker |
 | `git` | 2.53.0 | Version control |
 | `gh` | 2.105.0 | CI inspection |
 | GitHub Actions | Linux runner | Build, tests, clippy, differential fuzz, examples |
+| OpenCode project skills | 12 under `.opencode/skills/`; advertised by the harness on 2026-11-26 | Reusable agent workflows for forensics, compiler work, Python research, runtime safety, AI systems, training, GPU/numerical work, security, benchmarking, orchestration, cross-platform work, and recovery (T-093) |
 
 ## Available but not installed
 

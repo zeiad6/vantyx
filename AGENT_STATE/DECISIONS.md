@@ -4,7 +4,155 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
-## 2026-11-24 — CI portability for the glob result-cap test
+## 2026-11-26 — Schema conformance is fixed at the shared validator
+
+- Treat JSON Schema instance equality as a separate operation from Rust's
+  structural `PartialEq`: `const`/`enum` compare mathematical numbers and
+  order-independent objects, while serialization and unrelated tests keep
+  structural equality.
+- Compare numbers exactly across `Int`, `UInt`, and `Float` instead of routing
+  bounds through `f64`; explicitly reject the `2^63`/`2^64` float boundaries
+  because Rust's float-to-integer casts saturate.
+- Preflight every schema at the public boundary (`extract`, `ToolRegistry`,
+  dataset) so a malformed schema cannot be sent to a provider, cannot be used
+  to judge tool arguments, and is reported as a schema/config failure rather
+  than a model-output failure.
+- Keep the subset strict and documented: unsupported keywords are ignored, and
+  preflight checks shapes, not satisfiability.
+
+## 2026-11-26 — Dataset inspection is structural, streaming, and read-only
+
+- Require one top-level JSON object per non-blank line and accept a first-line
+  BOM, CRLF, and blank lines. The digest covers every raw byte, including blank
+  lines and line endings, so provenance matches the file rather than a
+  normalized parse.
+- Exit `1` when any non-blank line is invalid so the command can gate a
+  pipeline, print the summary before failing, and reserve `64` for usage
+  errors. A valid dataset exits `0`.
+- Keep tokenization, splits, shuffle, deduplication, and schema/required-field
+  checks out of this task; each needs its own deterministic contract and tests.
+  Report nested values only as `object` rather than pretending to validate them.
+
+## 2026-11-26 — Agent skills are project-local and advisory
+
+- Store reusable workflows as `.opencode/skills/<id>/SKILL.md` with `name` and
+  `description` frontmatter; the harness advertised all twelve after creation,
+  which confirms the mechanism.
+- Treat skills as instructions, not enforcement. Agent permissions and
+  auto-invocation still control availability, and there is no CI frontmatter or
+  required-section check yet; document that limit instead of implying a gate.
+- Keep each skill Vantyx-specific: workflow, commands, safety constraints,
+  acceptance criteria, troubleshooting, and an example, with claims tied to
+  observed evidence.
+
+## 2026-11-25 — Trailing final dots do not fall back to earlier dots
+
+- Follow the interpreter's two-step rule literally: find the final dot in the
+  path component, then reject it when it is first or last. Do not search for
+  the last interior dot as a fallback, because that would silently reinterpret
+  `a..` as stem `a` plus extension `.` while the oracle keeps the whole name.
+- Share one `vantyx_path_extension_dot` helper between stem and extension so
+  the two cannot drift again, and state the no-earlier-dot rule in ADR-0030.
+- Keep the fix lexical and allocation-compatible; no new dependency or runtime
+  helper category is justified for a one-byte boundary rule.
+
+## 2026-11-24 — T-085 unused parameters are a distinct lint
+
+- Report a never-read function parameter as `L0004`, not `L0001`. The two
+  findings have different remedies (remove a local versus remove or underscore
+  an interface parameter), so one code would lose information.
+- Keep the lexical rule: any read, including a guard or nested block,
+  suppresses the finding, and a leading underscore marks intent. There is no
+  trait or interface conformance system to justify an unread name.
+- Leave loop variables and match payload bindings unreported; their names are
+  often dictated by shape, and the conservative linter should not guess.
+
+## 2026-11-24 — T-084 `bool` evaluates its argument
+
+- Treat built-ins that statically reject a type as evaluated calls, not as
+  guards. The interpreter evaluates the argument before raising `R0007`, so the
+  backend must emit it on both the accepted and rejected paths.
+- Bind the argument to a typed temporary and discard it with `(void)` before
+  calling `vantyx_bool_from_other`, reusing the T-080 `type` pattern rather than
+  adding a new runtime helper.
+- Audit remaining built-ins for the same shape: any lowering that emits a
+  constant or failure call without its operand is a silent divergence.
+
+## 2026-11-24 — T-083 `Unit` interpolation keeps evaluation
+
+- Treat interpolation as an expression context, not as text formatting. The
+  interpreter evaluates `{expr}` regardless of its static type, so the backend
+  must emit the expression even when the rendered value is constant.
+- Render `Unit` through `((void)(value), vantyx_str_from_unit())` instead of a
+  bare `vantyx_str_from_unit()` constant. This reuses the existing display
+  helper and does not add a runtime function or special-case the parser.
+- Keep the `print` phase separation from T-079: `print` still evaluates into
+  temporaries and passes an already-evaluated value to `display_value`.
+
+## 2026-11-24 — T-082 hoist both operands whenever either has effects
+
+- Fix the class, not the instance: any binary operator may lower to a constant
+  or otherwise omit an operand, but the language always evaluates both operands
+  left to right. `binary_expr` now binds both operands whenever either has
+  effects, rather than special-casing `Unit` equality.
+- Preserve the deliberate exception for `and`/`or`, which must not evaluate the
+  right operand when the left decides the result (ADR-0036).
+- The hoist also makes source order explicit, so the fix is compiler-independent
+  under both clang and GCC.
+
+## 2026-11-24 — T-081 bind effectful `contains` operands
+
+- Treat C argument evaluation order as unspecified, not as whatever the default
+  compiler happens to do. Any native lowering that emits a multi-argument C
+  call must bind observable operands to typed temporaries in source order.
+- Fix string `contains` by using the same statement-expression pattern as the
+  list/map, `starts_with`, and `ends_with` branches instead of adding a new
+  runtime helper.
+- Test this class with both clang and GCC when both are available, because the
+  engines disagree on evaluation order and a clang-only suite cannot detect
+  the regression. Skip the test when GCC is absent rather than failing.
+
+## 2026-11-24 — T-080 `type` evaluates its argument
+
+- Treat every built-in call as an ordinary evaluated call. A built-in that
+  consumes only metadata (currently `type`) must still evaluate its argument
+  exactly once, because calls, mutation, output, and runtime errors inside the
+  argument are observable and the interpreter already does this.
+- Lower `type` through a typed temporary and `(void)` discard instead of
+  special-casing it as a constant; keep the static type-name result so the
+  native and interpreter outputs stay identical for supported programs.
+- Do not attempt dynamic type tags or `Any` support as part of this fix.
+
+## 2026-11-24 — T-079 print phase separation and float min/max determinism
+
+- Treat signed zero as observable. Float display preserves the sign, so
+  `min(-0.0, 0.0)` cannot be left to "either zero": adopt the interpreter's
+  documented Rust behavior (second operand on a tie) as the language rule and
+  spell it out in both engines instead of relying on `f64::min`/`fmax`.
+- Define one NaN rule: a single NaN operand yields the other operand. Both-NaN
+  payload/sign is not observable through Vantyx and is left unspecified.
+- Make `print` match the interpreter's observable phases: evaluate every
+  argument left to right into typed C temporaries, then render all values,
+  then write the line. Do not accept partial stdout on a failing argument.
+- Use the existing display helpers through a new `display_value` entry point
+  rather than buffering a whole line in a second formatter; keep the change
+  local to `print` and the two float helpers.
+- Do not add buffered output, streaming, error recovery, or a general
+  evaluation-order guarantee beyond the documented left-to-right argument
+  order.
+
+## 2026-11-24 — T-078 strict native numeric-string validation
+
+- Trim Unicode whitespace and validate the exact interpreter integer/float
+  grammar in C before calling `strtoll`/`strtod`; do not trust libc's wider
+  grammar (hexadecimal floats, `nan(payload)`, trailing text).
+- Ignore float `ERANGE` so overflow and underflow still match Rust (`Infinity`
+  and `0.0`); keep integer overflow as `R0007`.
+- Keep the existing `R0007` error code and document the locale assumption
+  (decimal point `.`), native embedded-NUL limitation, and unchanged float
+  display.
+
+
 
 - The differential test originally created 100,001 hard links to one anchor.
   ext4 caps hard links per inode at 65,000, so the test failed on the CI runner
@@ -375,3 +523,151 @@ file records operational choices.
   controlled differential failure.
 - Add the shrinker's pure comparison logic to a Python unit test file and run
   it in CI; the real differential run remains the integration evidence.
+
+## 2026-11-24 — Strict native numeric-string conversion
+
+- Match the interpreter by validating its exact grammar in C instead of
+  reimplementing a parser. `vantyx_text_trim` already implements the same
+  Unicode `White_Space` set, and `strtoll`/`strtod` are used only after the
+  grammar check, so conversion accuracy stays with libc while acceptance and
+  rejection stay with the oracle.
+- Ignore float `ERANGE`: Rust parses overflow to infinity and underflow to
+  zero, so treating it as an error would create a new divergence.
+- Keep `R0007` and the existing messages. This is a native parity fix, not a
+  language change; the specification now states the accepted grammar.
+
+## 2026-11-25 — Lexical function scope
+
+- Resolve names in the active function frame and then the program's root
+  scope. Never search caller frames. This matches the checker and native
+  backend, and it prevents accidental caller-state reads and writes when a
+  local reuses a global's name.
+- Represent the boundary as the first scope index of the active call rather
+  than copying globals or adding a separate global table. Assignments must
+  still update the one global binding, and recursion must keep independent
+  frames.
+- Save and restore the boundary around every call, including the error path.
+  A panicking or failing callee must not leave the interpreter resolving names
+  against the wrong frame afterward.
+- Keep dynamic scoping out of the language. A function's behavior must not
+  depend on its caller's local names.
+
+## 2026-11-26 — Offline model inspection and same-file copies
+
+- Parse GGUF and Safetensors headers in-tree rather than shelling out to
+  `sha256sum`, `llama.cpp`, or Python. The host must stay dependency-free,
+  offline by default, and must never execute model code. ADR-0041 records the
+  bounded parser and streaming SHA-256.
+- Validate tensor ranges and known quantization block sizes. A summary that
+  silently accepts a truncated, overlapping, or malformed file is worse than
+  no summary.
+- Keep `AI_E_FORMAT` distinct from `AI_E_IO` and print a concrete help line for
+  format errors. Usage errors stay exit `64`; format and I/O errors exit `1`.
+- Do not add download, pull, remove, conversion, quantization, or weight
+  loading in this change. `inspect` is the provenance primitive those later
+  commands need, not a substitute for their integrity and license gates.
+- Refuse same-file `copy_file` targets before opening the target. The guard is
+  best-effort and raceable, and is documented as such rather than claimed to be
+  atomic.
+
+## 2026-11-26 — Safetensors shard-index aggregation
+
+- Extend `inspect` instead of adding a second command. Content detection plus
+  a `.json` fallback keeps one output schema, and the input type is
+  unambiguous.
+- Treat the index as the declared model boundary. Do not scan the directory for
+  extra `.safetensors` files; unlisted files may be unrelated, and a scan adds
+  unbounded work.
+- Cross-check the index against every shard header. Trusting `weight_map` alone
+  would miss tensors that exist but are unlisted and tensors that are listed
+  but absent.
+- Require relative `/`-separated `.safetensors` paths with no `..`, then
+  canonicalize and require containment under the index directory. Reject a
+  shard that is itself an index so hostile files cannot cause recursion.
+- Treat `metadata.total_size` as advisory. Producers differ on what the value
+  counts, so a mismatch is a warning rather than a false rejection.
+- Hash every referenced shard and report per-shard digests. An aggregate
+  summary alone cannot prove that a shard is unchanged.
+- Keep the operation offline and read-only. No downloads, weight loading,
+  conversion, or execution; no new dependency.
+
+## 2026-11-26 — Shared runtime diagnostics across both engines
+
+- Make the interpreter the source of truth for wording, as for behavior. Where
+  the interpreter already quoted the offending value or path, the native
+  runtime was changed rather than simplifying the interpreter message.
+- Render floats through the Vantyx display (`format_float` /
+  `vantyx_float_str`) in diagnostics, not Rust's or C's default formatting.
+  This keeps `print`, `str`, and error messages consistent and resolves the
+  `inf` versus `Infinity` and integral `.0` differences at once.
+- Render a missing `Str` map key with top-level display (unquoted) and other
+  keys structurally, matching `Value::display`.
+- Report the requested `range` element count instead of an implementation
+  limit so the message explains the program's request.
+- Include the path or directory in file and directory failures. A bare
+  `file contains a NUL byte` is ambiguous when several reads can fail.
+- Compare the first diagnostic line, not only the error code, in differential
+  tests. Codes stayed equal while the user-visible explanation diverged.
+- Keep the caret/source excerpt out of scope: the native runtime does not carry
+  the interpreter's source registry, so only the headline is guaranteed.
+
+## 2026-11-26 — Filesystem error text and glob parse diagnostics
+
+- Match Rust's `io::Error` display on Unix by appending ` (os error N)` to
+  `strerror` text. The native runtime must reproduce the interpreter's
+  user-visible message, not the C library's shorter one.
+- Centralize the formatting in `vantyx_os_error` so every filesystem site stays
+  consistent; do not hand-format each message.
+- Reuse the interpreter's glob parser wording verbatim, including
+  `invalid glob pattern:` and quoted range endpoints, because both engines
+  implement the same language-level error.
+- Add the new cases to the existing headline-parity test rather than creating a
+  second differential harness; the test already compares the first error line
+  for both engines.
+- When a shared helper is introduced into generated C, verify the helper is not
+  recursive and is defined before every use. The first `vantyx_os_error`
+  version called itself and segfaulted the native binary; differential probes
+  caught it before the regression test was added.
+
+## 2026-11-26 — Deterministic dataset splits
+
+- Assign each record by a seeded SHA-256 of its bytes rather than shuffling or
+  numbering lines. The split must not change when unrelated lines are inserted
+  or reordered, and it must be reproducible without storing per-record state.
+- Use the top 32 bits against a ratio cutoff. This keeps memory constant for
+  the 256 MiB dataset cap while producing an unbiased assignment.
+- Validate before creating outputs and validate again during the scan. A split
+  that writes records the inspector rejected would defeat the dataset gate.
+- Refuse to overwrite with `create_new`, and remove files created by a failed
+  run. Silent replacement of a training corpus is worse than a failed command.
+- Guarantee both splits are non-empty by moving the minimum- or maximum-hash
+  record and reporting the move. Random retries or a hidden time seed would make
+  the output irreproducible.
+- Normalize BOM, CRLF, and blank lines in the outputs and warn about each one.
+  The input stays untouched, and the report's digests cover exactly what was
+  written.
+- Report actual counts rather than asserting the requested ratio was achieved.
+  Whole-record assignment cannot guarantee an exact ratio without extra state.
+- Keep shuffle, deduplication, tokenizer-aware counts, and label stratification
+  out of this task; they are separate capabilities with different correctness
+  questions.
+
+## T-100 — Exact JSONL dataset deduplication
+
+- Use exact normalized record bytes as identity, not canonical JSON. It is
+  deterministic, needs no canonical encoder, and agrees with the split
+  boundary that always places byte-identical records on the same side.
+- Keep the first occurrence in input order so the output is stable and easy to
+  diff against the input.
+- Domain-separate the record digest
+  (`vantyx-dataset-dedup-v1\0` + bytes) so it cannot be confused with a split
+  bucket or another SHA-256 use.
+- Validate before creating output, revalidate during the write pass, and
+  remove the output on any failure. A deduplicated corpus must not contain
+  records the inspector rejected.
+- Refuse an existing output and the input path; use `create_new`. Silent
+  replacement of a corpus is worse than a failed command.
+- Cap the in-memory digest set at 1,000,000 distinct records and fail
+  explicitly above it. On-disk external sorting is a larger separate design.
+- Leave JSON canonicalization, near-duplicate detection, shuffle,
+  tokenizer-aware counts, and label stratification out of this task.

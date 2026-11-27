@@ -79,6 +79,12 @@ pub fn extract(
             "extraction schema must be a JSON object",
         ));
     }
+    schema::check_schema(schema_value).map_err(|error| {
+        AiError::new(
+            AI_E_INVALID_REQUEST,
+            format!("extraction schema is invalid: {error}"),
+        )
+    })?;
     let schema_text = schema_value.to_compact_string();
     if schema_text.len() > MAX_SCHEMA_BYTES {
         return Err(AiError::new(

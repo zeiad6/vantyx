@@ -33,7 +33,7 @@ if ready: print("go")
 | List | `[1, 2, 3]`, `[]` | ordered, reference semantics |
 | Map | `{"a": 1, "b": 2}`, `{}` | insertion-ordered, reference semantics |
 
-String escapes: `\n`, `\t`, `\r`, `\\`, `\"`, `\{`, `\}`. `{{` and `}}` produce literal braces. `{expression}` interpolates a value using its display form. Interpolation expressions may not contain an unescaped `}`.
+String escapes: `\n`, `\t`, `\r`, `\\`, `\"`, `\{`, `\}`. `{{` and `}}` produce literal braces. `{expression}` interpolates a value using its display form. Interpolation expressions may not contain an unescaped `}`. Every interpolated expression is evaluated exactly once, in source order, even when its value renders as a constant; a `Unit` expression renders as `()`, but its calls, nested output, mutation, and runtime errors still occur.
 
 ### 1.5 Keywords
 `fn let var if elif else while for in return break continue struct enum match import from true false and or not`
@@ -89,6 +89,10 @@ fn name(a: Int, b: Str) -> Bool:
 - Functions are declared at top level only (nested functions are planned).
 - Parameters are immutable bindings; their contents may be mutated for reference types.
 - Recursion is supported.
+- Function bodies are lexically scoped: a name resolves through the function's
+  own parameters, locals, and nested blocks, then the program's top-level
+  bindings. A caller's local bindings are never visible inside a callee, even
+  when they share a name with a global (ADR-0040).
 - Duplicate parameter names and duplicate top-level function names are errors.
 - Functions are not overloaded.
 - `return` without a value returns `Unit`.
@@ -313,7 +317,7 @@ match shape:
 - Unary `-` applies to `Int` and `Float`.
 
 ### 5.3 Comparison and equality
-`==`/`!=` compare values of the same static type, or any dynamic values. Equality is structural for primitives, strings, lists, maps, structs, and enums (with a recursion depth limit). Two enum values are equal only when their enum names, variants, and payload values are equal. `< <= > >=` are defined for `Int`, `Float`, and `Str` (lexicographic).
+`==`/`!=` compare values of the same static type, or any dynamic values. Equality is structural for primitives, strings, lists, maps, structs, and enums (with a recursion depth limit). Two enum values are equal only when their enum names, variants, and payload values are equal. Both operands are evaluated left to right before the comparison, including when static types make the result constant: two `Unit` values are always `==` and never `!=`, but side effects in either operand still occur. `< <= > >=` are defined for `Int`, `Float`, and `Str` (lexicographic).
 
 ### 5.4 Logic
 `and`/`or` short-circuit and require `Bool` operands. `not` requires `Bool`.
@@ -325,7 +329,7 @@ Point(x=1, y=2)
 print("value", x)
 ```
 
-Arguments are evaluated left to right. Arity and statically known types are checked. Named arguments are only valid for struct constructors; enum variant payloads are positional.
+Arguments are evaluated left to right. Arity and statically known types are checked. Named arguments are only valid for struct constructors; enum variant payloads are positional. Named constructor arguments are evaluated in the order written, then placed into declaration order.
 
 ### 5.6 Indexing
 `xs[i]` on `List[T]` returns `T`; `s[i]` on `Str` returns a one-character `Str`; `m[k]` on `Map[K,V]` returns `V`. Indexes must be `Int`; negative indexes are invalid. Out-of-bounds and missing keys are runtime errors (`R0003`, `R0008`).
@@ -422,7 +426,7 @@ and binds the success payload field. See
 
 | Signature | Behavior |
 | --- | --- |
-| `print(...) -> Unit` | Writes values separated by spaces, then newline |
+| `print(...) -> Unit` | Evaluates all arguments left to right, renders them, then writes values separated by spaces and a newline; a failing argument writes no partial line (ADR-0039) |
 | `len(x: Str \| List[T] \| Map[K, V]) -> Int` | Length in characters/elements/entries |
 | `range(end: Int) -> List[Int]` | `0 .. end-1` |
 | `range(start: Int, end: Int) -> List[Int]` | `start .. end-1` |
@@ -441,11 +445,11 @@ and binds the success payload field. See
 | `keys(map: Map[K, V]) -> List[K]` | Keys in insertion order |
 | `values(map: Map[K, V]) -> List[V]` | Values in insertion order |
 | `str(x: Any) -> Str` | Display conversion |
-| `int(x: Any) -> Int` | Exact numeric/string conversion; failure is `R0007` |
-| `float(x: Any) -> Float` | Numeric/string conversion; failure is `R0007` |
-| `bool(x: Any) -> Bool` | Only `Bool` is accepted (`R0007`) |
+| `int(x: Any) -> Int` | Exact numeric/string conversion; strings are trimmed and parsed with the strict decimal grammar; failure is `R0007` |
+| `float(x: Any) -> Float` | Numeric/string conversion; strings are trimmed and parsed with the strict decimal, `inf`, or `nan` grammar; failure is `R0007` |
+| `bool(x: Any) -> Bool` | Only `Bool` is accepted (`R0007`); the argument is still evaluated first |
 | `type(x: Any) -> Str` | Runtime type name |
-| `abs(x)`, `min(a, b)`, `max(a, b)` | Numeric helpers; same-type Int or Float |
+| `abs(x)`, `min(a, b)`, `max(a, b)` | Numeric helpers; same-type Int or Float. Float `min`/`max` return the second operand when the operands compare equal (so `min(-0.0, 0.0)` is `0.0` and `min(0.0, -0.0)` is `-0.0`), and a single NaN operand yields the other operand (ADR-0039) |
 | `sqrt(x: Float) -> Float`, `floor(Float) -> Int`, `ceil(Float) -> Int` | Numeric helpers |
 | `assert(cond: Bool) -> Unit` | Runtime error `R0006` if false |
 | `read_file(path: Str) -> Str` | Reads a UTF-8 file up to 64 MiB; failures are `R0015` |
@@ -472,6 +476,25 @@ and binds the success payload field. See
 | `path_stem(path: Str) -> Str` | Final component without its extension |
 | `path_extension(path: Str) -> Str` | Extension after the final dot, or `""` |
 | `path_is_absolute(path: Str) -> Bool` | `true` exactly when the path starts with `/` |
+
+All three `contains` forms evaluate their arguments left to right, including in
+the native backend.
+
+`int(text)` and `float(text)` remove leading and trailing Unicode
+`White_Space`, then accept exactly the interpreter's strict grammar. For `Int`
+that is an optional `+` or `-` followed by one or more ASCII digits, with the
+whole remaining string consumed; values outside the signed 64-bit range are
+`R0007`. For `Float` it is an optional sign followed by `inf`, `infinity`, or
+`nan` case-insensitively, or a decimal mantissa (digits, optionally with one
+`.` and digits on either side) optionally followed by `e`/`E`, an optional
+sign, and at least one digit. Hexadecimal floats, `nan(payload)`, underscores,
+and trailing text are `R0007`. Float overflow produces infinity and underflow
+produces zero, as in the interpreter.
+
+`type(x)` reports the runtime type name, but it is an ordinary call: `x` is
+evaluated exactly once before the name is produced. Side effects and runtime
+errors inside the argument are observable, and the native backend preserves
+them.
 
 Built-ins are statically known names and cannot be shadowed in v0.1. File and
 directory builtins use host paths with the process's privileges. Relative paths
@@ -532,9 +555,11 @@ parents; overwrite behavior follows the host (POSIX replaces an existing file
 target within a filesystem). `copy_file` requires a regular source file and
 copies bytes only: permissions, timestamps, ownership, extended attributes,
 and hard-link identity are not preserved, and the copied bytes are not
-validated as UTF-8 or NUL-free. Source and target must be distinct; passing the
-same path can truncate the source. Copies are not atomic and a failure can
-leave a partial target. `copy_dir_all` requires an existing source directory
+validated as UTF-8 or NUL-free. Source and target must be distinct; a target
+that resolves to the source (including a symbolic-link or hard-link alias) is
+rejected with `R0015` before the target is opened, because opening it would
+truncate the source. The check is best-effort and can still be raced. Copies are
+not atomic and a failure can leave a partial target. `copy_dir_all` requires an existing source directory
 and a target that does not exist; the target's parent must already exist, and
 the final target name cannot be empty, `.`, or `..`. The resolved target must
 not equal or lie inside the resolved source, which prevents copying a tree into
@@ -562,7 +587,9 @@ returns the prefix before the final separator run, or `.` for a relative path
 and `/` for an absolute path when no component remains. `path_name` returns the
 final component or `""`. `path_stem` and `path_extension` split at the final
 dot only when it is neither the first nor the last byte, so `.bashrc` and `a.`
-have no extension. `path_is_absolute` is true exactly when the first byte is
+have no extension. When the final dot is first or last, no earlier dot is used
+as a fallback, so `a..` has stem `a..` and no extension.
+`path_is_absolute` is true exactly when the first byte is
 `/`. Results preserve UTF-8 names. These helpers do not confine paths: an
 absolute child or a `..` component can escape the base, and callers must
 validate untrusted components themselves. Windows path syntax is not supported.
@@ -686,9 +713,9 @@ Known limitations:
 
 `vantyx build file.vtx [-o output]` lowers the checked program to a typed IR and emits GNU C11, then invokes `clang` (override with `VANTYX_CC`) and links with libc/libm.
 
-Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals and integer ranges; `return`/`break`/`continue`; statement-position `?` propagation for nominal two-variant enums; `print`, `len(Str/List/Map)`, `push`, `pop`, `contains(List/Str/Map)`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`, `read_file`, `write_file`, `append_file`, `file_exists`, `file_size`, `is_file`, `is_dir`, `is_symlink`, `list_dir`, `glob`, `make_dir`, `remove_file`, `remove_dir`, `make_dir_all`, `remove_dir_all`, `rename`, `copy_file`, `copy_dir_all`, `split`, `join`, `trim`, `starts_with`, `ends_with`, `replace`, `path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, `path_is_absolute`. Match guards, nested payload patterns, integer range patterns, and top-level or-patterns are supported. Native file and directory I/O validates UTF-8 and NUL bytes in C, sorts directory entries by byte order, and enforces the same 64 MiB read limit. Native recursive creation uses component-by-component `mkdir` with directory confirmation; native recursive removal uses the same lexical destructive-root refusal as the interpreter, then `lstat`, `opendir`/`readdir`, `unlink`, and `rmdir` without following symbolic links, and trims a trailing root separator before the link check. Native metadata probes use POSIX `stat`/`lstat` with the same follow-symlink rules, regular-file rule for `file_size`, and `R0015` failures as the interpreter. Native glob expansion uses POSIX `opendir`/`readdir`/`lstat`, a component matcher over Unicode scalar values, the same hidden and symlink rules, byte sorting, deduplication, limits, and `R0016`/`R0015` error split as the interpreter. Native `rename` delegates to POSIX `rename`; native `copy_file` copies regular-file bytes with libc streams and does not validate or preserve metadata. Native `copy_dir_all` resolves source and target parents with POSIX `realpath`, creates only a new target outside the source, walks with `opendir`/`readdir`/`lstat`, rejects inner symbolic links and special files, copies raw names and bytes with `mkdir` and libc streams, and does not preserve metadata. Native text builtins use the same UTF-8 decoder, Unicode `White_Space` table, literal split rules, and non-overlapping replacement as the interpreter, and evaluate multi-argument calls left to right. Native path builtins use byte-scanned C helpers with the same POSIX-style, non-normalizing rules and ordered `path_join` evaluation as the interpreter. Statically non-`Str` arguments are rejected by the checker with `E0301`; dynamically typed (`Any`) file, directory, glob, rename/copy, metadata, text, and path arguments reach the native boundary and are rejected with `E0401`.
+Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `range(...)` as a `List[Int]` value, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals and integer ranges; `return`/`break`/`continue`; statement-position `?` propagation for nominal two-variant enums; `print`, `len(Str/List/Map)`, `range` (1–3 Int bounds), `push`, `pop`, `contains(List/Str/Map)`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`, `read_file`, `write_file`, `append_file`, `file_exists`, `file_size`, `is_file`, `is_dir`, `is_symlink`, `list_dir`, `glob`, `make_dir`, `remove_file`, `remove_dir`, `make_dir_all`, `remove_dir_all`, `rename`, `copy_file`, `copy_dir_all`, `split`, `join`, `trim`, `starts_with`, `ends_with`, `replace`, `path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, `path_is_absolute`. Match guards, nested payload patterns, integer range patterns, and top-level or-patterns are supported. `range(...)` outside a `for` loop builds a `List[Int]` with the same 1–3 `Int` bounds, negative-step, zero-step, and 10,000,000-element limit checks as the interpreter. Native file and directory I/O validates UTF-8 and NUL bytes in C, sorts directory entries by byte order, and enforces the same 64 MiB read limit. Native recursive creation uses component-by-component `mkdir` with directory confirmation; native recursive removal uses the same lexical destructive-root refusal as the interpreter, then `lstat`, `opendir`/`readdir`, `unlink`, and `rmdir` without following symbolic links, and trims a trailing root separator before the link check. Native metadata probes use POSIX `stat`/`lstat` with the same follow-symlink rules, regular-file rule for `file_size`, and `R0015` failures as the interpreter. Native glob expansion uses POSIX `opendir`/`readdir`/`lstat`, a component matcher over Unicode scalar values, the same hidden and symlink rules, byte sorting, deduplication, limits, and `R0016`/`R0015` error split as the interpreter. Native `rename` delegates to POSIX `rename`; native `copy_file` copies regular-file bytes with libc streams and does not validate or preserve metadata. Native `copy_dir_all` resolves source and target parents with POSIX `realpath`, creates only a new target outside the source, walks with `opendir`/`readdir`/`lstat`, rejects inner symbolic links and special files, copies raw names and bytes with `mkdir` and libc streams, and does not preserve metadata. Native text builtins use the same UTF-8 decoder, Unicode `White_Space` table, literal split rules, and non-overlapping replacement as the interpreter, and evaluate multi-argument calls, including string `contains`, left to right. Native `type` evaluates its argument exactly once before yielding the static type name. Native path builtins use byte-scanned C helpers with the same POSIX-style, non-normalizing rules and ordered `path_join` evaluation as the interpreter. Statically non-`Str` arguments are rejected by the checker with `E0301`; dynamically typed (`Any`) file, directory, glob, rename/copy, metadata, text, and path arguments reach the native boundary and are rejected with `E0401`.
 
-`if`/`elif`/`while` conditions that lower to a GNU C statement expression (for example a call) are wrapped in one extra pair of parentheses so the generated C satisfies the `if` grammar without adding redundant parentheses around comparisons (ADR-0036). `and`/`or` preserve the interpreter's short-circuit evaluation: the right operand is evaluated only when the left operand does not decide the result, even when both operands have side effects.
+`if`/`elif`/`while` conditions that lower to a GNU C statement expression (for example a call) are wrapped in one extra pair of parentheses so the generated C satisfies the `if` grammar without adding redundant parentheses around comparisons (ADR-0036). Function calls use lexical frames in both engines: a callee resolves names in its own frame and the top-level bindings, never in caller locals (ADR-0040). `and`/`or` preserve the interpreter's short-circuit evaluation: the right operand is evaluated only when the left operand does not decide the result, even when both operands have side effects. Native `print` evaluates every argument into a typed temporary before rendering and writing any of them, so a failing argument leaves no partial line and later mutations are visible in the rendered line (ADR-0039). Native float `min`/`max` implement the same explicit tie and NaN rule as the interpreter rather than C `fmin`/`fmax` (ADR-0039). Binary operators bind both operands to typed temporaries whenever either operand has effects, so the operands are always evaluated once in source order even when the lowered result is constant; in particular `Unit ==` and `Unit !=` still evaluate both sides (T-082). Interpolation evaluates every expression once; a `Unit` expression is exercised before it renders as `()` (T-083). Native `bool` evaluates its argument exactly once before accepting a `Bool` or raising `R0007` (T-084).
 
 Enum layout: each enum is a heap-allocated tagged struct with a union of per-variant payload structs; variant declaration order defines the tag. Construction, payload binding, wildcard arms, nested payload patterns, top-level or-patterns, display, equality, and `type` match the interpreter. Nested patterns lower to short-circuit tag and literal tests; every binding is declared from its recorded payload path, and a guard sees all nested bindings. Or-patterns test alternatives in order and initialize the shared binding set from the matched alternative. Integer ranges lower to checked `>=`/`<` or `<=` comparisons. Enum values are never freed in v0.1, like native strings, structs, lists, and maps. See ADR-0012, ADR-0020, ADR-0021, and ADR-0022.
 
@@ -719,5 +746,6 @@ See [ADR-0013](decisions/ADR-0013-repl-line-editing.md).
 - `L0001`: a local or top-level binding is never read.
 - `L0002`: a `var` binding is read but never written after its declaration.
 - `L0003`: a statement follows a direct `return`, `break`, or `continue` in the same block.
+- `L0004`: a function parameter is never read.
 
-Names starting with `_` are treated as intentionally unused. Parameters, loop variables, and `match` payload bindings are not reported in this first pass. `L0003` is deliberately local: it does not report code after an all-terminating `if`/`match` and does not perform interprocedural analysis. A program with only lint findings exits `0`; compilation errors exit `1`. See [linting.md](linting.md) and [ADR-0037](decisions/ADR-0037-static-lints.md).
+Names starting with `_` are treated as intentionally unused. Loop variables and `match` payload bindings are not reported in this first pass. An unused parameter is reported as `L0004`, distinct from the `L0001` used for locals. `L0003` is deliberately local: it does not report code after an all-terminating `if`/`match` and does not perform interprocedural analysis. A program with only lint findings exits `0`; compilation errors exit `1`. See [linting.md](linting.md) and [ADR-0037](decisions/ADR-0037-static-lints.md).

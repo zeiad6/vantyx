@@ -11,26 +11,41 @@
 5. Continue from the last verified checkpoint in
    `AGENT_STATE/CHECKPOINTS/`.
 
-## Last recorded repository state (2026-11-24)
+## Last recorded repository state (2026-11-26)
 
-- `origin/main` is at `de0bac7` (rustfmt baseline and CI formatting gate,
-  CI run 45504177763 green). T-077, the tenth fuzzer shape plus bounded
-  shrinking and self-tests, is uncommitted in the working tree.
-- Earlier commits: `66b4efc` contains T-075 result-enum propagation (CI run
-  45503321172 green), `53a8b82` contains the expanded differential fuzzer (CI
-  run 45499019615 green), `5e1092f` contains the T-073–T-074 linter and
-  return-path fix (CI run 45496041422 green), `a4fe86b` contains the
-  T-070–T-072 native fixes plus the original fuzzer (CI run 45493833079
-  green), and `4982ab3` contains the glob result-cap portability fix (CI run
+- `origin/main` and HEAD are at `1aba7ba` (differential-fuzzer control-flow
+  coverage and bounded shrinking); CI run 45507195701 passed with T-077.
+- T-078 through T-098 are uncommitted in the working tree. Earlier commits:
+  `de0bac7` contains the rustfmt baseline and CI formatting gate (run
+  45504177763 green), `66b4efc` contains T-075 result-enum propagation (run
+  45503321172 green), `53a8b82` contains the expanded differential fuzzer (run
+  45499019615 green), `5e1092f` contains the T-073–T-074 linter and
+  return-path fix (run 45496041422 green), `a4fe86b` contains the
+  T-070–T-072 native fixes plus the original fuzzer (run 45493833079 green),
+  and `4982ab3` contains the glob result-cap portability fix (run
   45488725812 green).
-- The T-077 change set is verified locally: 621 Rust tests, clippy clean,
-  `cargo fmt --check --all` clean, debug and release builds, seven Python
-  self-tests, the tenth fuzzer shape 20/20 on seeds 1–20, and the full
-  ten-shape fuzzer 200/200 on seeds 1 and 2. Seeds 3, 500, and 1000 were still
-  running when this note was written.
-- If the T-077 commit is not present, inspect `git status --short`, re-run
-  `python3 tools/test_differential_fuzz.py`, re-run
-  `cargo test`, and commit rather than discarding the changes.
+- The uncommitted change set is verified locally: 700 Rust tests (391 library
+  unit + 15 CLI unit + 41 AI integration + 113 e2e + 140 native), the full
+  140-test native suite also under `VANTYX_CC=gcc`, clippy clean,
+  `cargo fmt --check --all` clean, debug and release builds, five examples,
+  seven Python self-tests, fuzzer 100/100 on seed 1 under clang after
+  T-092/T-093, and fuzz smoke clean. T-094/T-095 added 10 dataset unit tests,
+  3 dataset CLI tests, 13 `ai::schema` tests, one extract integration test, and
+  one tools unit test; ADR-0044 and ADR-0045 record the decisions. T-096 added
+  two differential headline tests covering nine error programs and four
+  Unix-only file fixtures; both failed before the fixes. T-097 added 11 cases
+  to the same headline test (filesystem failures with `(os error N)` and three
+  malformed glob patterns); `diff3.py` went from 10 mismatches to 44/44. T-098
+  added five dataset unit tests and two CLI tests for deterministic splits,
+  overwrite refusal, invalid data, schema gating, and the non-empty fallback;
+  ADR-0046 records the decision.
+  Earlier runs
+  agreed 200/200 on seeds 1, 2, 3, 500, and 1000 before T-081 changed one
+  lowering branch.
+- If the change set is absent, inspect `git status --short`, re-run the
+  targeted T-078 through T-098 tests, the clang/GCC cross-compiler test, and the
+  Python self-tests, then continue rather than discarding the work.
+  Commits require explicit authorization.
 
 ## If the network or a provider is unavailable
 

@@ -74,8 +74,10 @@ The contract is lexical and deliberately small:
    and `path_extension("archive.tar.gz")` is `"gz"`. A leading dot is not a
    separator: `path_stem(".bashrc")` is `".bashrc"` and its extension is `""`.
    A trailing dot is also not a separator: `path_stem("a.")` is `"a."` and its
-   extension is `""`. When no separator exists, the stem is the whole name and
-   the extension is `""`.
+   extension is `""`. When the final dot is not a separator, no earlier dot is
+   considered either: `path_stem("a..")` is `"a.."` and its extension is `""`.
+   When no separator exists, the stem is the whole name and the extension is
+   `""`.
 8. **`path_is_absolute(path)` is true exactly when the first byte is `/`.**
    Empty strings, relative paths, and `./` paths are false.
 9. **UTF-8 is preserved.** `/` and `.` are ASCII bytes that cannot occur inside

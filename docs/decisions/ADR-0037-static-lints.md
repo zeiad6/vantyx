@@ -94,3 +94,20 @@ program does.
 4. **Leave `block_returns` alone and lint only `Unit` functions.** Rejected:
    the `E0309` result is a genuine false positive, and the fix is small and
    directly testable.
+
+## Amendment (2026-11-24, T-085): unused parameters
+
+- Add `L0004` for a function parameter that is never read. It is a separate
+  code from `L0001` so a dead local and a dead interface parameter are
+  distinguishable.
+- Parameters now participate in binding tracking. The leading-underscore
+  exemption still applies. A read anywhere in the function, including a guard,
+  a nested block, or a match arm block, suppresses the finding. Parameters are
+  immutable, so `L0002` never applies to them.
+- Loop variables and `match` payload bindings remain unreported.
+- The rest of the original decision is unchanged: no suppression attributes,
+  no configuration, no interprocedural analysis, and no effect on `run`,
+  `check`, or `build`.
+- Tests: six `src/lint.rs` unit tests cover used, unused, underscore, void
+  function, nested-block read, and the distinct `L0004`/`L0001` codes; one
+  `tests/e2e.rs` test covers the CLI warning and exit `0`.

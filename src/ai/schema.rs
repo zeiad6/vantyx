@@ -39,6 +39,172 @@ pub fn validate(schema: &Json, value: &Json) -> Result<(), SchemaError> {
     validate_inner(schema, value, "$", 0)
 }
 
+/// Checks that a schema uses the supported keywords with valid shapes.
+///
+/// This is a structural preflight, not full JSON Schema validation. Unsupported
+/// keywords are ignored, as they are during [`validate`].
+pub fn check_schema(schema: &Json) -> Result<(), SchemaError> {
+    check_schema_inner(schema, "$", 0)
+}
+
+fn check_schema_inner(schema: &Json, path: &str, depth: usize) -> Result<(), SchemaError> {
+    if depth > MAX_SCHEMA_DEPTH {
+        return Err(SchemaError::new(path, "schema nesting depth exceeded"));
+    }
+    if !matches!(schema, Json::Object(_)) {
+        return Err(SchemaError::new(path, "schema must be a JSON object"));
+    }
+
+    if let Some(any_of) = schema.get("anyOf") {
+        let options = any_of
+            .as_array()
+            .ok_or_else(|| SchemaError::new(path, "`anyOf` must be an array"))?;
+        if options.is_empty() {
+            return Err(SchemaError::new(
+                path,
+                "`anyOf` must contain at least one schema",
+            ));
+        }
+        for (index, option) in options.iter().enumerate() {
+            check_schema_inner(option, &format!("{path}.anyOf[{index}]"), depth + 1)?;
+        }
+    }
+
+    if let Some(all_of) = schema.get("allOf") {
+        let options = all_of
+            .as_array()
+            .ok_or_else(|| SchemaError::new(path, "`allOf` must be an array"))?;
+        if options.is_empty() {
+            return Err(SchemaError::new(
+                path,
+                "`allOf` must contain at least one schema",
+            ));
+        }
+        for (index, option) in options.iter().enumerate() {
+            check_schema_inner(option, &format!("{path}.allOf[{index}]"), depth + 1)?;
+        }
+    }
+
+    if let Some(enum_values) = schema.get("enum") {
+        let options = enum_values
+            .as_array()
+            .ok_or_else(|| SchemaError::new(path, "`enum` must be an array"))?;
+        if options.is_empty() {
+            return Err(SchemaError::new(
+                path,
+                "`enum` must contain at least one value",
+            ));
+        }
+    }
+
+    if let Some(type_value) = schema.get("type") {
+        check_type_schema(type_value, path)?;
+    }
+
+    if let Some(required) = schema.get("required") {
+        let names = required
+            .as_array()
+            .ok_or_else(|| SchemaError::new(path, "`required` must be an array"))?;
+        for (index, name) in names.iter().enumerate() {
+            if name.as_str().is_none() {
+                return Err(SchemaError::new(
+                    path,
+                    format!("`required[{index}]` must be a string"),
+                ));
+            }
+        }
+    }
+
+    if let Some(properties) = schema.get("properties") {
+        let properties = properties
+            .as_object()
+            .ok_or_else(|| SchemaError::new(path, "`properties` must be an object"))?;
+        for (name, property_schema) in properties {
+            check_schema_inner(
+                property_schema,
+                &format!("{path}.properties.{name}"),
+                depth + 1,
+            )?;
+        }
+    }
+
+    if let Some(additional) = schema.get("additionalProperties") {
+        match additional {
+            Json::Bool(_) => {}
+            Json::Object(_) => check_schema_inner(
+                additional,
+                &format!("{path}.additionalProperties"),
+                depth + 1,
+            )?,
+            _ => {
+                return Err(SchemaError::new(
+                    path,
+                    "`additionalProperties` must be a boolean or a schema",
+                ));
+            }
+        }
+    }
+
+    if let Some(items) = schema.get("items") {
+        check_schema_inner(items, &format!("{path}.items"), depth + 1)?;
+    }
+
+    for keyword in ["minItems", "maxItems", "minLength", "maxLength"] {
+        if let Some(value) = schema.get(keyword)
+            && value.as_u64().is_none()
+        {
+            return Err(SchemaError::new(
+                path,
+                format!("`{keyword}` must be a non-negative integer"),
+            ));
+        }
+    }
+    for keyword in ["minimum", "maximum"] {
+        if let Some(value) = schema.get(keyword)
+            && value.as_f64().is_none()
+        {
+            return Err(SchemaError::new(
+                path,
+                format!("`{keyword}` must be a number"),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn check_type_schema(type_value: &Json, path: &str) -> Result<(), SchemaError> {
+    let names: Vec<&str> = match type_value {
+        Json::String(name) => vec![name.as_str()],
+        Json::Array(names) => {
+            if names.is_empty() {
+                return Err(SchemaError::new(path, "`type` array must not be empty"));
+            }
+            let mut result = Vec::new();
+            for name in names {
+                result.push(
+                    name.as_str()
+                        .ok_or_else(|| SchemaError::new(path, "`type` entries must be strings"))?,
+                );
+            }
+            result
+        }
+        _ => return Err(SchemaError::new(path, "`type` must be a string or array")),
+    };
+    for name in names {
+        if !matches!(
+            name,
+            "object" | "array" | "string" | "number" | "integer" | "boolean" | "null"
+        ) {
+            return Err(SchemaError::new(
+                path,
+                format!("unknown schema type `{name}`"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_inner(
     schema: &Json,
     value: &Json,
@@ -57,15 +223,21 @@ fn validate_inner(
             .as_array()
             .ok_or_else(|| SchemaError::new(path, "`anyOf` must be an array"))?;
         let mut last_error = None;
+        let mut matched = false;
         for option in options {
             match validate_inner(option, value, path, depth + 1) {
-                Ok(()) => return Ok(()),
+                Ok(()) => {
+                    matched = true;
+                    break;
+                }
                 Err(error) => last_error = Some(error),
             }
         }
-        return Err(last_error.unwrap_or_else(|| {
-            SchemaError::new(path, "`anyOf` must contain at least one schema")
-        }));
+        if !matched {
+            return Err(last_error.unwrap_or_else(|| {
+                SchemaError::new(path, "`anyOf` must contain at least one schema")
+            }));
+        }
     }
 
     if let Some(all_of) = schema.get("allOf") {
@@ -78,7 +250,7 @@ fn validate_inner(
     }
 
     if let Some(constant) = schema.get("const")
-        && constant != value
+        && !super::json::value_eq(constant, value)
     {
         return Err(SchemaError::new(path, "value does not match `const`"));
     }
@@ -87,7 +259,10 @@ fn validate_inner(
         let options = enum_values
             .as_array()
             .ok_or_else(|| SchemaError::new(path, "`enum` must be an array"))?;
-        if !options.contains(value) {
+        if !options
+            .iter()
+            .any(|option| super::json::value_eq(option, value))
+        {
             return Err(SchemaError::new(
                 path,
                 "value is not one of the allowed enum values",
@@ -103,18 +278,19 @@ fn validate_inner(
         let required = required
             .as_array()
             .ok_or_else(|| SchemaError::new(path, "`required` must be an array"))?;
-        let Json::Object(entries) = value else {
-            return Err(SchemaError::new(path, "`required` applies only to objects"));
-        };
-        for name in required {
-            let name = name
-                .as_str()
-                .ok_or_else(|| SchemaError::new(path, "`required` entries must be strings"))?;
-            if !entries.iter().any(|(key, _)| key == name) {
-                return Err(SchemaError::new(
-                    format!("{path}.{name}"),
-                    format!("missing required property `{name}`"),
-                ));
+        // Like `properties`, `required` applies only to objects. The `type`
+        // keyword is responsible for rejecting a value of the wrong type.
+        if let Json::Object(entries) = value {
+            for name in required {
+                let name = name
+                    .as_str()
+                    .ok_or_else(|| SchemaError::new(path, "`required` entries must be strings"))?;
+                if !entries.iter().any(|(key, _)| key == name) {
+                    return Err(SchemaError::new(
+                        format!("{path}.{name}"),
+                        format!("missing required property `{name}`"),
+                    ));
+                }
             }
         }
     }
@@ -140,11 +316,9 @@ fn validate_inner(
         }
     }
 
-    if let Some(additional) = schema.get("additionalProperties") {
-        let Json::Object(entries) = value else {
-            // The `type` check is responsible for non-objects.
-            return Ok(());
-        };
+    if let Some(additional) = schema.get("additionalProperties")
+        && let Json::Object(entries) = value
+    {
         let known: Vec<&str> = schema
             .get("properties")
             .and_then(Json::as_object)
@@ -175,10 +349,9 @@ fn validate_inner(
         }
     }
 
-    if let Some(items) = schema.get("items") {
-        let Json::Array(values) = value else {
-            return Ok(());
-        };
+    if let Some(items) = schema.get("items")
+        && let Json::Array(values) = value
+    {
         for (index, item) in values.iter().enumerate() {
             validate_inner(items, item, &format!("{path}[{index}]"), depth + 1)?;
         }
@@ -239,12 +412,11 @@ fn validate_inner(
     }
 
     if let Json::Number(number) = value {
-        let numeric = number.as_f64();
         if let Some(minimum) = schema.get("minimum") {
-            let minimum = minimum
-                .as_f64()
-                .ok_or_else(|| SchemaError::new(path, "`minimum` must be a number"))?;
-            if numeric < minimum {
+            let Json::Number(minimum) = minimum else {
+                return Err(SchemaError::new(path, "`minimum` must be a number"));
+            };
+            if super::json::number_cmp(*number, *minimum) == Some(std::cmp::Ordering::Less) {
                 return Err(SchemaError::new(
                     path,
                     format!("number is less than the minimum {minimum}"),
@@ -252,10 +424,10 @@ fn validate_inner(
             }
         }
         if let Some(maximum) = schema.get("maximum") {
-            let maximum = maximum
-                .as_f64()
-                .ok_or_else(|| SchemaError::new(path, "`maximum` must be a number"))?;
-            if numeric > maximum {
+            let Json::Number(maximum) = maximum else {
+                return Err(SchemaError::new(path, "`maximum` must be a number"));
+            };
+            if super::json::number_cmp(*number, *maximum) == Some(std::cmp::Ordering::Greater) {
                 return Err(SchemaError::new(
                     path,
                     format!("number is greater than the maximum {maximum}"),
@@ -356,6 +528,107 @@ mod tests {
     }
 
     #[test]
+    fn required_is_ignored_for_non_objects() {
+        let schema =
+            schema_json(r#"{"required":["name"],"properties":{"name":{"type":"string"}}}"#);
+        assert!(validate(&schema, &schema_json(r#""text""#)).is_ok());
+        assert!(validate(&schema, &schema_json("3")).is_ok());
+        assert!(validate(&schema, &schema_json("null")).is_ok());
+        assert!(validate(&schema, &schema_json(r#"["x"]"#)).is_ok());
+        assert!(validate(&schema, &schema_json(r#"{"name":"Ada"}"#)).is_ok());
+        let missing = validate(&schema, &schema_json("{}")).unwrap_err();
+        assert!(missing.message.contains("required"));
+    }
+
+    #[test]
+    fn numeric_bounds_preserve_integer_precision() {
+        let minimum = schema_json(r#"{"minimum":9007199254740993}"#);
+        assert!(validate(&minimum, &schema_json("9007199254740993")).is_ok());
+        assert!(validate(&minimum, &schema_json("9007199254740994")).is_ok());
+        let low = validate(&minimum, &schema_json("9007199254740992")).unwrap_err();
+        assert!(low.message.contains("minimum"));
+        let low = validate(&minimum, &schema_json("9007199254740992.0")).unwrap_err();
+        assert!(low.message.contains("minimum"));
+
+        let maximum = schema_json(r#"{"maximum":9007199254740993}"#);
+        assert!(validate(&maximum, &schema_json("9007199254740993")).is_ok());
+        assert!(validate(&maximum, &schema_json("9007199254740992")).is_ok());
+        let high = validate(&maximum, &schema_json("9007199254740994")).unwrap_err();
+        assert!(high.message.contains("maximum"));
+        let high = validate(&maximum, &schema_json("9007199254740994.0")).unwrap_err();
+        assert!(high.message.contains("maximum"));
+
+        let minimum = schema_json(r#"{"minimum":18446744073709551614}"#);
+        assert!(validate(&minimum, &schema_json("18446744073709551615")).is_ok());
+        let low = validate(&minimum, &schema_json("18446744073709551613")).unwrap_err();
+        assert!(low.message.contains("minimum"));
+
+        let minimum = schema_json(r#"{"minimum":1.5}"#);
+        assert!(validate(&minimum, &schema_json("2")).is_ok());
+        let low = validate(&minimum, &schema_json("1")).unwrap_err();
+        assert!(low.message.contains("minimum"));
+
+        let maximum = schema_json(r#"{"maximum":1.5}"#);
+        assert!(validate(&maximum, &schema_json("1")).is_ok());
+        let high = validate(&maximum, &schema_json("2")).unwrap_err();
+        assert!(high.message.contains("maximum"));
+    }
+
+    #[test]
+    fn const_and_enum_use_json_value_equality() {
+        let schema = schema_json(r#"{"enum":[1, 2.5, {"a": 1, "b": [true]}]}"#);
+        assert!(validate(&schema, &schema_json("1.0")).is_ok());
+        assert!(validate(&schema, &schema_json("2.50")).is_ok());
+        assert!(validate(&schema, &schema_json(r#"{"b":[true],"a":1.0}"#)).is_ok());
+        assert!(validate(&schema, &schema_json("3")).is_err());
+        assert!(validate(&schema, &schema_json(r#"{"a":1}"#)).is_err());
+
+        let schema = schema_json(r#"{"const":1}"#);
+        assert!(validate(&schema, &schema_json("1.0")).is_ok());
+        assert!(validate(&schema, &schema_json("2")).is_err());
+
+        let schema = schema_json(r#"{"const":9007199254740993}"#);
+        assert!(validate(&schema, &schema_json("9007199254740993")).is_ok());
+        assert!(validate(&schema, &schema_json("9007199254740992.0")).is_err());
+
+        // A float at 2^64 must not saturate onto u64::MAX.
+        let schema = schema_json(r#"{"const":18446744073709551615}"#);
+        assert!(validate(&schema, &schema_json("18446744073709551615")).is_ok());
+        assert!(validate(&schema, &schema_json("18446744073709551616.0")).is_err());
+
+        let schema = schema_json(r#"{"enum":[0, -1]}"#);
+        assert!(validate(&schema, &schema_json("-0.0")).is_ok());
+        assert!(validate(&schema, &schema_json("-1.0")).is_ok());
+        assert!(validate(&schema, &schema_json("1.0")).is_err());
+    }
+
+    #[test]
+    fn sibling_keywords_are_not_skipped() {
+        let any_of =
+            schema_json(r#"{"anyOf":[{"type":"string"},{"type":"integer"}],"minimum":10}"#);
+        assert!(validate(&any_of, &schema_json(r#""x""#)).is_ok());
+        assert!(validate(&any_of, &schema_json("15")).is_ok());
+        let low = validate(&any_of, &schema_json("5")).unwrap_err();
+        assert!(low.message.contains("minimum"));
+
+        let any_of_required =
+            schema_json(r#"{"anyOf":[{"type":"object"},{"type":"string"}],"required":["name"]}"#);
+        assert!(validate(&any_of_required, &schema_json(r#""x""#)).is_ok());
+        let missing = validate(&any_of_required, &schema_json("{}")).unwrap_err();
+        assert!(missing.message.contains("required"));
+
+        let additional = schema_json(r#"{"additionalProperties":false,"minLength":3}"#);
+        assert!(validate(&additional, &schema_json(r#""abc""#)).is_ok());
+        let short = validate(&additional, &schema_json(r#""a""#)).unwrap_err();
+        assert!(short.message.contains("shorter"));
+
+        let items = schema_json(r#"{"items":{"type":"integer"},"minLength":3}"#);
+        assert!(validate(&items, &schema_json(r#""abc""#)).is_ok());
+        let short = validate(&items, &schema_json(r#""a""#)).unwrap_err();
+        assert!(short.message.contains("shorter"));
+    }
+
+    #[test]
     fn validates_arrays_and_enum() {
         let schema =
             schema_json(r#"{"type":"array","minItems":1,"maxItems":2,"items":{"enum":["a","b"]}}"#);
@@ -397,5 +670,53 @@ mod tests {
             value = Json::Array(vec![value]);
         }
         assert!(validate(&schema, &value).is_err());
+    }
+
+    #[test]
+    fn check_schema_accepts_supported_keywords() {
+        let schema = schema_json(
+            r#"{"type":"object","required":["name"],"properties":{"name":{"type":"string","minLength":1},"tags":{"type":"array","items":{"enum":["a","b"]}}},"additionalProperties":false,"anyOf":[{"required":["name"]},{"required":["id"]}]}"#,
+        );
+        assert!(check_schema(&schema).is_ok());
+    }
+
+    #[test]
+    fn check_schema_rejects_malformed_keywords() {
+        let cases = [
+            r#"null"#,
+            r#"{"type":"wat"}"#,
+            r#"{"type":[]}"#,
+            r#"{"type":[1]}"#,
+            r#"{"required":"name"}"#,
+            r#"{"required":[1]}"#,
+            r#"{"properties":[]}"#,
+            r#"{"properties":{"name":"string"}}"#,
+            r#"{"additionalProperties":"no"}"#,
+            r#"{"items":[]}"#,
+            r#"{"minItems":"1"}"#,
+            r#"{"minimum":"0"}"#,
+            r#"{"enum":"a"}"#,
+            r#"{"enum":[]}"#,
+            r#"{"anyOf":[]}"#,
+            r#"{"anyOf":[null]}"#,
+            r#"{"allOf":"no"}"#,
+            r#"{"allOf":[]}"#,
+        ];
+        for text in cases {
+            let schema = schema_json(text);
+            assert!(
+                check_schema(&schema).is_err(),
+                "schema should be rejected: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn check_schema_rejects_excessive_depth() {
+        let mut schema = schema_json(r#"{"type":"integer"}"#);
+        for _ in 0..MAX_SCHEMA_DEPTH + 2 {
+            schema = Json::object([("items", schema)]);
+        }
+        assert!(check_schema(&schema).is_err());
     }
 }

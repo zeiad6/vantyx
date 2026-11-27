@@ -295,7 +295,7 @@ fn push_quoted(text: &str, out: &mut String) {
     out.push('"');
 }
 
-fn format_float(value: f64) -> String {
+pub(crate) fn format_float(value: f64) -> String {
     if value.is_nan() {
         return "NaN".to_string();
     }

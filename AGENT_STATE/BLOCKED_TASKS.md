@@ -16,10 +16,10 @@
 - Native memory reclamation design review — Deferred; a prior
   `compiler-architect` subagent run failed with “Free usage limit reached”.
   Retry when subagent capacity is available.
-- Independent `qa-verifier` verification of T-062–T-066 — Blocked by the
-  subagent provider's free usage limit. The primary session's tests and
-  sanitizer runs remain the recorded evidence; retry independent verification
-  when capacity returns.
+- Independent `qa-verifier` verification of T-062–T-066 and T-072–T-098 —
+  Blocked by the subagent provider's free usage limit. The primary session's
+  tests and sanitizer runs remain the recorded evidence; retry independent
+  verification when capacity returns.
 - Continuously available live cloud AI — The 2026-11-24 Gemini run succeeded
   and a 20:59Z re-verification passed all 21 checks, but an earlier request
   was rejected with HTTP 400 `User location is not supported` and one re-run

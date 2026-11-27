@@ -2,7 +2,37 @@
 
 - `embeddings.md` — offline hash embeddings, stdin batches, a local
   OpenAI-compatible embedding server, and the bounded library cache.
+- `train.jsonl` — a tiny JSONL dataset for `vantyx ai dataset`.
+- `train.schema.json` — the supported JSON Schema subset for that dataset.
 - The structured extraction walkthrough below.
+
+# Dataset inspection example
+
+`vantyx ai dataset` validates a JSONL corpus without tokenizing it or loading
+it whole. It reports the record count, top-level fields with type histograms,
+numbered invalid lines, and a SHA-256 for provenance.
+
+```sh
+./target/debug/vantyx ai dataset examples/ai/train.jsonl
+./target/debug/vantyx ai dataset examples/ai/train.jsonl --json
+./target/debug/vantyx ai dataset examples/ai/train.jsonl \
+  --schema examples/ai/train.schema.json
+```
+
+A dataset with any invalid non-blank line or schema-invalid record exits `1`,
+so it can gate a pipeline:
+
+```sh
+./target/debug/vantyx ai dataset examples/ai/train.jsonl \
+  --schema examples/ai/train.schema.json --json > dataset.json
+```
+
+The command is offline and read-only. It does not split, shuffle, deduplicate,
+or tokenize records, and it validates only the supported JSON Schema subset
+(`type`, `enum`, `const`, `anyOf`, `allOf`, `required`, `properties`,
+`additionalProperties`, `items`, `minItems`, `maxItems`, `minLength`,
+`maxLength`, `minimum`, and `maximum`). See `docs/ai/DATASET_INSPECTION.md` for
+the limits.
 
 # Structured extraction example
 

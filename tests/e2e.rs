@@ -110,6 +110,75 @@ fn top_level_code_runs_and_warns_about_unused_main() {
 }
 
 #[test]
+fn functions_resolve_globals_not_caller_locals() {
+    let run = run_file(
+        "lexical-globals",
+        "var total = 10\n\
+         var other = 20\n\n\
+         fn read_total() -> Int:\n\
+         \x20   return total\n\n\
+         fn bump_total() -> Int:\n\
+         \x20   total = total + 1\n\
+         \x20   return total\n\n\
+         fn bump_other() -> Int:\n\
+         \x20   other = other + 1\n\
+         \x20   return other\n\n\
+         fn main():\n\
+         \x20   var total = 100\n\
+         \x20   let other = \"caller-immutable\"\n\
+         \x20   print(read_total())\n\
+         \x20   print(bump_total())\n\
+         \x20   print(total)\n\
+         \x20   print(bump_other())\n\
+         \x20   print(other)\n\n\
+         main()\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "10\n11\n100\n21\ncaller-immutable\n");
+    assert!(run.stderr.contains("warning[W0001]"), "{}", run.stderr);
+}
+
+#[test]
+fn global_assignment_before_declaration_raises_r0009() {
+    // The interpreter evaluates the right side first, then resolves the
+    // assignment place. A global whose declaration has not run yet must
+    // therefore still execute the value's side effects before R0009.
+    let run = run_file(
+        "global-write-before-declaration",
+        "fn setg() -> Int:\n\
+         \x20   g = note()\n\
+         \x20   return 0\n\n\
+         fn note() -> Int:\n\
+         \x20   print(\"rhs\")\n\
+         \x20   return 5\n\n\
+         print(setg())\n\
+         var g = 1\n\
+         print(g)\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "rhs\n");
+    assert!(run.stderr.contains("error[R0009]"), "{}", run.stderr);
+    assert!(
+        run.stderr
+            .contains("global-write-before-declaration.vtx:2:5"),
+        "{}",
+        run.stderr
+    );
+
+    let after = run_file(
+        "global-write-after-declaration",
+        "fn setg() -> Int:\n\
+         \x20   g = 5\n\
+         \x20   return 0\n\n\
+         var g = 1\n\
+         print(setg())\n\
+         print(g)\n",
+    );
+    assert_eq!(after.code, 0, "stderr: {}", after.stderr);
+    assert_eq!(after.stdout, "0\n5\n");
+}
+
+#[test]
 fn syntax_error_exits_with_one() {
     let run = run_file("syntax", "fn main()\n    print(1)\n");
     assert_eq!(run.code, 1);
@@ -160,6 +229,220 @@ fn runtime_error_exits_with_two_and_prints_a_stack() {
 }
 
 #[test]
+fn numeric_string_conversions_follow_the_strict_grammar() {
+    let run = run_file(
+        "numeric_grammar",
+        "fn main():\n\
+         \x20   print(int(\" 12 \"), int(\"\u{a0}12\u{a0}\"), int(\"+7\"), int(\"-0\"))\n\
+         \x20   print(float(\"1.\"), float(\".5\"), float(\"1.e3\"), float(\".5e2\"))\n\
+         \x20   print(float(\"1e999\"), float(\"-1e999\"), float(\"1e-999\"))\n\
+         \x20   print(float(\"inf\"), float(\"-Infinity\"), float(\"NaN\"), float(\"+nan\"))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "12 12 7 0\n1.0 0.5 1000.0 50.0\nInfinity -Infinity 0.0\nInfinity -Infinity NaN NaN\n"
+    );
+    for (name, expression) in [
+        ("hex_float", "float(\"0x1p3\")"),
+        ("nan_payload", "float(\"nan(1)\")"),
+        ("int_suffix", "int(\"12x\")"),
+        ("int_underscore", "int(\"1_0\")"),
+        ("int_overflow", "int(\"9223372036854775808\")"),
+    ] {
+        let run = run_file(name, &format!("fn main():\n    print({expression})\n"));
+        assert_eq!(run.code, 2, "`{expression}` should fail: {}", run.stdout);
+        assert!(
+            run.stderr.contains("error[R0007]"),
+            "missing R0007 for `{expression}`: {}",
+            run.stderr
+        );
+    }
+}
+
+#[test]
+fn float_min_max_ties_and_nan_are_stable() {
+    let run = run_file(
+        "min_max_ties",
+        "fn main():\n\
+         \x20   print(min(-0.0, 0.0), max(-0.0, 0.0), min(0.0, -0.0), max(0.0, -0.0))\n\
+         \x20   print(min(-1.0, -0.0), max(-1.0, -0.0), min(-0.0, -1.0), max(-0.0, -1.0))\n\
+         \x20   let n = float(\"NaN\")\n\
+         \x20   print(min(n, 1.0), max(n, 1.0), min(1.0, n), max(1.0, n))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "0.0 0.0 -0.0 -0.0\n-1.0 -0.0 -1.0 -0.0\n1.0 1.0 1.0 1.0\n"
+    );
+}
+
+#[test]
+fn print_evaluates_every_argument_before_writing() {
+    // All arguments are evaluated, then all are rendered, then one line is
+    // written. This makes later-argument mutations visible to the whole line
+    // and leaves no partial output when an argument fails.
+    let run = run_file(
+        "print_two_phase",
+        "fn bump(xs: List[Int]) -> Int:\n\
+         \x20   push(xs, 9)\n\
+         \x20   return 1\n\n\
+         fn main():\n\
+         \x20   let xs = [1]\n\
+         \x20   print(xs, bump(xs))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "[1, 9] 1\n");
+
+    let failed = run_file(
+        "print_no_partial",
+        "fn main():\n    print(\"partial\", floor(5e300))\n",
+    );
+    assert_eq!(failed.code, 2);
+    assert!(failed.stdout.is_empty(), "stdout: {:?}", failed.stdout);
+}
+
+#[test]
+fn named_constructor_arguments_evaluate_in_source_order() {
+    // Named constructor arguments are placed into declaration order, but
+    // evaluation follows the order they were written.
+    let run = run_file(
+        "named_constructor_order",
+        "struct Pair:\n\
+         \x20   left: Int\n\
+         \x20   right: Int\n\n\
+         struct Triple:\n\
+         \x20   a: Int\n\
+         \x20   b: Int\n\
+         \x20   c: Int\n\n\
+         fn note(label: Str, value: Int) -> Int:\n\
+         \x20   print(label)\n\
+         \x20   return value\n\n\
+         fn main():\n\
+         \x20   let p = Pair(right=note(\"right\", 2), left=note(\"left\", 1))\n\
+         \x20   print(p)\n\
+         \x20   let q = Triple(c=note(\"c\", 3), a=note(\"a\", 1), b=note(\"b\", 2))\n\
+         \x20   print(q)\n\
+         \x20   let r = Pair(note(\"first\", 10), note(\"second\", 20))\n\
+         \x20   print(r)\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "right\nleft\nPair(left=1, right=2)\nc\na\nb\nTriple(a=1, b=2, c=3)\nfirst\nsecond\nPair(left=10, right=20)\n"
+    );
+
+    let failed = run_file(
+        "named_constructor_error_order",
+        "struct Pair:\n\
+         \x20   left: Int\n\
+         \x20   right: Int\n\n\
+         fn note(label: Str, value: Int) -> Int:\n\
+         \x20   print(label)\n\
+         \x20   return value\n\n\
+         fn fail() -> Int:\n\
+         \x20   assert(false)\n\
+         \x20   return 0\n\n\
+         fn main():\n\
+         \x20   let p = Pair(right=fail(), left=note(\"left\", 1))\n\
+         \x20   print(p)\n",
+    );
+    assert_eq!(failed.code, 2);
+    assert!(failed.stdout.is_empty(), "stdout: {:?}", failed.stdout);
+}
+
+#[test]
+fn type_evaluates_its_argument() {
+    // `type` returns a static name, but its argument is an ordinary call
+    // argument: the interpreter evaluates it, including side effects and
+    // runtime errors.
+    let run = run_file(
+        "type_side_effects",
+        "fn bump(xs: List[Int]) -> Int:\n\
+         \x20   push(xs, 2)\n\
+         \x20   return len(xs)\n\n\
+         fn main():\n\
+         \x20   let xs = [1]\n\
+         \x20   print(type(bump(xs)), xs)\n\
+         \x20   print(type(print(\"inner\")))\n\
+         \x20   print(type(assert(true)))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "Int [1, 2]\ninner\nUnit\nUnit\n");
+
+    let failed = run_file(
+        "type_argument_failure",
+        "fn main():\n    print(type(assert(false)))\n",
+    );
+    assert_eq!(failed.code, 2);
+    assert!(failed.stdout.is_empty(), "stdout: {:?}", failed.stdout);
+}
+
+#[test]
+fn bool_evaluates_its_argument() {
+    // `bool` is an ordinary call even though only Bool is accepted: the
+    // interpreter evaluates the argument, then raises R0007 for other types.
+    let run = run_file(
+        "bool_side_effects",
+        "fn flag() -> Bool:\n\
+         \x20   print(\"flag\")\n\
+         \x20   return true\n\n\
+         fn side() -> Int:\n\
+         \x20   print(\"side\")\n\
+         \x20   return 1\n\n\
+         fn main():\n\
+         \x20   print(bool(flag()))\n\
+         \x20   print(bool(side()))\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "flag\ntrue\nside\n");
+    assert!(run.stderr.contains("R0007"), "stderr: {}", run.stderr);
+}
+
+#[test]
+fn unit_equality_evaluates_both_operands() {
+    // `Unit` values compare statically, but equality is still an ordinary
+    // binary expression: both operands are evaluated left to right.
+    let run = run_file(
+        "unit_equality_side_effects",
+        "fn side(tag: Str) -> Unit:\n\
+         \x20   print(tag)\n\n\
+         fn main():\n\
+         \x20   let u: Unit = side(\"decl\")\n\
+         \x20   print(u)\n\
+         \x20   print(u == side(\"cmp\"))\n\
+         \x20   print(u != side(\"cmp2\"))\n\
+         \x20   print(side(\"l\") == side(\"r\"))\n\
+         \x20   print(side(\"l2\") != side(\"r2\"))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "decl\n()\ncmp\ntrue\ncmp2\nfalse\nl\nr\ntrue\nl2\nr2\nfalse\n"
+    );
+}
+
+#[test]
+fn unit_interpolation_evaluates_expressions() {
+    let run = run_file(
+        "unit_interpolation_side_effects",
+        "fn single() -> Unit:\n\
+         \x20   print(\"s1\")\n\n\
+         fn multi1() -> Unit:\n\
+         \x20   print(\"m1\")\n\n\
+         fn multi2() -> Unit:\n\
+         \x20   print(\"m2\")\n\n\
+         fn main():\n\
+         \x20   let a = \"{single()}\"\n\
+         \x20   print(a)\n\
+         \x20   let b = \"x{multi1()}y{multi2()}z\"\n\
+         \x20   print(b)\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "s1\n()\nm1\nm2\nx()y()z\n");
+}
+
+#[test]
 fn check_success_is_silent() {
     let run = check_file("check_ok", "print(\"never executed\")\n");
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
@@ -197,6 +480,23 @@ fn lint_is_silent_on_a_clean_program() {
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
     assert!(run.stdout.is_empty());
     assert!(run.stderr.is_empty(), "{}", run.stderr);
+}
+
+#[test]
+fn lint_reports_unused_parameters() {
+    let run = lint_file(
+        "lint_unused_parameter",
+        "fn constant(value: Int) -> Int:\n    return 1\n\nfn main():\n    print(constant(1))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert!(run.stdout.is_empty());
+    assert!(run.stderr.contains("warning[L0004]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("unused parameter `value`"),
+        "{}",
+        run.stderr
+    );
+    assert!(!run.stderr.contains("error["), "{}", run.stderr);
 }
 
 #[test]
@@ -1573,6 +1873,64 @@ fn copy_file_preserves_bytes() {
 }
 
 #[test]
+fn copy_file_rejects_self_copies() {
+    let directory = io_workspace("copy-self");
+    fs::write(directory.join("source.txt"), "keep me").expect("write source");
+    let mut targets = vec!["source.txt".to_string()];
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        symlink("source.txt", directory.join("link.txt")).expect("create symlink");
+        fs::hard_link(directory.join("source.txt"), directory.join("hard.txt"))
+            .expect("create hard link");
+        targets.push("link.txt".to_string());
+        targets.push("hard.txt".to_string());
+    }
+
+    for target in &targets {
+        let source = directory.join("main.vtx");
+        fs::write(
+            &source,
+            format!("fn main():\n    copy_file(\"source.txt\", \"{target}\")\n"),
+        )
+        .expect("write self-copy source");
+        let run = vantyx_in_dir(
+            &directory,
+            &["run", source.to_str().expect("utf-8 path")],
+            None,
+        );
+        assert_eq!(run.code, 2, "{target}: {}", run.stderr);
+        assert!(run.stderr.contains("error[R0015]"), "{}", run.stderr);
+        assert!(
+            run.stderr.contains("source and target are the same file"),
+            "{}",
+            run.stderr
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("source.txt")).expect("read preserved source"),
+            "keep me",
+            "copying onto `{target}` changed the source"
+        );
+    }
+
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   copy_file(\"source.txt\", \"copy.txt\")\n\
+         \x20   print(read_file(\"copy.txt\"))\n",
+    )
+    .expect("write ordinary copy source");
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.stdout, "keep me\n");
+}
+
+#[test]
 fn rename_and_copy_reject_non_str_arguments() {
     let run = check_file(
         "rename-copy-types",
@@ -1798,11 +2156,19 @@ fn path_builtins_round_trip() {
          \x20   print(path_stem(\".bashrc\"))\n\
          \x20   print(path_stem(\"a.\"))\n\
          \x20   print(path_stem(\"archive\"))\n\
+         \x20   print(path_stem(\"a/b..\"))\n\
+         \x20   print(path_stem(\"a/...\"))\n\
+         \x20   print(path_stem(\"a.b.\"))\n\
+         \x20   print(path_stem(\"a.b..\"))\n\
          \x20   print(path_extension(\"a/b.tar.gz\"))\n\
          \x20   print(path_extension(\".bashrc\"))\n\
          \x20   print(path_extension(\"a.\"))\n\
          \x20   print(path_extension(\"archive\"))\n\
          \x20   print(path_extension(\"archive.tar\"))\n\
+         \x20   print(path_extension(\"a/b..\"))\n\
+         \x20   print(path_extension(\"a/...\"))\n\
+         \x20   print(path_extension(\"a.b.\"))\n\
+         \x20   print(path_extension(\"a.b..\"))\n\
          \x20   print(path_is_absolute(\"/a\"))\n\
          \x20   print(path_is_absolute(\"a\"))\n\
          \x20   print(path_is_absolute(\"\"))\n",
@@ -1810,7 +2176,7 @@ fn path_builtins_round_trip() {
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
     assert_eq!(
         run.stdout,
-        "a/b\na/b\n/b\nb\na\na//b\na/b\n.\n/\n/\na\na\nb\n\n文件.txt\nb.tar\n.bashrc\na.\narchive\ngz\n\n\n\ntar\ntrue\nfalse\nfalse\n"
+        "a/b\na/b\n/b\nb\na\na//b\na/b\n.\n/\n/\na\na\nb\n\n文件.txt\nb.tar\n.bashrc\na.\narchive\nb..\n...\na.b.\na.b..\ngz\n\n\n\ntar\n\n\n\n\ntrue\nfalse\nfalse\n"
     );
 }
 

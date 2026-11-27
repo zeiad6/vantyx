@@ -5,7 +5,7 @@
 //! files.
 
 use std::io::{self, IsTerminal, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use vantyx::ai::{
     self, AiConfig, Budget, ChatRequest, ChatResponse, DEFAULT_HASH_DIMENSIONS, EchoProvider,
@@ -35,6 +35,22 @@ Usage:
   vantyx ai eval --index <file> --fixture <file> [options]
                                    Score retrieval against labelled queries
   vantyx ai tokens [text]          Estimate tokens (not a model tokenizer)
+  vantyx ai inspect <file> [options]
+                                   Inspect a local GGUF, Safetensors, or shard-index model
+                                   and compute its SHA-256 (no download)
+  vantyx ai dataset <file> [options]
+                                   Validate a JSONL dataset, optionally validate
+                                   every record against a schema, summarize
+                                   top-level fields, and compute its SHA-256
+                                   (no download)
+  vantyx ai split <file> --out-dir <dir> [options]
+                                   Split a validated JSONL dataset into
+                                   deterministic train and held-out files
+                                   without overwriting existing files
+  vantyx ai dedup <file> --out <file> [options]
+                                   Remove exact duplicate JSONL records,
+                                   keeping the first occurrence, without
+                                   overwriting the output file
 
 Options:
   --provider <name>       mock, echo, hash (embed only), or openai
@@ -50,10 +66,16 @@ Options:
   --dimensions <n>        Embedding dimensions, 1 to 4096
   --metrics <path>        Append redacted JSONL metrics (no prompts)
   --schema <path|json>    JSON Schema for `extract` (file path or inline object)
+                          or a schema file for `dataset`, `split`, and `dedup`
+  --out-dir <dir>         Output directory for `split` (required)
+  --train-ratio <n>       Train fraction for `split`, greater than 0 and
+                          less than 1 (default 0.9)
+  --seed <n>              Deterministic split seed (default 0)
   --repair-attempts <n>   Repair attempts after invalid output (0-3; default 1)
   --response <text>       Offline mock response for `extract`; may be repeated
   --root <dir>            Document root for `index`
-  --out <file>            Output index path for `index`
+  --out <file>            Output index path for `index`, or the output file for
+                          `dedup`
   --index <file>          Index path for `search` and `eval`
   --query <text>          Search query for `search` (or positional text)
   --source-prefix <path>  Only search chunks whose relative source starts with this path
@@ -70,6 +92,7 @@ Options:
   --stream                Print OpenAI-compatible text deltas as they arrive
                           (not compatible with --json)
   --json                  Print the response as JSON
+  --metadata              Print every metadata entry with `inspect`
   -                       Read the prompt from standard input
   -h, --help              Show this help
 
@@ -140,6 +163,10 @@ pub fn run(args: &[String]) -> i32 {
         "search" => rag_search(rest),
         "eval" => rag_eval(rest),
         "tokens" => tokens(rest),
+        "inspect" => inspect(rest),
+        "dataset" => dataset(rest),
+        "split" => dataset_split(rest),
+        "dedup" => dataset_dedup(rest),
         other => {
             eprintln!("error: unknown `vantyx ai` command `{other}`");
             eprintln!();
@@ -1599,6 +1626,539 @@ fn tokens(args: &[String]) -> i32 {
     0
 }
 
+fn inspect(args: &[String]) -> i32 {
+    let mut json = false;
+    let mut metadata = false;
+    let mut path: Option<&str> = None;
+    for arg in args {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print!("{AI_USAGE}");
+                return 0;
+            }
+            "--json" => json = true,
+            "--metadata" => metadata = true,
+            other if other.starts_with('-') => {
+                eprintln!("error: unknown option `{other}` for `vantyx ai inspect`");
+                return 64;
+            }
+            other => {
+                if path.is_some() {
+                    eprintln!("error: `vantyx ai inspect` takes exactly one file path");
+                    return 64;
+                }
+                path = Some(other);
+            }
+        }
+    }
+    let Some(path) = path else {
+        eprintln!("error: `vantyx ai inspect` requires a model file path");
+        return 64;
+    };
+    let summary = match ai::inspect_model(Path::new(path)) {
+        Ok(summary) => summary,
+        Err(error) => return report_error(&error),
+    };
+    if json {
+        println!("{}", summary.to_json().to_compact_string());
+        return 0;
+    }
+
+    let version = summary
+        .format_version
+        .map(|version| format!(" (version {version})"))
+        .unwrap_or_default();
+    println!("format: {}{version}", summary.format.as_str());
+    println!("file: {}", summary.path);
+    println!("size: {} bytes", summary.file_bytes);
+    println!("sha256: {}", summary.sha256);
+    if let Some(architecture) = &summary.architecture {
+        println!("architecture: {architecture}");
+    }
+    if let Some(name) = &summary.name {
+        println!("name: {name}");
+    }
+    println!("parameters: {}", summary.parameter_count);
+    println!("tensors: {}", summary.tensor_count);
+    println!("data bytes: {}", summary.data_bytes);
+    if let Some(value) = summary.context_length {
+        println!("context length: {value}");
+    }
+    if let Some(value) = summary.embedding_length {
+        println!("embedding length: {value}");
+    }
+    if let Some(value) = summary.block_count {
+        println!("layers: {value}");
+    }
+    if let Some(quantization) = &summary.quantization {
+        println!("quantization: {quantization}");
+    }
+    match (&summary.tokenizer_model, summary.tokenizer_tokens) {
+        (Some(model), Some(tokens)) => println!("tokenizer: {model} ({tokens} tokens)"),
+        (Some(model), None) => println!("tokenizer: {model}"),
+        (None, Some(tokens)) => println!("tokenizer tokens: {tokens}"),
+        (None, None) => {}
+    }
+    if !summary.dtypes.is_empty() {
+        println!("dtypes:");
+        for dtype in &summary.dtypes {
+            println!(
+                "  {}: {} tensor(s), {} parameter(s)",
+                dtype.dtype, dtype.tensors, dtype.parameters
+            );
+        }
+    }
+    if !summary.shards.is_empty() {
+        println!("shards:");
+        for shard in &summary.shards {
+            println!(
+                "  {}: {} bytes, {} tensor(s), {} parameter(s)",
+                shard.path, shard.file_bytes, shard.tensor_count, shard.parameter_count
+            );
+        }
+    }
+    if metadata && !summary.metadata.is_empty() {
+        println!("metadata:");
+        for (key, value) in &summary.metadata {
+            println!("  {key}: {}", truncate_metadata(value, 200));
+        }
+    }
+    if !summary.warnings.is_empty() {
+        println!("warnings:");
+        for warning in &summary.warnings {
+            println!("  {warning}");
+        }
+    }
+    0
+}
+
+fn dataset(args: &[String]) -> i32 {
+    let mut json = false;
+    let mut path: Option<&str> = None;
+    let mut schema_path: Option<&str> = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print!("{AI_USAGE}");
+                return 0;
+            }
+            "--json" => json = true,
+            "--schema" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--schema` requires a JSON Schema path");
+                    return 64;
+                };
+                if schema_path.is_some() {
+                    eprintln!("error: `--schema` may be given only once");
+                    return 64;
+                }
+                schema_path = Some(value);
+            }
+            other if other.starts_with('-') => {
+                eprintln!("error: unknown option `{other}` for `vantyx ai dataset`");
+                return 64;
+            }
+            other => {
+                if path.is_some() {
+                    eprintln!("error: `vantyx ai dataset` takes exactly one file path");
+                    return 64;
+                }
+                path = Some(other);
+            }
+        }
+        index += 1;
+    }
+    let Some(path) = path else {
+        eprintln!("error: `vantyx ai dataset` requires a JSONL file path");
+        return 64;
+    };
+    let summary = match schema_path {
+        Some(schema_path) => {
+            ai::inspect_dataset_with_schema(Path::new(path), Path::new(schema_path))
+        }
+        None => ai::inspect_dataset(Path::new(path)),
+    };
+    let summary = match summary {
+        Ok(summary) => summary,
+        Err(error) => return report_error(&error),
+    };
+    print_dataset_summary(&summary, json);
+    match dataset_invalid_reason(&summary) {
+        Some(reason) => {
+            eprintln!("error: {reason}; fix them before training");
+            1
+        }
+        None => 0,
+    }
+}
+
+fn print_dataset_summary(summary: &ai::DatasetSummary, json: bool) {
+    if json {
+        println!("{}", summary.to_json().to_compact_string());
+        return;
+    }
+    println!("format: jsonl-dataset");
+    println!("file: {}", summary.path);
+    println!("size: {} bytes", summary.file_bytes);
+    println!("sha256: {}", summary.sha256);
+    println!(
+        "lines: {} (blank: {})",
+        summary.line_count, summary.blank_lines
+    );
+    println!("records: {}", summary.record_count);
+    println!("invalid lines: {}", summary.invalid_line_count);
+    if !summary.invalid_lines.is_empty() {
+        println!("invalid line details:");
+        for invalid in &summary.invalid_lines {
+            println!("  line {}: {}", invalid.line, invalid.message);
+        }
+    }
+    if let Some(schema) = &summary.schema {
+        println!("schema: {}", schema.path);
+        println!("schema-invalid records: {}", schema.invalid_record_count);
+        if !schema.violations.is_empty() {
+            println!("schema violations:");
+            for violation in &schema.violations {
+                println!(
+                    "  line {} at {}: {}",
+                    violation.line, violation.path, violation.message
+                );
+            }
+        }
+    }
+    if !summary.fields.is_empty() {
+        println!("fields:");
+        for field in &summary.fields {
+            let types = field
+                .types
+                .iter()
+                .map(|entry| format!("{} {}", entry.kind, entry.count))
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!("  {}: {} record(s) ({types})", field.name, field.records);
+        }
+    }
+    if !summary.warnings.is_empty() {
+        println!("warnings:");
+        for warning in &summary.warnings {
+            println!("  {warning}");
+        }
+    }
+}
+
+fn dataset_invalid_reason(summary: &ai::DatasetSummary) -> Option<String> {
+    if summary.invalid_line_count > 0 {
+        return Some(format!(
+            "dataset has {} invalid line(s)",
+            summary.invalid_line_count
+        ));
+    }
+    summary
+        .schema
+        .as_ref()
+        .filter(|schema| schema.invalid_record_count > 0)
+        .map(|schema| {
+            format!(
+                "dataset has {} schema-invalid record(s)",
+                schema.invalid_record_count
+            )
+        })
+}
+
+fn dataset_split(args: &[String]) -> i32 {
+    let mut json = false;
+    let mut path: Option<&str> = None;
+    let mut out_dir: Option<&str> = None;
+    let mut schema_path: Option<&str> = None;
+    let mut train_ratio = ai::DEFAULT_TRAIN_RATIO;
+    let mut seed = 0_u64;
+    let mut ratio_given = false;
+    let mut seed_given = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print!("{AI_USAGE}");
+                return 0;
+            }
+            "--json" => json = true,
+            "--out-dir" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--out-dir` requires a directory path");
+                    return 64;
+                };
+                if out_dir.is_some() {
+                    eprintln!("error: `--out-dir` may be given only once");
+                    return 64;
+                }
+                out_dir = Some(value);
+            }
+            "--train-ratio" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--train-ratio` requires a number");
+                    return 64;
+                };
+                if ratio_given {
+                    eprintln!("error: `--train-ratio` may be given only once");
+                    return 64;
+                }
+                match value.parse::<f64>() {
+                    Ok(parsed) if parsed.is_finite() && parsed > 0.0 && parsed < 1.0 => {
+                        train_ratio = parsed;
+                        ratio_given = true;
+                    }
+                    _ => {
+                        eprintln!("error: `--train-ratio` must be greater than 0 and less than 1");
+                        return 64;
+                    }
+                }
+            }
+            "--seed" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--seed` requires an unsigned integer");
+                    return 64;
+                };
+                if seed_given {
+                    eprintln!("error: `--seed` may be given only once");
+                    return 64;
+                }
+                match value.parse::<u64>() {
+                    Ok(parsed) => {
+                        seed = parsed;
+                        seed_given = true;
+                    }
+                    Err(_) => {
+                        eprintln!("error: `--seed` must be an unsigned integer");
+                        return 64;
+                    }
+                }
+            }
+            "--schema" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--schema` requires a JSON Schema path");
+                    return 64;
+                };
+                if schema_path.is_some() {
+                    eprintln!("error: `--schema` may be given only once");
+                    return 64;
+                }
+                schema_path = Some(value);
+            }
+            other if other.starts_with('-') => {
+                eprintln!("error: unknown option `{other}` for `vantyx ai split`");
+                return 64;
+            }
+            other => {
+                if path.is_some() {
+                    eprintln!("error: `vantyx ai split` takes exactly one file path");
+                    return 64;
+                }
+                path = Some(other);
+            }
+        }
+        index += 1;
+    }
+    let Some(path) = path else {
+        eprintln!("error: `vantyx ai split` requires a JSONL file path");
+        return 64;
+    };
+    let Some(out_dir) = out_dir else {
+        eprintln!("error: `vantyx ai split` requires `--out-dir <dir>`");
+        return 64;
+    };
+
+    let inspection = match schema_path {
+        Some(schema_path) => {
+            ai::inspect_dataset_with_schema(Path::new(path), Path::new(schema_path))
+        }
+        None => ai::inspect_dataset(Path::new(path)),
+    };
+    let inspection = match inspection {
+        Ok(summary) => summary,
+        Err(error) => return report_error(&error),
+    };
+    if let Some(reason) = dataset_invalid_reason(&inspection) {
+        print_dataset_summary(&inspection, json);
+        eprintln!("error: {reason}; fix them before splitting");
+        return 1;
+    }
+
+    let split = match schema_path {
+        Some(schema_path) => ai::split_dataset_with_schema(
+            Path::new(path),
+            Path::new(out_dir),
+            train_ratio,
+            seed,
+            Path::new(schema_path),
+        ),
+        None => ai::split_dataset(Path::new(path), Path::new(out_dir), train_ratio, seed),
+    };
+    let split = match split {
+        Ok(summary) => summary,
+        Err(error) => return report_error(&error),
+    };
+    if json {
+        println!("{}", split.to_json().to_compact_string());
+    } else {
+        println!("format: jsonl-split");
+        println!("input: {}", split.input_path);
+        println!("input size: {} bytes", split.input_bytes);
+        println!("input sha256: {}", split.input_sha256);
+        println!("records: {}", split.record_count);
+        println!("seed: {}", split.seed);
+        println!("train ratio: {}", split.train_ratio);
+        println!(
+            "train: {} ({} records, {} bytes)",
+            split.train.path, split.train.records, split.train.bytes
+        );
+        println!("  sha256: {}", split.train.sha256);
+        println!(
+            "held-out: {} ({} records, {} bytes)",
+            split.held_out.path, split.held_out.records, split.held_out.bytes
+        );
+        println!("  sha256: {}", split.held_out.sha256);
+        if !split.warnings.is_empty() {
+            println!("warnings:");
+            for warning in &split.warnings {
+                println!("  {warning}");
+            }
+        }
+    }
+    0
+}
+
+fn dataset_dedup(args: &[String]) -> i32 {
+    let mut json = false;
+    let mut path: Option<&str> = None;
+    let mut out: Option<&str> = None;
+    let mut schema_path: Option<&str> = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print!("{AI_USAGE}");
+                return 0;
+            }
+            "--json" => json = true,
+            "--out" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--out` requires a file path");
+                    return 64;
+                };
+                if out.is_some() {
+                    eprintln!("error: `--out` may be given only once");
+                    return 64;
+                }
+                out = Some(value);
+            }
+            "--schema" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--schema` requires a JSON Schema path");
+                    return 64;
+                };
+                if schema_path.is_some() {
+                    eprintln!("error: `--schema` may be given only once");
+                    return 64;
+                }
+                schema_path = Some(value);
+            }
+            other if other.starts_with('-') => {
+                eprintln!("error: unknown option `{other}` for `vantyx ai dedup`");
+                return 64;
+            }
+            other => {
+                if path.is_some() {
+                    eprintln!("error: `vantyx ai dedup` takes exactly one file path");
+                    return 64;
+                }
+                path = Some(other);
+            }
+        }
+        index += 1;
+    }
+    let Some(path) = path else {
+        eprintln!("error: `vantyx ai dedup` requires a JSONL file path");
+        return 64;
+    };
+    let Some(out) = out else {
+        eprintln!("error: `vantyx ai dedup` requires `--out <file>`");
+        return 64;
+    };
+
+    let inspection = match schema_path {
+        Some(schema_path) => {
+            ai::inspect_dataset_with_schema(Path::new(path), Path::new(schema_path))
+        }
+        None => ai::inspect_dataset(Path::new(path)),
+    };
+    let inspection = match inspection {
+        Ok(summary) => summary,
+        Err(error) => return report_error(&error),
+    };
+    if let Some(reason) = dataset_invalid_reason(&inspection) {
+        print_dataset_summary(&inspection, json);
+        eprintln!("error: {reason}; fix them before deduplicating");
+        return 1;
+    }
+
+    let dedup = match schema_path {
+        Some(schema_path) => ai::deduplicate_dataset_with_schema(
+            Path::new(path),
+            Path::new(out),
+            Path::new(schema_path),
+        ),
+        None => ai::deduplicate_dataset(Path::new(path), Path::new(out)),
+    };
+    let dedup = match dedup {
+        Ok(summary) => summary,
+        Err(error) => return report_error(&error),
+    };
+    if json {
+        println!("{}", dedup.to_json().to_compact_string());
+    } else {
+        println!("format: jsonl-dedup");
+        println!("input: {}", dedup.input_path);
+        println!("input size: {} bytes", dedup.input_bytes);
+        println!("input sha256: {}", dedup.input_sha256);
+        println!(
+            "records: {} (unique: {}, duplicates removed: {})",
+            dedup.record_count, dedup.unique_records, dedup.duplicates_removed
+        );
+        println!(
+            "output: {} ({} bytes)",
+            dedup.output_path, dedup.output_bytes
+        );
+        println!("  sha256: {}", dedup.output_sha256);
+        if !dedup.warnings.is_empty() {
+            println!("warnings:");
+            for warning in &dedup.warnings {
+                println!("  {warning}");
+            }
+        }
+    }
+    0
+}
+
+fn truncate_metadata(value: &str, maximum: usize) -> String {
+    if value.chars().count() <= maximum {
+        return value.to_string();
+    }
+    let mut text: String = value.chars().take(maximum).collect();
+    text.push_str("...");
+    text
+}
+
 fn resolve_config(options: &Options) -> AiConfig {
     let mut config = AiConfig::from_env();
     if let Some(provider) = &options.provider {
@@ -1718,6 +2278,11 @@ fn report_error(error: &ai::AiError) -> i32 {
     }
     if error.code == ai::provider::AI_E_JSON {
         eprintln!("help: use a model with JSON mode, or raise --repair-attempts (max 3)");
+    }
+    if error.code == ai::provider::AI_E_FORMAT {
+        eprintln!(
+            "help: supported inputs are GGUF versions 2/3, Safetensors, and Safetensors shard indexes; the file was not modified"
+        );
     }
     1
 }

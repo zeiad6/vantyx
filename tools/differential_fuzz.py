@@ -208,6 +208,10 @@ fn bump(p: Point) -> Point:
     p.x += 1
     return p
 
+fn note(label: Str, value: Int) -> Int:
+    print(label)
+    return value
+
 fn main():
     let xs: List[Int] = [{", ".join(values)}]
     push(xs, {rng.randint(-5, 9)})
@@ -240,6 +244,10 @@ fn main():
     print(p)
     print(q)
     print(p == q)
+    let named = Point(y=note("y", {rng.randint(0, 9)}), x=note("x", {rng.randint(0, 9)}))
+    print(named)
+    let named_again = Point(x=note("x2", {rng.randint(0, 9)}), y=note("y2", {rng.randint(0, 9)}))
+    print(named_again)
     let items: List[Item] = [Num({rng.randint(0, 5)}), Text("x"), Empty()]
     for item in items:
         print(item)
@@ -386,7 +394,21 @@ def functions_program(rng: random.Random) -> str:
     lo = rng.randint(-5, 2)
     hi = lo + rng.randint(0, 6)
     value = rng.randint(-9, 9)
-    return f"""fn gcd(a: Int, b: Int) -> Int:
+    return f"""var shared_total = 10
+var shared_other = 20
+
+fn read_shared() -> Int:
+    return shared_total
+
+fn bump_shared() -> Int:
+    shared_total = shared_total + 1
+    return shared_total
+
+fn bump_other() -> Int:
+    shared_other = shared_other + 1
+    return shared_other
+
+fn gcd(a: Int, b: Int) -> Int:
     var x = a
     var y = b
     while y != 0:
@@ -441,6 +463,12 @@ fn count_down(n: Int) -> Int:
         steps += 1
     return steps
 
+fn note(tag: Str) -> Unit:
+    print(tag)
+
+fn note_interp() -> Unit:
+    print("unit-interp")
+
 fn main():
     print(gcd({a}, {b}))
     print(fib({n}))
@@ -466,6 +494,21 @@ fn main():
     else:
         print("other")
     print(sum_squares(fib(5)))
+    let seen = [1]
+    print(type(push(seen, 2)), seen)
+    let unit: Unit = note("unit-decl")
+    print(unit)
+    print(unit == note("unit-eq"))
+    print(unit != note("unit-neq"))
+    print(note("unit-left") == note("unit-right"))
+    print("a{{note_interp()}}b")
+    var shared_total = 100
+    let shared_other = "caller-immutable"
+    print(read_shared())
+    print(bump_shared())
+    print(shared_total)
+    print(bump_other())
+    print(shared_other)
 
 main()
 """
@@ -532,6 +575,20 @@ def numeric_program(rng: random.Random) -> str:
     nonneg = rng.choice(["0.0", "2.25", "4.0", "9.0", "1e300"])
     bounded = rng.choice(["0.0", "2.25", "4.0", "-3.5", "3.14159", "-0.5"])
     integral = rng.choice(["0.0", "1.0", "-1.0", "7.0", "-7.0", "42.0"])
+    int_text = rng.choice(['" 12 "', '"+7"', '"-0"', '"007"', '"\u00a012\u00a0"'])
+    float_text = rng.choice(
+        [
+            '"1."',
+            '".5"',
+            '"1.e3"',
+            '".5e2"',
+            '"1e-3"',
+            '"\u20031.5\u2003"',
+            '"inf"',
+            '"-Infinity"',
+            '"NaN"',
+        ]
+    )
     lines = [
         "fn square(n: Int) -> Int:",
         "    return n * n",
@@ -571,8 +628,14 @@ def numeric_program(rng: random.Random) -> str:
             f"    print(ceil({bounded}))",
             f"    print(int({integral}))",
             f"    print(float({rng.choice(SAFE_INTS)}))",
+            f"    print(int({int_text}))",
+            f"    print(float({float_text}))",
             f"    print(1.0 / 3.0)",
             f"    print(0.1 + 0.2)",
+            "    print(min(-0.0, 0.0), max(-0.0, 0.0), min(0.0, -0.0), max(0.0, -0.0))",
+            f"    print(min({float_a}, {float_b}), max({float_a}, {float_b}))",
+            '    let nan = float("NaN")',
+            "    print(min(nan, 1.0), max(nan, 1.0), min(1.0, nan), max(1.0, nan))",
         ]
     )
     return "\n".join(lines) + "\n\nmain()\n"
@@ -790,16 +853,35 @@ def error_program(rng: random.Random) -> str:
         '    print("ab"[5])',
         "    print(xs[-1])",
         '    print(m["missing"])',
+        '    print("partial", sqrt(-1.0))',
         "    print(1 // 0)",
         "    print(1 % 0)",
         "    print(9223372036854775807 + 1)",
         "    print(-(-9223372036854775807 - 1))",
         "    print(int(1.5))",
         "    print(sqrt(-1.0))",
+        '    print(float("0x1p3"))',
+        '    print(float("nan(1)"))',
+        '    print(float("1e"))',
+        '    print(int("12x"))',
+        '    print(int("1_0"))',
+        '    print(int("9223372036854775808"))',
         "    let empty: List[Int] = []\n    print(pop(empty))",
         "    assert(false)",
+        "    print(type(assert(false)))",
+        "    print(bool(bool_side_int()))",
+        "    print(early_global_write())",
     ]
-    return f"""fn main():
+    return f"""fn bool_side_int() -> Int:
+    print("bool-side")
+    return 1
+
+fn early_global_write() -> Int:
+    print("early-global")
+    late_global = 1
+    return 0
+
+fn main():
     print("start")
     let xs: List[Int] = [1, 2, 3]
     let m: Map[Str, Int] = {{"a": 1}}
@@ -808,6 +890,43 @@ def error_program(rng: random.Random) -> str:
 {cases[rng.randrange(len(cases))]}
 
 main()
+var late_global = 7
+"""
+
+
+def global_program(rng: random.Random) -> str:
+    """Global declaration order: writes before and after the declaration."""
+    value = rng.randint(-9, 9)
+    delta = rng.randint(1, 5)
+    if rng.random() < 0.5:
+        # The function runs before the global's declaration statement, so the
+        # interpreter evaluates the effectful right side and then raises R0009.
+        return f"""fn note(value: Int) -> Int:
+    print("note", value)
+    return value + {delta}
+
+fn write_early() -> Int:
+    print("write-early")
+    late = note({value})
+    return 0
+
+print(write_early())
+var late = {value}
+print(late)
+"""
+    # The declaration runs first, so the same write succeeds.
+    return f"""fn note(value: Int) -> Int:
+    print("note", value)
+    return value + {delta}
+
+fn write_late() -> Int:
+    print("write-late")
+    late = note({value})
+    return late
+
+var late = {value}
+print(write_late())
+print(late)
 """
 
 
@@ -822,6 +941,7 @@ GENERATORS = [
     result_program,
     error_program,
     control_program,
+    global_program,
 ]
 
 

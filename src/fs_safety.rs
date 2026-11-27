@@ -11,6 +11,14 @@
 //!
 //! Refusing these spellings does not make the builtin a sandbox: intermediate
 //! symbolic links and check-then-act races remain caller concerns.
+//!
+//! `copy_file` also refuses a source and target that resolve to the same file.
+//! Opening the target for writing would truncate the source before any bytes
+//! are copied, so an accidental `copy_file(path, path)` silently destroys the
+//! file. The check follows symbolic links and compares device/inode identity on
+//! Unix, so hard links and symlink aliases are caught as well. It is a
+//! best-effort guard against mistakes, not an atomic transaction: a caller can
+//! still race the check, and non-Unix builds fall back to canonical paths.
 
 /// Why a recursive-removal root was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,9 +62,52 @@ pub fn refused_removal_root(path: &str) -> Option<RemovalRefusal> {
     None
 }
 
+/// Returns whether `source` and `target` currently resolve to the same file.
+///
+/// Both paths are followed through symbolic links. On Unix the comparison uses
+/// the device and inode, which also catches hard links; other platforms fall
+/// back to canonical paths. Any metadata failure returns `false` so the copy
+/// itself can report the more useful error.
+pub fn paths_refer_to_same_file(source: &str, target: &str) -> bool {
+    let (Ok(source_metadata), Ok(target_metadata)) =
+        (std::fs::metadata(source), std::fs::metadata(target))
+    else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        source_metadata.dev() == target_metadata.dev()
+            && source_metadata.ino() == target_metadata.ino()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (source_metadata, target_metadata);
+        match (std::fs::canonicalize(source), std::fs::canonicalize(target)) {
+            (Ok(source_path), Ok(target_path)) => source_path == target_path,
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn workspace(name: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "vantyx-fs-safety-{}-{}-{name}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("create fs-safety workspace");
+        directory
+    }
 
     #[test]
     fn allows_ordinary_roots() {
@@ -135,5 +186,59 @@ mod tests {
                 .message()
                 .contains("filesystem root")
         );
+    }
+
+    #[test]
+    fn detects_the_same_path_and_distinct_files() {
+        let directory = workspace("same-path");
+        let file = directory.join("file.txt");
+        std::fs::write(&file, "contents").expect("write file");
+        let other = directory.join("other.txt");
+        std::fs::write(&other, "other").expect("write other");
+
+        assert!(paths_refer_to_same_file(
+            file.to_str().expect("utf-8 file"),
+            file.to_str().expect("utf-8 file")
+        ));
+        assert!(!paths_refer_to_same_file(
+            file.to_str().expect("utf-8 file"),
+            other.to_str().expect("utf-8 other")
+        ));
+        assert!(!paths_refer_to_same_file(
+            file.to_str().expect("utf-8 file"),
+            directory
+                .join("missing.txt")
+                .to_str()
+                .expect("utf-8 missing")
+        ));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn detects_symbolic_and_hard_link_aliases() {
+        use std::os::unix::fs::symlink;
+
+        let directory = workspace("aliases");
+        let file = directory.join("file.txt");
+        std::fs::write(&file, "contents").expect("write file");
+        let symlink_path = directory.join("link.txt");
+        symlink("file.txt", &symlink_path).expect("create symlink");
+        let hard_link_path = directory.join("hard.txt");
+        std::fs::hard_link(&file, &hard_link_path).expect("create hard link");
+
+        let file_text = file.to_str().expect("utf-8 file");
+        for alias in [&symlink_path, &hard_link_path] {
+            assert!(
+                paths_refer_to_same_file(file_text, alias.to_str().expect("utf-8 alias")),
+                "{} should resolve to the source",
+                alias.display()
+            );
+            assert!(
+                paths_refer_to_same_file(alias.to_str().expect("utf-8 alias"), file_text),
+                "the comparison should be symmetric"
+            );
+        }
+        let _ = std::fs::remove_dir_all(directory);
     }
 }

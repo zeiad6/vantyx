@@ -46,6 +46,12 @@ jobs:
       - name: Fuzzer self-tests
         run: python3 tools/test_differential_fuzz.py
 
+      - name: Validate agent skills
+        run: >-
+          python3
+          .opencode/skills/engineering-skill-orchestration/scripts/validate_skills.py
+          --root .opencode/skills
+
       - name: Differential fuzz
         env:
           VANTYX_CC: clang

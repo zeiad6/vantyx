@@ -338,6 +338,12 @@ impl ToolRegistry {
             }
         }
         let spec = registered.tool.spec();
+        schema::check_schema(&spec.parameters).map_err(|error| {
+            ToolError::new(
+                AI_E_SCHEMA,
+                format!("tool `{name}` has an invalid parameter schema: {error}"),
+            )
+        })?;
         schema::validate(&spec.parameters, arguments)
             .map_err(|error| ToolError::new(AI_E_SCHEMA, error.to_string()))?;
         let result = registered.tool.call(arguments, context)?;
@@ -502,6 +508,46 @@ mod tests {
             approved,
             deadline: None,
         }
+    }
+
+    struct InvalidSchemaTool;
+
+    impl Tool for InvalidSchemaTool {
+        fn spec(&self) -> ToolSpec {
+            ToolSpec {
+                name: "invalid".into(),
+                description: "A tool whose declared schema is malformed.".into(),
+                parameters: Json::object([("allOf", Json::Array(Vec::new()))]),
+            }
+        }
+
+        fn required_capabilities(&self) -> Vec<Capability> {
+            Vec::new()
+        }
+
+        fn call(&self, _arguments: &Json, _context: &ToolContext<'_>) -> Result<Json, ToolError> {
+            panic!("a tool with an invalid schema must never run");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_tool_schemas_before_running() {
+        let mut registry = ToolRegistry::new();
+        registry
+            .register(Box::new(InvalidSchemaTool), ToolPolicy::auto(1))
+            .unwrap();
+        let capabilities = CapabilitySet::new();
+        let approved = [];
+        let ctx = context(&capabilities, &approved);
+        let error = registry
+            .call("invalid", &Json::Object(Vec::new()), &ctx)
+            .unwrap_err();
+        assert_eq!(error.code, AI_E_SCHEMA);
+        assert!(
+            error.message.contains("invalid parameter schema"),
+            "{error}"
+        );
+        assert_eq!(registry.calls("invalid"), 0);
     }
 
     #[test]

@@ -77,8 +77,35 @@ run end-to-end; security tests cover denied capabilities and redaction.
       no server or model is installed in this environment.
 - [ ] Ollama native adapter and model discovery beyond the compatible endpoint.
 - [ ] Config file and keyring adapter (environment variables only today).
-- [ ] `vantyx ai info`, `pull`, and `remove` with integrity and license display;
+- [x] `vantyx ai inspect <file>` for local GGUF v2/v3 and Safetensors headers:
+      tensor/parameter counts, architecture and quantization metadata, tensor
+      range validation, dtype histogram, and streaming SHA-256 provenance; no
+      weight loading, model execution, or network access.
+- [x] Safetensors shard-index aggregation: `inspect` validates a
+      `*.safetensors.index.json` weight map against every referenced shard
+      header, rejects missing, extra, duplicate, escaping, or non-Safetensors
+      shards, and reports aggregate counts, dtypes, per-shard digests, and a
+      `total_size` warning when the index metadata disagrees.
+- [x] `vantyx ai dataset <file>` for JSONL validation: one top-level object per
+      non-blank line, BOM/CRLF tolerance, 256 MiB file and 16 MiB line caps,
+      sorted field/type histograms, numbered invalid lines, and streamed
+      SHA-256 provenance.
+- [x] Optional `--schema <file>` validation against the supported JSON Schema
+      subset, with a 16 MiB schema cap, a shape preflight, numbered violations,
+      and exit `1` for schema-invalid records; no full JSON Schema.
+- [x] Deterministic train/held-out splits: `vantyx ai split` assigns records
+      by a seeded content hash, validates first, never overwrites, and reports
+      actual counts and output digests.
+- [x] Exact duplicate-record removal: `vantyx ai dedup` validates first, keeps
+      the first occurrence in input order, uses a domain-separated SHA-256
+      digest, never overwrites, caps the in-memory digest set at 1,000,000
+      distinct records, and reports input/output provenance. Canonical JSON
+      identity, near-duplicate detection, and tokenizer-aware counts remain
+      future work.
+- [ ] `vantyx ai pull` and `remove` with integrity and license display;
       downloads remain out of scope until checksums and provenance exist.
+      `inspect` now provides the offline provenance primitive those commands
+      need.
 - [x] Live tests, opt-in and documented (`tools/live_ai_check.py`); no keys
       in CI.
 

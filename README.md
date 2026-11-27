@@ -294,7 +294,7 @@ so `.bashrc` has no extension. See
 | --- | --- |
 | Interpreter | Complete for the v0.1 language; the semantic oracle |
 | Native backend | Statically typed subset; typed IR, GNU C11 output, libc/libm only |
-| Native support | Scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key hash index, structs, enums, nested payload patterns, top-level or-patterns, integer range patterns, guarded `match`, imported declarations |
+| Native support | Scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key hash index, structs, enums, nested payload patterns, top-level or-patterns, integer range patterns, guarded `match`, `range(...)` values, imported declarations |
 | Native boundaries | `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads, and `match` on `Any` are rejected with `E0401` |
 | Pattern matching | Variant, wildcard, integer, string, and boolean patterns; nested payload patterns with recursive exhaustiveness; top-level or-patterns with consistent bindings; integer ranges with half-open and inclusive bounds; `Bool`-checked guards |
 | Modules | `import` and `from ... import`; flat namespace, entry-directory confinement |
@@ -374,6 +374,19 @@ executes a model, and remote HTTPS requires explicit opt-in.
   --query "hybrid retrieval" --diverse --top-k 5 --json
 ./target/release/vantyx ai eval --index /tmp/vtx-index.json \
   --fixture examples/ai/retrieval-eval.json --mode lexical --top-k 5 --json
+
+# Offline model and dataset provenance (no download, no weight loading)
+./target/release/vantyx ai inspect model.gguf --json
+./target/release/vantyx ai inspect model.safetensors.index.json --metadata
+./target/release/vantyx ai dataset examples/ai/train.jsonl --json
+./target/release/vantyx ai dataset examples/ai/train.jsonl \
+  --schema examples/ai/train.schema.json
+# Deterministic train/held-out split (never overwrites existing files)
+./target/release/vantyx ai split examples/ai/train.jsonl \
+  --out-dir /tmp/vtx-splits --train-ratio 0.9 --seed 7 --json
+# Remove exact duplicate records, keeping the first occurrence
+./target/release/vantyx ai dedup examples/ai/train.jsonl \
+  --out /tmp/vtx-train.unique.jsonl --json
 
 # Any local OpenAI-compatible server (Ollama, llama.cpp, LM Studio, ...)
 ./target/release/vantyx ai models --endpoint http://127.0.0.1:11434/v1

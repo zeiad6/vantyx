@@ -22,6 +22,7 @@ pub const AI_E_PROVIDER: &str = "AI_E_PROVIDER";
 pub const AI_E_RESPONSE_TOO_LARGE: &str = "AI_E_RESPONSE_TOO_LARGE";
 pub const AI_E_CANCELLED: &str = "AI_E_CANCELLED";
 pub const AI_E_IO: &str = "AI_E_IO";
+pub const AI_E_FORMAT: &str = "AI_E_FORMAT";
 
 /// Hard limits for one embedding request. They are conservative request
 /// guards, not model-specific limits.

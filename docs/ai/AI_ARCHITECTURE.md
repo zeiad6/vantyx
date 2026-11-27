@@ -1,7 +1,7 @@
 # AI Architecture
 
-Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented and the cloud path verified live on 2026-11-24 (local-model verification still blocked); AI-3 structured output and streamed text chat complete (streaming tool calls and cancellation pending); AI-4 host-side embeddings and retrieval complete (a cloud embedding model was exercised on 2026-11-24; local embedding models pending)
-Date: 2026-11-24
+Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented and the cloud path verified live on 2026-11-24 (local-model verification still blocked); AI-3 structured output and streamed text chat complete (streaming tool calls and cancellation pending); AI-4 host-side embeddings and retrieval complete (a cloud embedding model was exercised on 2026-11-24; local embedding models pending); offline GGUF/Safetensors inspection and Safetensors shard-index aggregation with SHA-256 provenance implemented (no weight loading); bounded JSONL dataset validation with optional schema validation, field/type summaries, and streamed SHA-256 implemented; deterministic train/held-out dataset splitting and exact duplicate-record removal implemented
+Date: 2026-11-26
 Related: `AI_RESEARCH.md`, `AI_SECURITY.md`, `AI_ROADMAP.md`, ADR-0007,
 ADR-0014, ADR-0015, ADR-0017, ADR-0018, ADR-0024, ADR-0025
 
@@ -40,7 +40,8 @@ Rust API while language-level integration remains blocked.
 │ Host API: src/ai/                                           │
 │   provider · json · sse · tokens · embedding · bm25         │
 │   embedding_provider · tools · agent · budget · metrics     │
-│   config                                                    │
+│   config · model (GGUF/Safetensors inspection + SHA-256)    │
+│   dataset (bounded JSONL validation + SHA-256 + splits)      │
 ├─────────────────────────────────────────────────────────────┤
 │ Transport boundary                                          │
 │   std::net for loopback HTTP · curl for HTTPS (opt-in)      │
@@ -64,6 +65,8 @@ Rust API while language-level integration remains blocked.
 | `ai/http.rs` | Bounded HTTP transport (loopback std, HTTPS via curl) | Follow arbitrary redirects or exceed limits |
 | `ai/sse.rs` | Incremental server-sent-events parser | Buffer without bound |
 | `ai/tokens.rs` | Labelled token estimate and budget checks | Claim exact model tokenization |
+| `ai/model.rs` | Bounded GGUF/Safetensors header inspection, Safetensors shard-index aggregation, tensor-range validation, streaming SHA-256 | Load weights, execute model code, or download anything |
+| `ai/dataset.rs` | Bounded JSONL validation, optional schema validation, top-level field/type summaries, numbered invalid lines, streaming SHA-256, deterministic train/held-out splits, exact duplicate-record removal | Tokenize, shuffle, canonicalize, or modify datasets |
 | `ai/extract.rs` | Strict JSON extraction, schema validation, bounded repair, usage accounting | Return unvalidated model output or exceed the repair limit |
 | `ai/embedding.rs` | Vector math, normalization, in-memory index | Hide O(n) search cost |
 | `ai/bm25.rs` | Deterministic lexical retrieval | Claim semantic retrieval |
@@ -165,6 +168,105 @@ validation, or fail with a clear error. It must not claim constrained decoding.
    without printing secrets.
 
 The same boundary supports LM Studio and any OpenAI-compatible server.
+
+## Local model inspection path
+
+`vantyx ai inspect` is deliberately independent of any inference server. It
+reads the file, validates the header and tensor directory, and streams the
+bytes through SHA-256:
+
+```text
+path
+  → format detection (GGUF magic, Safetensors length + JSON, or shard index)
+  → bounded metadata and tensor-directory parse
+  → tensor-range, block-size, dtype, and overlap validation
+  → for an index: bounded weight-map parse, lexical and canonical path checks,
+    per-shard validation, and index/header tensor-name cross-checks
+  → streaming SHA-256 over the whole file (and every shard)
+  → text or --json summary
+```
+
+It never loads tensor payloads, executes model code, or accesses the network.
+GGUF versions 2 and 3, Safetensors, and Safetensors shard indexes are supported.
+The digest is suitable for recording next to prompts, evaluation fixtures, and
+RAG indexes; an index summary includes each shard digest. Model
+download/pull/remove, weight loading, conversion, quantization, and inference
+remain separate capabilities with their own integrity and license requirements.
+See [MODEL_INSPECTION.md](MODEL_INSPECTION.md),
+[ADR-0041](../decisions/ADR-0041-offline-model-inspection.md), and
+[ADR-0042](../decisions/ADR-0042-safetensors-shard-index-aggregation.md).
+
+## Dataset inspection path
+
+`vantyx ai dataset <file>` validates the JSONL corpora that feed retrieval,
+evaluation, and future training without loading the file into memory:
+
+```text
+path
+  → regular-file check and 256 MiB cap
+  → optional schema read, 16 MiB cap, parse, and supported-keyword preflight
+  → line-by-line read with a 16 MiB line cap
+  → strip first-line BOM and CR/LF; ignore blank lines
+  → parse one JSON object per non-blank line
+  → validate each object against the schema when supplied
+  → count records, top-level fields, and JSON types; number invalid lines
+  → stream every byte through SHA-256
+  → text or --json summary
+```
+
+Invalid content or an I/O failure exits `1`; usage errors exit `64`. The
+command never executes dataset content, contacts a provider, or modifies the
+file. It does not tokenize, shuffle, or implement full JSON Schema; use
+`vantyx ai dedup` to remove exact duplicate records. Schema validation covers
+the supported subset used by `vantyx ai extract`. See
+[DATASET_INSPECTION.md](DATASET_INSPECTION.md) and
+[ADR-0043](../decisions/ADR-0043-bounded-jsonl-dataset-inspection.md), plus
+[ADR-0044](../decisions/ADR-0044-bounded-dataset-schema-validation.md) for
+schema validation.
+
+## Dataset splitting path
+
+`vantyx ai split <file> --out-dir <dir>` runs the same inspection gate, then
+writes deterministic train and held-out files:
+
+```text
+inspect the input and, when supplied, the schema
+  → reject invalid lines or schema-invalid records before creating outputs
+  → scan once: validate, hash each record with the seed, count, pick fallback
+  → create both outputs with create_new (never overwrite)
+  → scan again: revalidate and write records assigned by the hash threshold
+  → remove both files if any read, validation, or write fails
+  → text or --json report with actual counts and output SHA-256 values
+```
+
+The per-record hash makes assignment independent of line order, and constant
+memory keeps the 256 MiB dataset cap meaningful. Identical records always share
+a split, but duplicates are not removed. A dataset with at least two records
+always produces two non-empty files; one record is moved deterministically and
+the report says so. See [DATASET_SPLITTING.md](DATASET_SPLITTING.md) and
+[ADR-0046](../decisions/ADR-0046-deterministic-dataset-splits.md).
+
+## Dataset deduplication path
+
+`vantyx ai dedup <file> --out <file>` runs the same inspection gate, then keeps
+the first occurrence of each exact record:
+
+```text
+inspect the input and, when supplied, the schema
+  → reject invalid lines or schema-invalid records before creating output
+  → scan once: validate, digest each record, count unique records, hash input
+  → create the output with create_new (never overwrite or replace the input)
+  → scan again: revalidate and write the first occurrence of each digest
+  → remove the output if any read, validation, write, or count check fails
+  → text or --json report with input/output SHA-256 values and counts
+```
+
+Record identity is the exact normalized bytes (BOM, CRLF, and line terminator
+excluded), so JSON key order, whitespace, escapes, and numeric spelling are not
+canonicalized. The digest set is capped at 1,000,000 distinct records; the
+input itself is streamed and remains under the 256 MiB cap. See
+[DATASET_DEDUPLICATION.md](DATASET_DEDUPLICATION.md) and
+[ADR-0047](../decisions/ADR-0047-exact-dataset-deduplication.md).
 
 ## Cloud path
 

@@ -10,6 +10,7 @@
 //! - `L0002`: a `var` binding is read but never reassigned; `let` would do.
 //! - `L0003`: a statement follows `return`, `break`, or `continue` in the same
 //!   block.
+//! - `L0004`: a function parameter is never read.
 
 use crate::ast::{
     Block, Expr, ExprKind, FnDecl, Item, MatchArm, MatchArmBody, Pattern, PatternArg, Program,
@@ -40,6 +41,7 @@ struct Binding {
     read: bool,
     written: bool,
     tracked: bool,
+    parameter: bool,
 }
 
 #[derive(Default)]
@@ -79,7 +81,7 @@ impl Linter {
                 ..
             }) = item
             {
-                self.declare(name, *name_span, *mutable, true);
+                self.declare(name, *name_span, *mutable, true, false);
             }
         }
         for item in &program.items {
@@ -104,7 +106,7 @@ impl Linter {
         self.scopes.push(Scope::default());
     }
 
-    fn declare(&mut self, name: &str, span: Span, mutable: bool, tracked: bool) {
+    fn declare(&mut self, name: &str, span: Span, mutable: bool, tracked: bool, parameter: bool) {
         if name == "_" {
             return;
         }
@@ -126,6 +128,7 @@ impl Linter {
             read: false,
             written: false,
             tracked,
+            parameter,
         });
         scope.names.insert(name.to_string(), index);
         scope.declared.push(index);
@@ -159,18 +162,26 @@ impl Linter {
             if !binding.tracked {
                 continue;
             }
-            let (name, span, mutable, read, written) = (
+            let (name, span, mutable, read, written, parameter) = (
                 binding.name.clone(),
                 binding.span,
                 binding.mutable,
                 binding.read,
                 binding.written,
+                binding.parameter,
             );
             if !read {
-                self.diagnostics.push(
-                    Diagnostic::warning("L0001", format!("unused binding `{name}`"), span)
-                        .with_help("remove it or prefix the name with `_`"),
-                );
+                if parameter {
+                    self.diagnostics.push(
+                        Diagnostic::warning("L0004", format!("unused parameter `{name}`"), span)
+                            .with_help("remove it or prefix the name with `_`"),
+                    );
+                } else {
+                    self.diagnostics.push(
+                        Diagnostic::warning("L0001", format!("unused binding `{name}`"), span)
+                            .with_help("remove it or prefix the name with `_`"),
+                    );
+                }
             } else if mutable && !written {
                 self.diagnostics.push(
                     Diagnostic::warning(
@@ -187,9 +198,10 @@ impl Linter {
     fn function(&mut self, function: &FnDecl) {
         self.push_scope();
         for parameter in &function.params {
-            // Unused parameters are intentionally not reported in this first
-            // lint pass; they still participate in name resolution.
-            self.declare(&parameter.name, parameter.name_span, false, false);
+            // Parameters are reported as `L0004` when unused, distinct from
+            // unused locals so callers can tell an interface gap from a dead
+            // binding. A leading underscore still marks intent.
+            self.declare(&parameter.name, parameter.name_span, false, true, true);
         }
         self.block(&function.body);
         self.pop_scope();
@@ -225,7 +237,7 @@ impl Linter {
             } => {
                 // The initializer is evaluated before the binding enters scope.
                 self.expr(init);
-                self.declare(name, *name_span, *mutable, true);
+                self.declare(name, *name_span, *mutable, true, false);
             }
             StmtKind::Assign { target, op, value } => {
                 self.assign_target(target, op.is_some());
@@ -261,7 +273,7 @@ impl Linter {
                 self.expr(iter);
                 self.push_scope();
                 // Loop variables are intentionally not reported in this pass.
-                self.declare(name, *name_span, false, false);
+                self.declare(name, *name_span, false, false, false);
                 self.block(body);
                 self.pop_scope();
             }
@@ -381,7 +393,7 @@ impl Linter {
             PatternArg::Bind { name, name_span } => {
                 // Unused match bindings are intentionally not reported in this
                 // first lint pass; they still participate in name resolution.
-                self.declare(name, *name_span, false, false);
+                self.declare(name, *name_span, false, false, false);
             }
             PatternArg::Wildcard { .. } => {}
             PatternArg::Nested { pattern, .. } => self.pattern(pattern),
@@ -543,11 +555,57 @@ mod tests {
     }
 
     #[test]
-    fn parameters_are_not_reported() {
+    fn used_parameter_is_clean() {
         assert!(lint_codes(
             "fn identity(value: Int) -> Int:\n    return value\n\nfn main():\n    print(identity(1))\n"
         )
         .is_empty());
+    }
+
+    #[test]
+    fn unused_parameter_is_reported_once() {
+        assert_eq!(
+            lint_codes(
+                "fn constant(value: Int) -> Int:\n    return 1\n\nfn main():\n    print(constant(1))\n"
+            ),
+            vec!["L0004"]
+        );
+    }
+
+    #[test]
+    fn unused_parameter_in_void_function_is_reported() {
+        assert_eq!(
+            lint_codes(
+                "fn log(message: Str):\n    print(\"fixed\")\n\nfn main():\n    log(\"x\")\n"
+            ),
+            vec!["L0004"]
+        );
+    }
+
+    #[test]
+    fn underscore_parameter_is_ignored() {
+        assert!(lint_codes(
+            "fn constant(_value: Int) -> Int:\n    return 1\n\nfn main():\n    print(constant(1))\n"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn parameter_read_in_a_nested_block_is_clean() {
+        assert!(lint_codes(
+            "fn choose(flag: Bool, value: Int) -> Int:\n    if flag:\n        return value\n    return 0\n\nfn main():\n    print(choose(true, 1))\n"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn unused_parameter_and_unused_local_are_distinct() {
+        assert_eq!(
+            lint_codes(
+                "fn f(value: Int) -> Int:\n    let unused = 2\n    return 1\n\nfn main():\n    print(f(1))\n"
+            ),
+            vec!["L0004", "L0001"]
+        );
     }
 
     #[test]

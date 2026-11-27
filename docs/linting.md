@@ -32,8 +32,9 @@ reported if nothing else reads it. A plain assignment (`value = 1`) is a write,
 not a read. A compound assignment (`value += 1`) reads and writes.
 
 Bindings whose names start with `_` are treated as intentionally unused.
-Parameters, loop variables, and `match` payload bindings are not reported in
-this first lint pass.
+Loop variables and `match` payload bindings are not reported in this first lint
+pass. An unused function parameter is reported as `L0004` instead, so a dead
+local and a dead interface parameter are distinguishable.
 
 ### `L0002` — `var` never reassigned
 
@@ -65,6 +66,21 @@ not linted further. A statement after an `if` or `match` whose branches all
 terminate is not reported; the pass deliberately avoids full control-flow
 analysis.
 
+### `L0004` — unused parameter
+
+A function parameter is never read. The parameter still participates in name
+resolution and keeps its position in the signature.
+
+```vtx
+fn constant(value: Int) -> Int: # L0004
+    return 1
+```
+
+A parameter named with a leading underscore (`_value`) is treated as
+intentionally unused. Reading the parameter anywhere in the function, including
+a guard, a nested block, or a match arm block, suppresses the warning. Because
+parameters are immutable, `L0002` never applies to them.
+
 ## Scope and limits
 
 - The pass is conservative: when reachability or a read is ambiguous, it stays
@@ -75,6 +91,9 @@ analysis.
   machine-readable output, or automatic fixes yet.
 - `L0003` does not perform interprocedural analysis and does not report
   unreachable code after an all-terminating `if`/`match`.
+- `L0004` is purely lexical: any read suppresses it, including passing the
+  parameter to another call. There is no interface or trait system yet, so no
+  conformance reason to keep an unread name is recognized.
 - The formatter remains future work. The current lexer discards comments, so a
   formatter needs a separate design that preserves them.
 

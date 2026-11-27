@@ -8,7 +8,7 @@ use crate::ast::*;
 use crate::checker::{Entry, FnSig, SemanticModel, is_builtin};
 use crate::span::Span;
 use crate::types::{Type, VariantInfo, resolve_type_expr};
-use crate::value::{FieldSlot, Value, map_get, map_insert};
+use crate::value::{FieldSlot, Value, format_float, map_get, map_insert};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::rc::Rc;
@@ -17,6 +17,34 @@ pub const MAX_CALL_DEPTH: usize = 256;
 pub const MAX_EVAL_DEPTH: usize = 1024;
 pub const MAX_RANGE_LEN: usize = 10_000_000;
 pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// IEEE-754 minimum with an explicit, optimization-independent tie rule.
+///
+/// Vantyx follows Rust's documented `f64::min` contract: when the operands
+/// compare equal (notably `-0.0` and `0.0`), the second operand is returned,
+/// and a single NaN operand yields the other operand. Spelling the rule out
+/// here keeps interpreter results stable across optimization levels; the C
+/// `fmin`/`fmax` helpers in the native backend return the first operand on
+/// ties and would otherwise diverge.
+fn float_min(left: f64, right: f64) -> f64 {
+    if right.is_nan() {
+        return left;
+    }
+    if left.is_nan() {
+        return right;
+    }
+    if left < right { left } else { right }
+}
+
+fn float_max(left: f64, right: f64) -> f64 {
+    if right.is_nan() {
+        return left;
+    }
+    if left.is_nan() {
+        return right;
+    }
+    if left > right { left } else { right }
+}
 
 /// Unicode `White_Space` code points, shared by `trim` in both engines.
 fn is_text_whitespace(c: char) -> bool {
@@ -249,6 +277,10 @@ struct Interpreter<'a> {
     fn_bodies: HashMap<String, &'a FnDecl>,
     out: &'a mut (dyn Write + Send),
     scopes: Vec<HashMap<String, Slot>>,
+    /// Index of the first scope belonging to the active function call. Name
+    /// lookup searches scopes from this boundary onward and then the program's
+    /// root scope, so a function never observes a caller's locals.
+    frame_base: usize,
     call_stack: Vec<StackFrame>,
     call_depth: usize,
     eval_depth: usize,
@@ -273,6 +305,7 @@ impl<'a> Interpreter<'a> {
             fn_bodies,
             out,
             scopes: Vec::new(),
+            frame_base: 0,
             call_stack: Vec::new(),
             call_depth: 0,
             eval_depth: 0,
@@ -415,13 +448,35 @@ impl<'a> Interpreter<'a> {
     // ---- scopes ----
 
     fn lookup(&self, name: &str) -> Option<&Slot> {
-        self.scopes.iter().rev().find_map(|scope| scope.get(name))
+        if let Some(slot) = self.scopes[self.frame_base..]
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name))
+        {
+            return Some(slot);
+        }
+        if self.frame_base > 0 {
+            return self.scopes.first().and_then(|scope| scope.get(name));
+        }
+        None
     }
 
     fn find_scope(&self, name: &str) -> Option<usize> {
-        self.scopes
+        if let Some(offset) = self.scopes[self.frame_base..]
             .iter()
             .rposition(|scope| scope.contains_key(name))
+        {
+            return Some(self.frame_base + offset);
+        }
+        if self.frame_base > 0
+            && self
+                .scopes
+                .first()
+                .is_some_and(|scope| scope.contains_key(name))
+        {
+            return Some(0);
+        }
+        None
     }
 
     fn bind(
@@ -1643,9 +1698,12 @@ impl<'a> Interpreter<'a> {
             function: sig.name.clone(),
             span: call_span,
         });
+        let previous_frame_base = self.frame_base;
+        self.frame_base = self.scopes.len();
         self.scopes.push(HashMap::new());
         let result = self.invoke_function(body, sig, args);
         self.scopes.pop();
+        self.frame_base = previous_frame_base;
         self.call_stack.pop();
         self.call_depth -= 1;
         result
@@ -2166,7 +2224,10 @@ impl<'a> Interpreter<'a> {
                         {
                             return Err(self.rt(
                                 "R0007",
-                                format!("cannot convert `{number}` to Int exactly"),
+                                format!(
+                                    "cannot convert `{}` to Int exactly",
+                                    format_float(*number)
+                                ),
                                 span,
                             ));
                         }
@@ -2237,9 +2298,9 @@ impl<'a> Interpreter<'a> {
                         (*a).max(*b)
                     })),
                     (Value::Float(a), Value::Float(b)) => Ok(Value::Float(if name == "min" {
-                        (*a).min(*b)
+                        float_min(*a, *b)
                     } else {
-                        (*a).max(*b)
+                        float_max(*a, *b)
                     })),
                     (a, b) => Err(self.rt(
                         "R0005",
@@ -2657,6 +2718,15 @@ impl<'a> Interpreter<'a> {
                     return Err(self.rt(
                         "R0015",
                         format!("cannot copy file `{source}`: not a regular file"),
+                        span,
+                    ));
+                }
+                if crate::fs_safety::paths_refer_to_same_file(source, target) {
+                    return Err(self.rt(
+                        "R0015",
+                        format!(
+                            "cannot copy file `{source}` to `{target}`: source and target are the same file"
+                        ),
                         span,
                     ));
                 }

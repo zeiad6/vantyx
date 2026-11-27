@@ -17,6 +17,7 @@ pub mod agent;
 pub mod bm25;
 pub mod budget;
 pub mod config;
+pub mod dataset;
 pub mod embedding;
 pub mod embedding_provider;
 pub mod extract;
@@ -24,6 +25,7 @@ pub mod http;
 pub mod json;
 pub mod metrics;
 pub mod mock;
+pub mod model;
 pub mod openai;
 pub mod provider;
 pub mod rag;
@@ -37,6 +39,13 @@ pub use agent::{Agent, AgentConfig, AgentResult};
 pub use bm25::{Bm25Hit, Bm25Index};
 pub use budget::Budget;
 pub use config::AiConfig;
+pub use dataset::{
+    DEFAULT_TRAIN_RATIO, DatasetSummary, DedupSummary, FieldSummary, InvalidLine, SchemaSummary,
+    SchemaViolation, SplitPart, SplitSummary, TypeCount, deduplicate as deduplicate_dataset,
+    deduplicate_with_schema as deduplicate_dataset_with_schema, inspect as inspect_dataset,
+    inspect_with_schema as inspect_dataset_with_schema, split as split_dataset,
+    split_with_schema as split_dataset_with_schema,
+};
 pub use embedding::{SearchHit, Vector, VectorEntry, VectorIndex};
 pub use embedding_provider::{
     CachingEmbeddingProvider, DEFAULT_CACHE_BYTES, DEFAULT_CACHE_ENTRIES, DEFAULT_HASH_DIMENSIONS,
@@ -50,6 +59,9 @@ pub use http::{
 pub use json::{Json, JsonNumber, parse};
 pub use metrics::{MetricEvent, MetricsSink};
 pub use mock::{EchoProvider, MockProvider};
+pub use model::{
+    ModelFormat, ModelSummary, Sha256, ShardSummary, TensorTypeSummary, inspect as inspect_model,
+};
 pub use openai::OpenAiProvider;
 pub use provider::{
     AiError, ChatRequest, ChatResponse, ContentPart, EmbeddingRequest, EmbeddingResponse,

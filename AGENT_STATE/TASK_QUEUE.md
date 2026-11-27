@@ -4,23 +4,105 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-077 — Finish the 200-iteration fuzzer runs on seeds 3, 500, and 1000,
-  commit the tenth shape and bounded shrinker, watch CI, and record the run ID.
-  T-076 is committed in `de0bac7` with CI run 45504177763 green.
+- T-100 — Exact JSONL duplicate-record removal. VERIFIED locally; commit,
+  push, and CI pending. `vantyx ai dedup` keeps the first exact record in
+  input order, validates first, refuses overwrites and same-input output,
+  removes failed output, caps the digest set at 1,000,000 distinct records,
+  and reports input/output provenance. Four unit tests and two CLI tests;
+  707-test gate.
+- T-099 — Native `range(...)` list values outside `for` loops. VERIFIED
+  locally; commit, push, and CI pending. The IR now lowers 1–3 `Int` bounds to
+  `List[Int]`, and codegen builds a typed `int64_t` list with the shared range
+  count/limit checks and source-order argument evaluation. One differential
+  test and two value-position error headlines; 701-test gate.
+- T-098 — Deterministic train/held-out dataset splits. VERIFIED locally;
+  commit, push, and CI pending. `vantyx ai split` validates first, assigns by a
+  seeded content hash, refuses overwrites, guarantees non-empty splits, and
+  reports actual counts and output digests. Five unit tests and two CLI tests;
+  700-test gate.
+- T-097 — Filesystem OS-error suffix and glob parse diagnostics. VERIFIED
+  locally; commit, push, and CI pending. Native filesystem failures now append
+  Rust's `(os error N)` suffix, and malformed glob patterns use the shared
+  parser's wording and quote range endpoints. `diff3.py` 44/44; 693-test gate.
+- T-096 — Runtime diagnostic parity. VERIFIED locally; commit, push, and CI
+  pending. Both engines now agree on the first `error[...]` line for
+  `int(Float)` (including `Infinity`/`NaN` and the `2^63` boundary), missing
+  `Str` map keys, `range` limits, and `read_file`/`list_dir`/`glob` failures.
+  Two differential tests compare the headline; 693-test gate.
+- T-095 — JSON Schema conformance and shared preflight. VERIFIED locally;
+  commit, push, and CI pending. `required` is ignored for non-objects; empty
+  `enum`/`allOf` fail preflight; `anyOf` and sibling keywords evaluate
+  cumulatively; `const`/`enum` use JSON Schema instance equality; numeric
+  bounds compare exactly beyond `2^53`; `extract` and `ToolRegistry::call`
+  preflight schemas. Thirteen `ai::schema` tests, one extract integration test,
+  one tools unit test, ADR-0045, 691-test gate.
+- T-094 — Dataset schema validation. VERIFIED locally; commit, push, and CI
+  pending. `vantyx ai dataset --schema <file>` preflights a bounded schema and
+  validates every structurally valid record, reporting the first 20 violations
+  and the total; 10 dataset unit tests, 3 dataset CLI tests, ADR-0044.
+- T-093 — Reusable agent skill library. VERIFIED locally; commit, push, and CI
+  pending. Twelve project-local OpenCode skills live under `.opencode/skills/`
+  with `name`/`description` frontmatter and a Vantyx-specific workflow,
+  commands, safety rules, acceptance criteria, troubleshooting, and example;
+  `docs/AGENT_SKILLS.md` is the inventory. The harness advertised all twelve
+  after creation. Skills are instructions, not enforcement, and there is no CI
+  frontmatter/section check yet.
+- T-092 — Bounded JSONL dataset inspection. VERIFIED locally; commit, push, and
+  CI pending. `vantyx ai dataset <file>` streams UTF-8 JSONL through SHA-256,
+  accepts BOM/CRLF/blank lines, requires one top-level object per non-blank
+  line, and reports size, line/blank/record/invalid counts, sorted field/type
+  histograms, and up to 20 numbered invalid lines. Caps: 256 MiB file, 16 MiB
+  line, 10,000 distinct top-level fields. Invalid content or I/O exits `1`;
+  usage exits `64`. No tokenization, splits, deduplication, or schema checks.
+- T-091 — Safetensors shard-index aggregation. VERIFIED locally; commit, push,
+  and CI pending. `vantyx ai inspect <model.safetensors.index.json>` parses a
+  bounded weight map, validates every referenced shard with the T-090
+  Safetensors path, cross-checks index tensor names against each shard header,
+  rejects missing, extra, duplicate, escaping, absolute, backslash,
+  wrong-extension, and non-Safetensors shards, aggregates counts and dtypes,
+  reports index and per-shard digests, and warns when `metadata.total_size`
+  disagrees. T-090 added single-file GGUF/Safetensors inspection, T-089 added
+  same-file `copy_file` refusal in both engines, and T-078 through T-088 remain
+  verified locally in the same working tree. T-077 is committed in `1aba7ba`
+  with CI run 45507195701 green.
 
 ## Ready
 
+- Dataset tooling follow-ups — deterministic train/held-out splits,
+  tokenizer-aware counts, and duplicate detection. Schema/required-field
+  validation shipped in T-094; deduplication, shuffle, and training remain
+  separate bounded tasks.
+- Skill maintenance — add a lightweight frontmatter/required-section check and
+  keep `docs/AGENT_SKILLS.md` synchronized when a skill is added or changed.
+- Offline model tooling follow-ups — optional checksum comparison for future
+  pull/remove and clearer provenance output. Downloads, weight loading,
+  conversion, and quantization remain separate tasks with their own integrity
+  and license gates.
+- Targeted native-runtime and display probes — Continue probing string,
+  collection, recursion-depth, output-error, path, formatting, constant-result
+  lowerings, rejected-argument evaluation, and cross-compiler evaluation-order
+  edge cases against the interpreter and add each mismatch to the fuzzer. T-078
+  through T-084, T-086, and T-087 were all found this way. The path probe now
+  covers 2,514 paths (2,500 random plus 14 fixed), and evaluation-order, map,
+  integer, range, float, string, error, glob, top-level-order, and control-flow
+  probes showed no divergence.
+- Native C evaluation-order audit — Whenever lowering emits a multi-argument C
+  call or can render a constant result, bind observable operands explicitly and
+  test effectful operands under both clang and GCC. T-081 and T-082 fixed the
+  last known direct cases.
 - Differential-fuzzer follow-ups — Optional sanitizer runs and coverage
   measurement. The bounded line-oriented shrinker shipped in T-077. Add each
   only with a bounded, reproducible contract.
 - T-019b — Comment-preserving formatter. The lexer discards comments today, so
   this needs a lossless syntax representation and a separate ADR before code.
-- Linter follow-ups — Suppression/configuration, unused parameters and loop
-  variables, all-terminating `if`/`match` reachability, and a deny mode. Add
+- Linter follow-ups — Suppression/configuration, loop-variable and match-binding
+  coverage, all-terminating `if`/`match` reachability, and a deny mode. Add
   each only with a stable contract and tests.
 - T-070/T-071 follow-up — Consider replacing GNU statement expressions with a
   statement prelude only if benchmarks and review justify the larger codegen
   change; do not start without evidence.
+- Metadata objects/preservation, recursive move, REPL multi-line history and
+  field completion, and string performance remain open P1/P2 candidates.
 
 ## Blocked
 

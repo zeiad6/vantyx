@@ -150,6 +150,14 @@ pub enum IrStmtKind {
         ty: IrType,
         init: IrExpr,
     },
+    /// Initializes a file-scope global when its declaration statement runs.
+    /// This is the only statement allowed to write an uninitialized global;
+    /// an ordinary `Assign` to `IrPlace::Global` must fail with `R0009` until
+    /// this statement has executed, matching the interpreter.
+    GlobalInit {
+        name: String,
+        value: IrExpr,
+    },
     /// Evaluates a result-enum operand. When the failure variant is present,
     /// the enclosing function returns it unchanged; otherwise the success
     /// payload is bound to `bind` (when requested).
@@ -262,7 +270,12 @@ pub enum IrExprKind {
     },
     Construct {
         name: String,
+        /// Arguments in constructor declaration order.
         args: Vec<IrExpr>,
+        /// Source evaluation order as indices into `args`. Named constructor
+        /// arguments may be written in any order, but they must still be
+        /// evaluated left to right as written.
+        eval_order: Vec<usize>,
     },
     ConstructVariant {
         enum_name: String,
@@ -864,11 +877,13 @@ impl<'a> Builder<'a> {
                     None => init.ty.clone(),
                 };
                 if top_level && self.local_scopes.is_empty() {
-                    // Top-level bindings are file-scope globals.
+                    // Top-level bindings are file-scope globals. Their
+                    // declaration is the only write allowed before the global
+                    // is initialized.
                     self.declare_global_use(name);
                     prelude.push(IrStmt {
-                        kind: IrStmtKind::Assign {
-                            target: IrPlace::Global(name.clone()),
+                        kind: IrStmtKind::GlobalInit {
+                            name: name.clone(),
                             value: init,
                         },
                         span: stmt.span,
@@ -2305,8 +2320,9 @@ impl<'a> Builder<'a> {
             ));
         }
         let mut lowered = Vec::with_capacity(info.fields.len());
-        if all_named && !args.is_empty() {
+        let eval_order = if all_named && !args.is_empty() {
             let mut provided: HashMap<String, IrExpr> = HashMap::new();
+            let mut source_order: Vec<String> = Vec::with_capacity(args.len());
             for arg in args {
                 let Some((field_name, field_span)) = &arg.name else {
                     continue;
@@ -2318,6 +2334,7 @@ impl<'a> Builder<'a> {
                         *field_span,
                     ));
                 }
+                source_order.push(field_name.clone());
             }
             for field in &info.fields {
                 let Some(value) = provided.remove(&field.name) else {
@@ -2336,6 +2353,20 @@ impl<'a> Builder<'a> {
                     span,
                 ));
             }
+            // Map each named argument back to its declaration position so the
+            // backend can evaluate the arguments in the order they were
+            // written while still calling the constructor in field order.
+            let mut order = Vec::with_capacity(source_order.len());
+            for name in source_order {
+                let Some(index) = info.fields.iter().position(|field| field.name == name) else {
+                    return Err(IrError::internal(
+                        format!("unknown constructor field `{name}`"),
+                        span,
+                    ));
+                };
+                order.push(index);
+            }
+            order
         } else {
             if args.len() != info.fields.len() {
                 return Err(IrError::internal(
@@ -2354,11 +2385,13 @@ impl<'a> Builder<'a> {
                 self.expect_assignable(&value.ty, &expected, value.span)?;
                 lowered.push(value);
             }
-        }
+            (0..lowered.len()).collect()
+        };
         Ok(IrExpr {
             kind: IrExprKind::Construct {
                 name: info.name.clone(),
                 args: lowered,
+                eval_order,
             },
             ty: IrType::Struct(info.name.clone()),
             span,
@@ -2933,11 +2966,25 @@ impl<'a> Builder<'a> {
                 IrType::Unit
             }
             "range" => {
-                return Err(IrError::unsupported(
-                    "native `range` is supported only directly in `for` loops",
-                    span,
-                    "assign `range(...)` to a variable and iterate it under `vantyx run`",
-                ));
+                if lowered.is_empty() || lowered.len() > 3 {
+                    return Err(IrError::internal(
+                        "`range` arity was not validated by the checker",
+                        span,
+                    ));
+                }
+                for arg in &lowered {
+                    if arg.ty != IrType::Int {
+                        return Err(IrError::unsupported(
+                            format!(
+                                "native `range` requires Int bounds, found `{}`",
+                                arg.ty.name()
+                            ),
+                            span,
+                            "annotate the bounds as Int or run with `vantyx run`",
+                        ));
+                    }
+                }
+                IrType::List(Box::new(IrType::Int))
             }
             "keys" | "values" => {
                 if lowered.len() != 1 {

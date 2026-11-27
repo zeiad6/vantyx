@@ -5,6 +5,7 @@
 //! security boundary for model output and tool arguments, not a general-purpose
 //! JSON library.
 
+use std::cmp::Ordering;
 use std::fmt;
 
 /// Maximum nesting depth accepted by the parser.
@@ -66,6 +67,118 @@ impl fmt::Display for JsonNumber {
             Self::Float(value) => write!(formatter, "{value}"),
         }
     }
+}
+
+/// JSON value equality as used by JSON Schema `const`, `enum`, and
+/// `uniqueItems`.
+///
+/// Numbers compare by mathematical value (`1 == 1.0`) without losing integer
+/// precision, and objects compare regardless of member order. Arrays remain
+/// order-sensitive.
+pub fn value_eq(left: &Json, right: &Json) -> bool {
+    match (left, right) {
+        (Json::Null, Json::Null) => true,
+        (Json::Bool(left), Json::Bool(right)) => left == right,
+        (Json::Number(left), Json::Number(right)) => number_eq(*left, *right),
+        (Json::String(left), Json::String(right)) => left == right,
+        (Json::Array(left), Json::Array(right)) => {
+            left.len() == right.len() && left.iter().zip(right).all(|(a, b)| value_eq(a, b))
+        }
+        (Json::Object(left), Json::Object(right)) => {
+            left.len() == right.len()
+                && left.iter().all(|(name, value)| {
+                    right
+                        .iter()
+                        .find(|(other, _)| other == name)
+                        .is_some_and(|(_, other)| value_eq(value, other))
+                })
+        }
+        _ => false,
+    }
+}
+
+fn number_eq(left: JsonNumber, right: JsonNumber) -> bool {
+    number_cmp(left, right) == Some(Ordering::Equal)
+}
+
+/// Compares two JSON numbers by mathematical value.
+///
+/// Integer variants are compared exactly, including beyond `f64`'s 53-bit
+/// integer range. Mixed integer/float comparisons use the float's exact
+/// integral part, so no precision is silently lost. Returns `None` only when a
+/// float is `NaN`.
+pub fn number_cmp(left: JsonNumber, right: JsonNumber) -> Option<Ordering> {
+    match (left, right) {
+        (JsonNumber::Int(left), JsonNumber::Int(right)) => Some(left.cmp(&right)),
+        (JsonNumber::UInt(left), JsonNumber::UInt(right)) => Some(left.cmp(&right)),
+        (JsonNumber::Int(left), JsonNumber::UInt(right)) => Some(if left < 0 {
+            Ordering::Less
+        } else {
+            (left as u64).cmp(&right)
+        }),
+        (JsonNumber::UInt(left), JsonNumber::Int(right)) => Some(if right < 0 {
+            Ordering::Greater
+        } else {
+            left.cmp(&(right as u64))
+        }),
+        (JsonNumber::Float(left), JsonNumber::Float(right)) => left.partial_cmp(&right),
+        (JsonNumber::Int(integer), JsonNumber::Float(float)) => int_float_cmp(integer, float),
+        (JsonNumber::Float(float), JsonNumber::Int(integer)) => {
+            int_float_cmp(integer, float).map(Ordering::reverse)
+        }
+        (JsonNumber::UInt(integer), JsonNumber::Float(float)) => uint_float_cmp(integer, float),
+        (JsonNumber::Float(float), JsonNumber::UInt(integer)) => {
+            uint_float_cmp(integer, float).map(Ordering::reverse)
+        }
+    }
+}
+
+fn int_float_cmp(integer: i64, float: f64) -> Option<Ordering> {
+    // Keep the cast inside the range where it is exact instead of saturating.
+    const LIMIT: f64 = 9_223_372_036_854_775_808.0; // 2^63
+    if float.is_nan() {
+        return None;
+    }
+    if float >= LIMIT {
+        return Some(Ordering::Less);
+    }
+    if float < -LIMIT {
+        return Some(Ordering::Greater);
+    }
+    let truncated = float.trunc() as i64;
+    Some(integer.cmp(&truncated).then_with(|| {
+        if float > truncated as f64 {
+            Ordering::Less
+        } else if float < truncated as f64 {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    }))
+}
+
+fn uint_float_cmp(integer: u64, float: f64) -> Option<Ordering> {
+    // `float as u64` saturates, so 2^64 must be rejected explicitly.
+    const LIMIT: f64 = 18_446_744_073_709_551_616.0; // 2^64
+    if float.is_nan() {
+        return None;
+    }
+    if float < 0.0 {
+        return Some(Ordering::Greater);
+    }
+    if float >= LIMIT {
+        return Some(Ordering::Less);
+    }
+    let truncated = float.trunc() as u64;
+    Some(integer.cmp(&truncated).then_with(|| {
+        if float > truncated as f64 {
+            Ordering::Less
+        } else if float < truncated as f64 {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    }))
 }
 
 /// A JSON value. Object entries preserve insertion order.

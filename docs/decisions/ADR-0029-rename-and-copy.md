@@ -46,10 +46,14 @@ Add two synchronous builtins:
    not preserved. The copied bytes are not validated as UTF-8 or checked for
    NUL, so `copy_file` can copy data that `read_file` would reject; the copy is
    a filesystem operation, not a string operation.
-4. **No self-copy protection.** Source and target must be distinct paths. A
-   caller that passes the same path can truncate the source before any bytes
-   are read; this is documented rather than detected because path aliases,
-   hard links, and symbolic links make reliable detection host-specific.
+4. **Same-file copies are refused.** Opening the target for writing truncates
+   it before any source bytes are read, so `copy_file(path, path)` would destroy
+   the file. Both engines now compare the resolved source and target identity
+   (device and inode on Unix, canonical paths elsewhere) and raise `R0015` when
+   they match, including symbolic-link and hard-link aliases. This is a
+   best-effort guard against a destructive mistake, not an atomic transaction:
+   a caller can still race the check, and a target that does not exist yet is
+   left for the copy itself to handle.
 5. **Fatal errors and no sandbox.** Missing paths, permission failures,
    cross-device renames, non-regular copy sources, target kind conflicts, and
    I/O failures raise `R0015` and exit with status 2. Paths use the process's
