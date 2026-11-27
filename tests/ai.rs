@@ -2466,3 +2466,259 @@ fn dataset_dedup_rejects_usage_invalid_data_and_schema_errors() {
 
     let _ = fs::remove_dir_all(&directory);
 }
+
+#[test]
+fn dataset_shuffle_is_deterministic_and_reports_provenance() {
+    let directory = temp_path("dataset-shuffle");
+    fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("corpus.jsonl");
+    let mut text = String::new();
+    let mut expected = Vec::new();
+    for index in 0..20 {
+        let line = format!("{{\"id\":{index},\"text\":\"row {index}\"}}");
+        expected.push(line.clone());
+        text.push_str(&line);
+        text.push('\n');
+    }
+    fs::write(&input, &text).unwrap();
+    let out_one = directory.join("shuffled-one.jsonl");
+    let out_two = directory.join("shuffled-two.jsonl");
+
+    let first = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            out_one.to_str().unwrap(),
+            "--seed",
+            "7",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(first.status, 0, "{}", first.stderr);
+    let value = vantyx::ai::parse(first.stdout.trim()).expect("shuffle JSON");
+    assert_eq!(
+        value.get("format").and_then(|v| v.as_str()),
+        Some("jsonl-shuffle")
+    );
+    assert_eq!(value.get("records").and_then(|v| v.as_u64()), Some(20));
+    assert_eq!(value.get("seed").and_then(|v| v.as_u64()), Some(7));
+
+    let second = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            out_two.to_str().unwrap(),
+            "--seed",
+            "7",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(second.status, 0, "{}", second.stderr);
+    let value_two = vantyx::ai::parse(second.stdout.trim()).expect("second shuffle JSON");
+    assert_eq!(value.get("input_sha256"), value_two.get("input_sha256"));
+    assert_eq!(value.get("output_sha256"), value_two.get("output_sha256"));
+    assert_eq!(
+        fs::read(&out_one).unwrap(),
+        fs::read(&out_two).unwrap(),
+        "the same seed must produce the same output"
+    );
+
+    let mut actual: Vec<String> = fs::read_to_string(&out_one)
+        .unwrap()
+        .lines()
+        .map(str::to_string)
+        .collect();
+    actual.sort();
+    expected.sort();
+    assert_eq!(actual, expected);
+    assert_eq!(fs::read_to_string(&input).unwrap(), text);
+
+    let out_three = directory.join("shuffled-three.jsonl");
+    let third = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            out_three.to_str().unwrap(),
+            "--seed",
+            "8",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(third.status, 0, "{}", third.stderr);
+    let value_three = vantyx::ai::parse(third.stdout.trim()).expect("third shuffle JSON");
+    assert_ne!(value.get("output_sha256"), value_three.get("output_sha256"));
+
+    let overwrite = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            out_one.to_str().unwrap(),
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(overwrite.status, 1);
+    assert!(
+        overwrite.stderr.contains("refusing to overwrite"),
+        "{}",
+        overwrite.stderr
+    );
+
+    let _ = fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn dataset_shuffle_rejects_usage_invalid_data_and_schema_errors() {
+    let directory = temp_path("dataset-shuffle-errors");
+    fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("data.jsonl");
+    fs::write(&input, "{\"text\":\"a\"}\n{\"text\":\"b\"}\n").unwrap();
+    let out = directory.join("out.jsonl");
+
+    let missing_path = vantyx(&["ai", "shuffle"], None, &[]);
+    assert_eq!(missing_path.status, 64);
+    assert!(missing_path.stderr.contains("requires a JSONL file path"));
+
+    let missing_out = vantyx(&["ai", "shuffle", input.to_str().unwrap()], None, &[]);
+    assert_eq!(missing_out.status, 64);
+    assert!(
+        missing_out.stderr.contains("--out"),
+        "{}",
+        missing_out.stderr
+    );
+
+    let bad_seed = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--seed",
+            "not-a-number",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(bad_seed.status, 64);
+    assert!(
+        bad_seed.stderr.contains("unsigned integer"),
+        "{}",
+        bad_seed.stderr
+    );
+
+    let duplicate_seed = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--seed",
+            "1",
+            "--seed",
+            "2",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(duplicate_seed.status, 64);
+    assert!(
+        duplicate_seed.stderr.contains("only once"),
+        "{}",
+        duplicate_seed.stderr
+    );
+
+    let unknown = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--wat",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(unknown.status, 64);
+    assert!(unknown.stderr.contains("--wat"), "{}", unknown.stderr);
+
+    let same = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            input.to_str().unwrap(),
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(same.status, 1);
+    assert!(
+        same.stderr.contains("must differ from the input"),
+        "{}",
+        same.stderr
+    );
+
+    fs::write(&input, "{\"text\":\"a\"}\nnot json\n").unwrap();
+    let invalid = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(invalid.status, 1);
+    assert!(
+        invalid.stderr.contains("invalid line"),
+        "{}",
+        invalid.stderr
+    );
+    assert!(!out.exists());
+
+    fs::write(&input, "{\"text\":\"a\"}\n{\"other\":1}\n").unwrap();
+    let schema = directory.join("schema.json");
+    fs::write(&schema, r#"{"type":"object","required":["text"]}"#).unwrap();
+    let schema_invalid = vantyx(
+        &[
+            "ai",
+            "shuffle",
+            input.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--schema",
+            schema.to_str().unwrap(),
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(schema_invalid.status, 1);
+    assert!(
+        schema_invalid.stderr.contains("schema"),
+        "{}",
+        schema_invalid.stderr
+    );
+    assert!(!out.exists());
+
+    let _ = fs::remove_dir_all(&directory);
+}

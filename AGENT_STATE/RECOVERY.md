@@ -13,39 +13,33 @@
 
 ## Last recorded repository state (2026-11-26)
 
-- `origin/main` and HEAD are at `1aba7ba` (differential-fuzzer control-flow
-  coverage and bounded shrinking); CI run 45507195701 passed with T-077.
-- T-078 through T-098 are uncommitted in the working tree. Earlier commits:
-  `de0bac7` contains the rustfmt baseline and CI formatting gate (run
-  45504177763 green), `66b4efc` contains T-075 result-enum propagation (run
-  45503321172 green), `53a8b82` contains the expanded differential fuzzer (run
-  45499019615 green), `5e1092f` contains the T-073–T-074 linter and
-  return-path fix (run 45496041422 green), `a4fe86b` contains the
-  T-070–T-072 native fixes plus the original fuzzer (run 45493833079 green),
-  and `4982ab3` contains the glob result-cap portability fix (run
-  45488725812 green).
-- The uncommitted change set is verified locally: 700 Rust tests (391 library
-  unit + 15 CLI unit + 41 AI integration + 113 e2e + 140 native), the full
-  140-test native suite also under `VANTYX_CC=gcc`, clippy clean,
-  `cargo fmt --check --all` clean, debug and release builds, five examples,
-  seven Python self-tests, fuzzer 100/100 on seed 1 under clang after
-  T-092/T-093, and fuzz smoke clean. T-094/T-095 added 10 dataset unit tests,
-  3 dataset CLI tests, 13 `ai::schema` tests, one extract integration test, and
-  one tools unit test; ADR-0044 and ADR-0045 record the decisions. T-096 added
-  two differential headline tests covering nine error programs and four
-  Unix-only file fixtures; both failed before the fixes. T-097 added 11 cases
-  to the same headline test (filesystem failures with `(os error N)` and three
-  malformed glob patterns); `diff3.py` went from 10 mismatches to 44/44. T-098
-  added five dataset unit tests and two CLI tests for deterministic splits,
-  overwrite refusal, invalid data, schema gating, and the non-empty fallback;
-  ADR-0046 records the decision.
-  Earlier runs
-  agreed 200/200 on seeds 1, 2, 3, 500, and 1000 before T-081 changed one
-  lowering branch.
-- If the change set is absent, inspect `git status --short`, re-run the
-  targeted T-078 through T-098 tests, the clang/GCC cross-compiler test, and the
-  Python self-tests, then continue rather than discarding the work.
-  Commits require explicit authorization.
+- `origin/main` and HEAD are at `33c966e` (native parity fixes, dataset
+  tooling, and agent skills; T-078 through T-100); CI run 45920832199 passed.
+  T-101 (deterministic JSONL shuffle) is the current working-tree change and is
+  verified locally; commit and CI are pending at this record.
+- Earlier commits: `1aba7ba` contains T-077 differential-fuzzer control-flow
+  coverage and bounded shrinking (run 45507195701 green), `de0bac7` contains
+  the rustfmt baseline and CI formatting gate (run 45504177763 green),
+  `66b4efc` contains T-075 result-enum propagation (run 45503321172 green),
+  `53a8b82` contains the expanded differential fuzzer (run 45499019615 green),
+  `5e1092f` contains the T-073–T-074 linter and return-path fix (run
+  45496041422 green), `a4fe86b` contains the T-070–T-072 native fixes plus the
+  original fuzzer (run 45493833079 green), and `4982ab3` contains the glob
+  result-cap portability fix (run 45488725812 green).
+- The committed tree is verified: 707 Rust tests (395 library unit + 15 CLI
+  unit + 43 AI integration + 113 e2e + 141 native), the full 141-test native
+  suite also under `VANTYX_CC=gcc`, clippy clean, `cargo fmt --check --all`
+  clean, debug and release builds, five examples, seven Python self-tests,
+  fuzzer 500/500 on seed 7 and 100/100 on seed 1, the skill validator, and
+  fuzz smoke clean. T-099 added native `range(...)` values and T-100 added
+  exact dataset deduplication; ADR-0047 records the dedup decision.
+- The T-101 working tree passes 713 tests (399 library unit + 15 CLI unit + 45
+  AI integration + 113 e2e + 141 native), clippy and fmt clean, debug and
+  release builds, five examples, seven Python self-tests, 100/100 fuzz cases on
+  seed 1, and the thirteen-skill validator. T-101 adds deterministic seeded
+  shuffling; ADR-0048 records the decision.
+- If a checkout is missing `33c966e`, fetch `origin/main` and inspect
+  `git status --short`; do not discard unexplained work or rewrite history.
 
 ## If the network or a provider is unavailable
 

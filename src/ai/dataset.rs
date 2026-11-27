@@ -33,10 +33,17 @@ pub const DEFAULT_TRAIN_RATIO: f64 = 0.9;
 /// Maximum distinct records retained by one deduplication. The bound keeps the
 /// in-memory digest set predictable on large corpora.
 pub const MAX_DEDUP_UNIQUE_RECORDS: usize = 1_000_000;
+/// Maximum dataset size accepted by one deterministic shuffle. The whole
+/// dataset is held in memory, so this bound is lower than inspection's.
+pub const MAX_SHUFFLE_BYTES: u64 = 64 * 1024 * 1024;
+/// Maximum records accepted by one deterministic shuffle.
+pub const MAX_SHUFFLE_RECORDS: usize = 1_000_000;
 /// Domain separator for deterministic per-record split assignment.
 const SPLIT_HASH_DOMAIN: &[u8] = b"vantyx-dataset-split-v1\0";
 /// Domain separator for exact-record deduplication digests.
 const DEDUP_HASH_DOMAIN: &[u8] = b"vantyx-dataset-dedup-v1\0";
+/// Domain separator for deterministic shuffle ordering.
+const SHUFFLE_HASH_DOMAIN: &[u8] = b"vantyx-dataset-shuffle-v1\0";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TypeCount {
@@ -332,6 +339,52 @@ impl DedupSummary {
     }
 }
 
+/// A validated, deterministic permutation of a JSONL dataset.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShuffleSummary {
+    pub input_path: String,
+    pub input_sha256: String,
+    pub input_bytes: u64,
+    pub output_path: String,
+    pub output_bytes: u64,
+    pub output_sha256: String,
+    pub record_count: u64,
+    pub seed: u64,
+    pub warnings: Vec<String>,
+}
+
+impl ShuffleSummary {
+    /// Serializes the shuffle report as a stable JSON object.
+    pub fn to_json(&self) -> Json {
+        Json::object([
+            ("format", Json::String("jsonl-shuffle".to_string())),
+            ("input", Json::String(self.input_path.clone())),
+            ("input_sha256", Json::String(self.input_sha256.clone())),
+            (
+                "input_bytes",
+                Json::Number(JsonNumber::UInt(self.input_bytes)),
+            ),
+            ("output", Json::String(self.output_path.clone())),
+            (
+                "output_bytes",
+                Json::Number(JsonNumber::UInt(self.output_bytes)),
+            ),
+            ("output_sha256", Json::String(self.output_sha256.clone())),
+            ("records", Json::Number(JsonNumber::UInt(self.record_count))),
+            ("seed", Json::Number(JsonNumber::UInt(self.seed))),
+            (
+                "warnings",
+                Json::Array(
+                    self.warnings
+                        .iter()
+                        .map(|warning| Json::String(warning.clone()))
+                        .collect(),
+                ),
+            ),
+        ])
+    }
+}
+
 /// Inspects a UTF-8 JSONL dataset without modifying it.
 pub fn inspect(path: &Path) -> Result<DatasetSummary, AiError> {
     inspect_with_limits(
@@ -420,6 +473,129 @@ pub fn deduplicate_with_schema(
         Some((schema_path, &schema)),
         MAX_DEDUP_UNIQUE_RECORDS,
     )
+}
+
+/// Writes a deterministic permutation of a validated UTF-8 JSONL dataset.
+///
+/// Records are ordered by a domain-separated SHA-256 of the seed and the exact
+/// record bytes, with the record bytes as a tie-breaker. The output therefore
+/// depends only on the set of records and the seed, not on their input order.
+/// The whole dataset is held in memory under `MAX_SHUFFLE_BYTES` and
+/// `MAX_SHUFFLE_RECORDS`. The output file is created with `create_new`, never
+/// overwritten, and removed again if writing fails. The input is never
+/// modified.
+pub fn shuffle(path: &Path, out: &Path, seed: u64) -> Result<ShuffleSummary, AiError> {
+    shuffle_inner(
+        path,
+        out,
+        seed,
+        None,
+        MAX_SHUFFLE_BYTES,
+        MAX_SHUFFLE_RECORDS,
+    )
+}
+
+/// Writes a deterministic permutation after validating every record against a
+/// JSON Schema file. A record that violates the schema aborts the operation
+/// before any output file is kept.
+pub fn shuffle_with_schema(
+    path: &Path,
+    out: &Path,
+    seed: u64,
+    schema_path: &Path,
+) -> Result<ShuffleSummary, AiError> {
+    let schema = load_schema(schema_path)?;
+    shuffle_inner(
+        path,
+        out,
+        seed,
+        Some((schema_path, &schema)),
+        MAX_SHUFFLE_BYTES,
+        MAX_SHUFFLE_RECORDS,
+    )
+}
+
+fn shuffle_inner(
+    path: &Path,
+    out: &Path,
+    seed: u64,
+    schema: Option<(&Path, &Json)>,
+    max_bytes: u64,
+    max_records: usize,
+) -> Result<ShuffleSummary, AiError> {
+    if path == out {
+        return Err(AiError::new(
+            AI_E_INVALID_REQUEST,
+            "the shuffled output must differ from the input file",
+        ));
+    }
+    if out.file_name().is_none() {
+        return Err(AiError::new(
+            AI_E_INVALID_REQUEST,
+            format!("cannot derive an output file name from `{}`", out.display()),
+        ));
+    }
+    if out.exists() {
+        return Err(AiError::new(
+            AI_E_IO,
+            format!(
+                "refusing to overwrite `{}`; choose another output path or remove the file",
+                out.display()
+            ),
+        ));
+    }
+
+    let scan = read_shuffle_records(path, schema.map(|(_, value)| value), max_bytes, max_records)?;
+    if scan.records.is_empty() {
+        return Err(AiError::new(
+            AI_E_INVALID_REQUEST,
+            "dataset has 0 records; at least 1 record is required to shuffle",
+        ));
+    }
+
+    let file = create_output(out)?;
+    match write_shuffle(file, out, seed, &scan) {
+        Ok(output) => {
+            if output.records != scan.records.len() as u64 {
+                let _ = std::fs::remove_file(out);
+                return Err(AiError::new(
+                    AI_E_IO,
+                    "dataset changed while it was being shuffled; no output was kept",
+                ));
+            }
+            let mut warnings = Vec::new();
+            if scan.blank_lines > 0 {
+                warnings.push(format!(
+                    "{} blank line(s) were not copied",
+                    scan.blank_lines
+                ));
+            }
+            if scan.crlf_lines > 0 {
+                warnings.push(format!(
+                    "{} CRLF line ending(s) were normalized to LF",
+                    scan.crlf_lines
+                ));
+            }
+            if scan.bom {
+                warnings.push("the UTF-8 byte-order mark was removed".to_string());
+            }
+            Ok(ShuffleSummary {
+                input_path: path.display().to_string(),
+                input_sha256: scan.sha256,
+                input_bytes: scan.file_bytes,
+                output_path: out.display().to_string(),
+                output_bytes: output.bytes,
+                output_sha256: output.sha256,
+                record_count: scan.records.len() as u64,
+                seed,
+                warnings,
+            })
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(out);
+            Err(error)
+        }
+    }
 }
 
 fn dedup_inner(
@@ -696,6 +872,148 @@ fn write_dedup(
 fn dedup_record_hash(record: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(DEDUP_HASH_DOMAIN);
+    hasher.update(record);
+    hasher.finalize()
+}
+
+struct ShuffleScan {
+    file_bytes: u64,
+    sha256: String,
+    blank_lines: u64,
+    crlf_lines: u64,
+    bom: bool,
+    records: Vec<Vec<u8>>,
+}
+
+fn read_shuffle_records(
+    path: &Path,
+    schema: Option<&Json>,
+    max_bytes: u64,
+    max_records: usize,
+) -> Result<ShuffleScan, AiError> {
+    let file = File::open(path).map_err(|error| {
+        AiError::new(
+            AI_E_IO,
+            format!("cannot open dataset `{}`: {error}", path.display()),
+        )
+    })?;
+    let metadata = file.metadata().map_err(|error| {
+        AiError::new(
+            AI_E_IO,
+            format!("cannot stat dataset `{}`: {error}", path.display()),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(AiError::new(
+            AI_E_IO,
+            format!("cannot shuffle `{}`: not a regular file", path.display()),
+        ));
+    }
+    if metadata.len() > max_bytes {
+        return Err(format_error(format!(
+            "JSONL dataset is {} bytes, above the {max_bytes} byte shuffle limit",
+            metadata.len()
+        )));
+    }
+
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = Vec::new();
+    let mut line_number = 0_u64;
+    let mut hashed_bytes = 0_u64;
+    let mut scan = ShuffleScan {
+        file_bytes: metadata.len(),
+        sha256: String::new(),
+        blank_lines: 0,
+        crlf_lines: 0,
+        bom: false,
+        records: Vec::new(),
+    };
+
+    loop {
+        let outcome = read_line_capped(
+            &mut reader,
+            &mut buffer,
+            MAX_DATASET_LINE_BYTES,
+            &mut hasher,
+        )
+        .map_err(io_failure)?;
+        let (bytes, too_long) = match outcome {
+            LineOutcome::Eof => break,
+            LineOutcome::Line { bytes, too_long } => (bytes, too_long),
+        };
+        line_number += 1;
+        hashed_bytes = hashed_bytes.saturating_add(bytes as u64);
+        if too_long {
+            return Err(format_error(format!(
+                "line {line_number} is longer than {MAX_DATASET_LINE_BYTES} bytes"
+            )));
+        }
+        if line_number == 1 && buffer.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            scan.bom = true;
+        }
+        if buffer.ends_with(b"\r\n") {
+            scan.crlf_lines += 1;
+        }
+        let Some(record) = record_bytes(&buffer, line_number == 1) else {
+            scan.blank_lines += 1;
+            continue;
+        };
+        let value = parse_split_record(record, line_number)?;
+        if let Some(schema_value) = schema
+            && let Err(error) = schema::validate(schema_value, &value)
+        {
+            return Err(format_error(format!(
+                "line {line_number} does not satisfy the schema at {}: {}",
+                error.path, error.message
+            )));
+        }
+        if scan.records.len() >= max_records {
+            return Err(format_error(format!(
+                "dataset has more than {max_records} records; the shuffle limit was reached"
+            )));
+        }
+        scan.records.push(record.to_vec());
+    }
+    if hashed_bytes != metadata.len() {
+        return Err(format_error(format!(
+            "dataset size changed while it was being read: expected {} bytes, read {hashed_bytes}",
+            metadata.len()
+        )));
+    }
+    scan.sha256 = hasher.finalize_hex();
+    Ok(scan)
+}
+
+fn write_shuffle(
+    file: File,
+    out: &Path,
+    seed: u64,
+    scan: &ShuffleScan,
+) -> Result<SplitPart, AiError> {
+    let mut keyed: Vec<([u8; 32], &[u8])> = scan
+        .records
+        .iter()
+        .map(|record| (shuffle_record_digest(seed, record), record.as_slice()))
+        .collect();
+    keyed.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(right.1)));
+
+    let mut writer = RecordWriter {
+        file,
+        hasher: Sha256::new(),
+        bytes: 0,
+        records: 0,
+    };
+    for (_, record) in keyed {
+        writer.write_record(record, out)?;
+    }
+    Ok(writer.finish(out))
+}
+
+fn shuffle_record_digest(seed: u64, record: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(SHUFFLE_HASH_DOMAIN);
+    hasher.update(&seed.to_le_bytes());
     hasher.update(record);
     hasher.finalize()
 }
@@ -2188,6 +2506,181 @@ mod tests {
         let error = deduplicate(&input, &out).expect_err("blank dataset must fail");
         assert_eq!(error.code, AI_E_INVALID_REQUEST);
         assert!(error.message.contains("0 records"), "{}", error.message);
+        assert!(!out.exists());
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn shuffle_is_deterministic_and_permutes_records() {
+        let directory = temp_dir("shuffle-deterministic");
+        let input = directory.join("corpus.jsonl");
+        let mut text = String::from("\u{feff}");
+        let mut expected = Vec::new();
+        for index in 0..30 {
+            let line = format!("{{\"id\":{index},\"text\":\"row {index}\"}}");
+            expected.push(line.clone());
+            text.push_str(&line);
+            if index < 5 {
+                text.push_str("\r\n");
+            } else {
+                text.push('\n');
+            }
+            if index == 5 {
+                text.push('\n');
+            }
+        }
+        std::fs::write(&input, &text).expect("write dataset");
+
+        let first = shuffle(&input, &directory.join("first.jsonl"), 7).expect("first shuffle");
+        let second = shuffle(&input, &directory.join("second.jsonl"), 7).expect("second shuffle");
+        assert_eq!(first.record_count, 30);
+        assert_eq!(first.seed, 7);
+        assert_eq!(first.input_sha256, second.input_sha256);
+        assert_eq!(first.output_sha256, second.output_sha256);
+        assert_eq!(first.output_bytes, second.output_bytes);
+
+        let first_bytes = std::fs::read(&first.output_path).expect("read first output");
+        let second_bytes = std::fs::read(&second.output_path).expect("read second output");
+        assert_eq!(first_bytes, second_bytes);
+        assert!(!first_bytes.contains(&b'\r'), "output line endings are LF");
+
+        let mut actual: Vec<String> = String::from_utf8(first_bytes)
+            .expect("output is UTF-8")
+            .lines()
+            .map(str::to_string)
+            .collect();
+        actual.sort();
+        expected.sort();
+        assert_eq!(actual, expected, "shuffle must permute, not lose records");
+        assert_eq!(
+            std::fs::read_to_string(&input).expect("reread input"),
+            text,
+            "the input dataset must not be modified"
+        );
+        assert!(first.warnings.iter().any(|w| w.contains("blank line")));
+        assert!(first.warnings.iter().any(|w| w.contains("CRLF")));
+        assert!(first.warnings.iter().any(|w| w.contains("byte-order mark")));
+
+        let third = shuffle(&input, &directory.join("third.jsonl"), 8).expect("third shuffle");
+        assert_ne!(
+            first.output_sha256, third.output_sha256,
+            "a different seed must produce a different order"
+        );
+
+        let json = first.to_json();
+        assert_eq!(
+            json.get("format").and_then(Json::as_str),
+            Some("jsonl-shuffle")
+        );
+        assert_eq!(json.get("seed").and_then(Json::as_u64), Some(7));
+        let reparsed = json::parse(&json.to_compact_string()).expect("shuffle JSON is valid");
+        assert_eq!(
+            reparsed.get("records").and_then(Json::as_u64),
+            json.get("records").and_then(Json::as_u64)
+        );
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn shuffle_refuses_overwrite_same_input_and_empty() {
+        let directory = temp_dir("shuffle-errors");
+        let input = directory.join("data.jsonl");
+        let out = directory.join("out.jsonl");
+
+        std::fs::write(&input, "{\"a\":1}\n").expect("write dataset");
+        std::fs::write(&out, "keep").expect("write existing output");
+        let error = shuffle(&input, &out, 0).expect_err("overwrite must fail");
+        assert_eq!(error.code, AI_E_IO);
+        assert!(
+            error.message.contains("refusing to overwrite"),
+            "{}",
+            error.message
+        );
+        assert_eq!(std::fs::read_to_string(&out).expect("read output"), "keep");
+
+        let error = shuffle(&input, &input, 0).expect_err("same path must fail");
+        assert_eq!(error.code, AI_E_INVALID_REQUEST);
+        assert!(
+            error.message.contains("must differ from the input"),
+            "{}",
+            error.message
+        );
+
+        std::fs::write(&input, b"").expect("write empty dataset");
+        let error = shuffle(&input, &directory.join("empty-out.jsonl"), 0)
+            .expect_err("empty dataset must fail");
+        assert_eq!(error.code, AI_E_INVALID_REQUEST);
+        assert!(error.message.contains("0 records"), "{}", error.message);
+
+        let missing = directory.join("missing.jsonl");
+        let error = shuffle(&missing, &directory.join("missing-out.jsonl"), 0)
+            .expect_err("missing input must fail");
+        assert_eq!(error.code, AI_E_IO);
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn shuffle_schema_gate_and_limits() {
+        let directory = temp_dir("shuffle-schema-limits");
+        let input = directory.join("data.jsonl");
+        let schema = directory.join("schema.json");
+        let out = directory.join("out.jsonl");
+        std::fs::write(&input, "{\"text\":\"a\"}\n{\"other\":1}\n").expect("write dataset");
+        std::fs::write(&schema, r#"{"type":"object","required":["text"]}"#).expect("write schema");
+        let error =
+            shuffle_with_schema(&input, &out, 0, &schema).expect_err("schema violation must fail");
+        assert_eq!(error.code, AI_E_FORMAT);
+        assert!(
+            error.message.contains("does not satisfy the schema"),
+            "{}",
+            error.message
+        );
+        assert!(!out.exists());
+
+        std::fs::write(&input, "{\"a\":1}\n{\"a\":2}\n{\"a\":3}\n").expect("write records");
+        let capped = directory.join("capped.jsonl");
+        let error = shuffle_inner(&input, &capped, 0, None, MAX_SHUFFLE_BYTES, 2)
+            .expect_err("record limit must fail");
+        assert_eq!(error.code, AI_E_FORMAT);
+        assert!(
+            error.message.contains("more than 2 records"),
+            "{}",
+            error.message
+        );
+        assert!(!capped.exists());
+
+        let small = directory.join("small.jsonl");
+        let error = shuffle_inner(&input, &small, 0, None, 10, MAX_SHUFFLE_RECORDS)
+            .expect_err("byte limit must fail");
+        assert_eq!(error.code, AI_E_FORMAT);
+        assert!(
+            error.message.contains("byte shuffle limit"),
+            "{}",
+            error.message
+        );
+        assert!(!small.exists());
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn shuffle_rejects_invalid_lines_before_writing() {
+        let directory = temp_dir("shuffle-invalid");
+        let input = directory.join("bad.jsonl");
+        let out = directory.join("out.jsonl");
+        std::fs::write(&input, "{\"a\":1}\nnot json\n").expect("write dataset");
+        let error = shuffle(&input, &out, 0).expect_err("invalid JSON must fail");
+        assert_eq!(error.code, AI_E_FORMAT);
+        assert!(error.message.contains("line 2"), "{}", error.message);
+        assert!(!out.exists());
+
+        std::fs::write(&input, "[1,2]\n{\"a\":1}\n").expect("write non-object dataset");
+        let error = shuffle(&input, &out, 0).expect_err("non-object must fail");
+        assert_eq!(error.code, AI_E_FORMAT);
+        assert!(error.message.contains("not an object"), "{}", error.message);
         assert!(!out.exists());
 
         let _ = std::fs::remove_dir_all(directory);

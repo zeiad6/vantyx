@@ -102,6 +102,11 @@ run end-to-end; security tests cover denied capabilities and redaction.
       distinct records, and reports input/output provenance. Canonical JSON
       identity, near-duplicate detection, and tokenizer-aware counts remain
       future work.
+- [x] Deterministic seeded shuffle: `vantyx ai shuffle` validates first, orders
+      records by a domain-separated SHA-256 of the seed and record bytes, never
+      overwrites, holds the dataset in memory under a 64 MiB input cap and a
+      1,000,000-record cap, and reports input/output provenance. A PRNG shuffle
+      and external-memory sorting remain future work.
 - [ ] `vantyx ai pull` and `remove` with integrity and license display;
       downloads remain out of scope until checksums and provenance exist.
       `inspect` now provides the offline provenance primitive those commands

@@ -51,6 +51,10 @@ Usage:
                                    Remove exact duplicate JSONL records,
                                    keeping the first occurrence, without
                                    overwriting the output file
+  vantyx ai shuffle <file> --out <file> [options]
+                                   Write a deterministic seeded permutation
+                                   of a validated JSONL dataset without
+                                   overwriting the output file
 
 Options:
   --provider <name>       mock, echo, hash (embed only), or openai
@@ -66,16 +70,17 @@ Options:
   --dimensions <n>        Embedding dimensions, 1 to 4096
   --metrics <path>        Append redacted JSONL metrics (no prompts)
   --schema <path|json>    JSON Schema for `extract` (file path or inline object)
-                          or a schema file for `dataset`, `split`, and `dedup`
+                          or a schema file for `dataset`, `split`, `dedup`, and
+                          `shuffle`
   --out-dir <dir>         Output directory for `split` (required)
   --train-ratio <n>       Train fraction for `split`, greater than 0 and
                           less than 1 (default 0.9)
-  --seed <n>              Deterministic split seed (default 0)
+  --seed <n>              Deterministic split or shuffle seed (default 0)
   --repair-attempts <n>   Repair attempts after invalid output (0-3; default 1)
   --response <text>       Offline mock response for `extract`; may be repeated
   --root <dir>            Document root for `index`
   --out <file>            Output index path for `index`, or the output file for
-                          `dedup`
+                          `dedup` and `shuffle`
   --index <file>          Index path for `search` and `eval`
   --query <text>          Search query for `search` (or positional text)
   --source-prefix <path>  Only search chunks whose relative source starts with this path
@@ -167,6 +172,7 @@ pub fn run(args: &[String]) -> i32 {
         "dataset" => dataset(rest),
         "split" => dataset_split(rest),
         "dedup" => dataset_dedup(rest),
+        "shuffle" => dataset_shuffle(rest),
         other => {
             eprintln!("error: unknown `vantyx ai` command `{other}`");
             eprintln!();
@@ -2143,6 +2149,143 @@ fn dataset_dedup(args: &[String]) -> i32 {
         if !dedup.warnings.is_empty() {
             println!("warnings:");
             for warning in &dedup.warnings {
+                println!("  {warning}");
+            }
+        }
+    }
+    0
+}
+
+fn dataset_shuffle(args: &[String]) -> i32 {
+    let mut json = false;
+    let mut path: Option<&str> = None;
+    let mut out: Option<&str> = None;
+    let mut schema_path: Option<&str> = None;
+    let mut seed = 0_u64;
+    let mut seed_given = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print!("{AI_USAGE}");
+                return 0;
+            }
+            "--json" => json = true,
+            "--out" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--out` requires a file path");
+                    return 64;
+                };
+                if out.is_some() {
+                    eprintln!("error: `--out` may be given only once");
+                    return 64;
+                }
+                out = Some(value);
+            }
+            "--seed" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--seed` requires an unsigned integer");
+                    return 64;
+                };
+                if seed_given {
+                    eprintln!("error: `--seed` may be given only once");
+                    return 64;
+                }
+                match value.parse::<u64>() {
+                    Ok(parsed) => {
+                        seed = parsed;
+                        seed_given = true;
+                    }
+                    Err(_) => {
+                        eprintln!("error: `--seed` must be an unsigned integer");
+                        return 64;
+                    }
+                }
+            }
+            "--schema" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--schema` requires a JSON Schema path");
+                    return 64;
+                };
+                if schema_path.is_some() {
+                    eprintln!("error: `--schema` may be given only once");
+                    return 64;
+                }
+                schema_path = Some(value);
+            }
+            other if other.starts_with('-') => {
+                eprintln!("error: unknown option `{other}` for `vantyx ai shuffle`");
+                return 64;
+            }
+            other => {
+                if path.is_some() {
+                    eprintln!("error: `vantyx ai shuffle` takes exactly one file path");
+                    return 64;
+                }
+                path = Some(other);
+            }
+        }
+        index += 1;
+    }
+    let Some(path) = path else {
+        eprintln!("error: `vantyx ai shuffle` requires a JSONL file path");
+        return 64;
+    };
+    let Some(out) = out else {
+        eprintln!("error: `vantyx ai shuffle` requires `--out <file>`");
+        return 64;
+    };
+
+    let inspection = match schema_path {
+        Some(schema_path) => {
+            ai::inspect_dataset_with_schema(Path::new(path), Path::new(schema_path))
+        }
+        None => ai::inspect_dataset(Path::new(path)),
+    };
+    let inspection = match inspection {
+        Ok(summary) => summary,
+        Err(error) => return report_error(&error),
+    };
+    if let Some(reason) = dataset_invalid_reason(&inspection) {
+        print_dataset_summary(&inspection, json);
+        eprintln!("error: {reason}; fix them before shuffling");
+        return 1;
+    }
+
+    let shuffle = match schema_path {
+        Some(schema_path) => ai::shuffle_dataset_with_schema(
+            Path::new(path),
+            Path::new(out),
+            seed,
+            Path::new(schema_path),
+        ),
+        None => ai::shuffle_dataset(Path::new(path), Path::new(out), seed),
+    };
+    let shuffle = match shuffle {
+        Ok(summary) => summary,
+        Err(error) => return report_error(&error),
+    };
+    if json {
+        println!("{}", shuffle.to_json().to_compact_string());
+    } else {
+        println!("format: jsonl-shuffle");
+        println!("input: {}", shuffle.input_path);
+        println!("input size: {} bytes", shuffle.input_bytes);
+        println!("input sha256: {}", shuffle.input_sha256);
+        println!("records: {}", shuffle.record_count);
+        println!("seed: {}", shuffle.seed);
+        println!(
+            "output: {} ({} bytes)",
+            shuffle.output_path, shuffle.output_bytes
+        );
+        println!("  sha256: {}", shuffle.output_sha256);
+        if !shuffle.warnings.is_empty() {
+            println!("warnings:");
+            for warning in &shuffle.warnings {
                 println!("  {warning}");
             }
         }

@@ -4,24 +4,36 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `1aba7ba` (differential-fuzzer control-flow coverage and bounded
-  shrinking); T-078 through T-100 are pending in the working tree
-- Remote: `origin/main` at `1aba7ba`
+- Last commit: `33c966e` (native parity fixes, dataset tooling, and agent
+  skills; T-078 through T-100); T-101 is uncommitted in the working tree
+- Remote: `origin/main` at `33c966e`; CI run 45920832199 green
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
 
-T-100 — Exact JSONL duplicate-record removal. Status: VERIFIED locally; commit,
-push, and CI pending. `vantyx ai dedup <file> --out <file>` runs the dataset
-validation gate first, keeps the first occurrence of each exact normalized
-record in input order, digests record bytes with a domain-separated SHA-256,
+T-101 — Deterministic JSONL dataset shuffle. Status: VERIFIED locally; commit
+and CI pending. `vantyx ai shuffle <file> --out <file> [--seed <n>]` runs the
+dataset validation gate first, orders records by a domain-separated SHA-256 of
+the seed and exact record bytes with a byte tie-breaker, refuses to overwrite
+or replace the input, holds the dataset in memory under 64 MiB and 1,000,000
+records, removes the output on failure, normalizes BOM/CRLF/blank lines with
+warnings, and reports the seed and input/output provenance. Four unit tests and
+two CLI tests; 713-test gate. See `ACTIVE_TASK.md` and
+`docs/decisions/ADR-0048-deterministic-dataset-shuffle.md`.
+
+T-100 — Exact JSONL duplicate-record removal. Status: VERIFIED; pushed in
+`33c966e`; CI run 45920832199 green. `vantyx ai dedup <file> --out <file>`
+runs the dataset validation gate first, keeps the first occurrence of each
+exact normalized record in input order, digests record bytes with a
+domain-separated SHA-256,
 refuses to overwrite or replace the input, removes the output on any failure,
 caps the in-memory digest set at 1,000,000 distinct records, and reports
 input/output provenance. Four unit tests and two CLI tests; 707-test gate. See
 `ACTIVE_TASK.md` and the `2026-11-26-t100-dataset-dedup.md` checkpoint.
 
 T-099 — Native `range(...)` list values outside `for` loops. Status: VERIFIED
-locally; commit, push, and CI pending. The interpreter already returned a
+locally; pushed in `33c966e`; CI run 45920832199 green. The interpreter
+already returned a
 `List[Int]` in any expression position, while native rejected `range(...)`
 outside `for` with `E0401`. The IR now lowers 1–3 `Int` bounds to
 `List[Int]`, and codegen binds the bounds in source order and calls a new
@@ -31,7 +43,8 @@ outside `for` with `E0401`. The IR now lowers 1–3 `Int` bounds to
 `2026-11-26-t099-native-range-values.md` checkpoint.
 
 T-098 — Deterministic train/held-out dataset splits. Status: VERIFIED locally;
-commit, push, and CI pending. `vantyx ai split` runs the dataset validation gate
+pushed in `33c966e`; CI run 45920832199 green. `vantyx ai split` runs the
+dataset validation gate
 first, assigns each record by a seeded content hash independent of line order,
 writes `<stem>.train.jsonl` and `<stem>.heldout.jsonl` with `create_new`,
 removes files from failed runs, guarantees non-empty splits for datasets with at
@@ -40,15 +53,17 @@ unit tests and two CLI tests; 700-test gate. See `ACTIVE_TASK.md` and the
 `2026-11-26-t098-dataset-splits.md` checkpoint.
 
 T-097 — Filesystem OS-error suffix and glob parse diagnostics. Status: VERIFIED
-locally; commit, push, and CI pending. Native filesystem failures now append
+locally; pushed in `33c966e`; CI run 45920832199 green. Native filesystem
+failures now append
 Rust's `(os error N)` suffix, and malformed glob patterns use the shared
 parser's `invalid glob pattern: ...` wording with quoted range endpoints.
 `runtime_error_headlines_match_interpreter` gained 11 cases and `diff3.py` went
 from 10 mismatches to 44/44. See `ACTIVE_TASK.md` and the
 `2026-11-26-t097-filesystem-os-errors.md` checkpoint.
 
-T-096 — Runtime diagnostic parity. Status: VERIFIED locally; commit, push, and
-CI pending. `int(Float)` now renders the offending value through the shared
+T-096 — Runtime diagnostic parity. Status: VERIFIED locally; pushed in
+`33c966e`; CI run 45920832199 green. `int(Float)` now renders the offending
+value through the shared
 Vantyx float display in both engines (`.0` for integral values,
 `Infinity`/`-Infinity`/`NaN`); a missing map key renders `Str` keys without
 quotes in both engines; `range` reports the requested element count; and
@@ -59,7 +74,7 @@ before the fixes. See `ACTIVE_TASK.md` and the
 `2026-11-26-t096-runtime-diagnostic-parity.md` checkpoint.
 
 T-095 — JSON Schema conformance and shared preflight. Status: VERIFIED
-locally; commit, push, and CI pending. The shared subset now ignores
+locally; pushed in `33c966e`; CI run 45920832199 green. The shared subset now ignores
 `required` for non-objects, rejects empty `enum`/`allOf` during preflight,
 evaluates `anyOf` and sibling keywords cumulatively, uses JSON Schema instance
 equality for `const`/`enum`, compares `minimum`/`maximum` exactly beyond
@@ -67,25 +82,28 @@ equality for `const`/`enum`, compares `minimum`/`maximum` exactly beyond
 `ai::schema` tests, one extract integration test, one tools unit test, and
 ADR-0045. See `ACTIVE_TASK.md`.
 
-T-094 — Dataset schema validation. Status: VERIFIED locally; commit, push, and
-CI pending. `vantyx ai dataset --schema <file>` preflights a bounded schema
+T-094 — Dataset schema validation. Status: VERIFIED locally; pushed in
+`33c966e`; CI run 45920832199 green. `vantyx ai dataset --schema <file>`
+preflights a bounded schema
 and validates every structurally valid record, reports the first 20 violations
 plus the total, adds an optional `schema` summary, and requires zero
 schema-invalid records for exit `0`. Ten dataset unit tests, three dataset CLI
 tests, and ADR-0044. See `ACTIVE_TASK.md` and
 `docs/ai/DATASET_INSPECTION.md`.
 
-T-093 — Reusable agent skill library. Status: VERIFIED locally; commit, push,
-and CI pending. Twelve project-local OpenCode skills live under
+T-093 — Reusable agent skill library. Status: VERIFIED; pushed in `33c966e`;
+CI run 45920832199 green. Thirteen project-local OpenCode skills live under
 `.opencode/skills/` with unique kebab-case IDs and `name`/`description`
 frontmatter; each contains a concrete Vantyx workflow, commands, safety
 constraints, acceptance criteria, troubleshooting, and an example.
 `docs/AGENT_SKILLS.md` records discovery, inventory, selection, and
-maintenance. The active harness advertised all twelve after creation,
-confirming the mechanism. See `ACTIVE_TASK.md` and `docs/AGENT_SKILLS.md`.
+maintenance. The active harness advertised all thirteen after creation,
+confirming the mechanism; CI validates the library. See `ACTIVE_TASK.md` and
+`docs/AGENT_SKILLS.md`.
 
-T-092 — Bounded JSONL dataset inspection. Status: VERIFIED locally; commit,
-push, and CI pending. `vantyx ai dataset <file>` streams UTF-8 JSONL through
+T-092 — Bounded JSONL dataset inspection. Status: VERIFIED locally; pushed in
+`33c966e`; CI run 45920832199 green. `vantyx ai dataset <file>` streams UTF-8
+JSONL through
 SHA-256, accepts a first-line BOM, CRLF, and blank lines, requires one
 top-level JSON object per non-blank line, and reports size, line/blank/record/
 invalid counts, sorted field/type histograms, and up to 20 numbered invalid
@@ -94,8 +112,9 @@ top-level fields. Invalid content or I/O exits `1`; usage exits `64`. It never
 downloads, executes, or modifies content. See `ACTIVE_TASK.md`, ADR-0043, and
 `docs/ai/DATASET_INSPECTION.md`.
 
-T-091 — Safetensors shard-index aggregation. Status: VERIFIED locally; commit,
-push, and CI pending. `vantyx ai inspect <model.safetensors.index.json>`
+T-091 — Safetensors shard-index aggregation. Status: VERIFIED locally; pushed
+in `33c966e`; CI run 45920832199 green. `vantyx ai inspect
+<model.safetensors.index.json>`
 recognizes a shard index by JSON object content or `.json` path, parses a
 bounded `weight_map` and optional metadata (64 MiB index cap, 10,000-shard cap,
 1,000,000-tensor cap), validates every referenced shard with the T-090
@@ -108,7 +127,8 @@ disagrees. It never downloads, loads, modifies, or executes model code. See
 `ACTIVE_TASK.md`, ADR-0042, and `docs/ai/MODEL_INSPECTION.md`.
 
 T-090 — Offline GGUF and Safetensors model inspection. Status: VERIFIED
-locally; commit, push, and CI pending. `vantyx ai inspect <file>` parses bounded
+locally; pushed in `33c966e`; CI run 45920832199 green. `vantyx ai inspect
+<file>` parses bounded
 GGUF v2/v3 and Safetensors metadata and tensor directories, validates tensor
 ranges, overlap, dtype sizes, alignment, and known GGML block sizes, and streams
 the whole file through an in-tree SHA-256. It reports format, size,
@@ -118,8 +138,9 @@ corrupt files are `AI_E_FORMAT`; I/O failures are `AI_E_IO`. It never downloads,
 loads, modifies, or executes model code. See `ACTIVE_TASK.md`, ADR-0041, and
 `docs/ai/MODEL_INSPECTION.md`.
 
-T-089 — Same-file `copy_file` refusal. Status: VERIFIED locally; commit, push,
-and CI pending. `copy_file(path, path)` opened the target for writing before
+T-089 — Same-file `copy_file` refusal. Status: VERIFIED locally; pushed in
+`33c966e`; CI run 45920832199 green. `copy_file(path, path)` opened the target
+for writing before
 reading the source, so it truncated the source; symbolic-link and hard-link
 aliases did the same. `src/fs_safety.rs::paths_refer_to_same_file` now compares
 device and inode on Unix (canonical paths elsewhere), and both the interpreter
@@ -128,7 +149,8 @@ the same file` before the target is opened. The guard is best-effort and
 raceable, not atomic. See `ACTIVE_TASK.md` and ADR-0029.
 
 T-088 — Source-order evaluation of named constructor arguments. Status:
-VERIFIED locally; commit, push, and CI pending. Named struct-constructor
+VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green. Named
+struct-constructor
 arguments are stored in declaration order, and the native IR lowering reordered
 them before code generation, so the C call evaluated them in declaration order.
 `Pair(right=note("right", 2), left=note("left", 1))` printed `right`, `left` in
@@ -138,7 +160,8 @@ arguments into typed temporaries in source order before calling the constructor
 in declaration order. See `ACTIVE_TASK.md`.
 
 T-087 — Lexical function scope in the interpreter. Status: VERIFIED locally;
-commit, push, and CI pending. The interpreter searched one flat scope stack
+pushed in `33c966e`; CI run 45920832199 green. The interpreter searched one
+flat scope stack
 from newest to oldest, so a callee could read or mutate a caller local that
 shared a global's name, and an immutable caller binding produced a false
 `R0010`. The checker and native backend already resolved names lexically.
@@ -147,14 +170,16 @@ shared a global's name, and an immutable caller binding produced a false
 boundary is restored on return and error. See `ACTIVE_TASK.md`.
 
 T-086 — Trailing-dot path stem and extension parity. Status: VERIFIED locally;
-commit, push, and CI pending. Native `path_stem` and `path_extension` used an
+pushed in `33c966e`; CI run 45920832199 green. Native `path_stem` and
+`path_extension` used an
 earlier dot when the final dot was trailing, while the interpreter returned
 the whole name and an empty extension. The C helpers now share one final-dot
 search that matches the oracle, and differential plus random-path probes cover
 the regression.
 
 T-085 — Lint rule for unused function parameters. Status: VERIFIED locally;
-commit, push, and CI pending. `vantyx lint` skipped parameters, so a dead
+pushed in `33c966e`; CI run 45920832199 green. `vantyx lint` skipped
+parameters, so a dead
 parameter produced no finding; `L0004` now reports it distinctly from `L0001`
 while underscore names, guards, nested reads, loop variables, and match
 bindings keep their existing treatment.
@@ -163,7 +188,7 @@ T-084 — native `bool` argument evaluation, T-083 — native `Unit` interpolati
 evaluation, T-082 — native `Unit` equality operand evaluation, T-081 — string
 `contains` argument order, T-080 — `type` argument evaluation, T-079 —
 deterministic `print` and float `min`/`max`, and T-078 — strict numeric string
-conversion — remain VERIFIED locally and uncommitted in the same working tree.
+conversion — are in the same commit.
 
 ## Recently completed
 
@@ -183,9 +208,9 @@ conversion — remain VERIFIED locally and uncommitted in the same working tree.
 - T-058–T-068 are committed and CI-green except where noted in
   `COMPLETED_TASKS.md`.
 
-## Working tree
+## Committed in `33c966e`
 
-Modified: `AGENTS.md`, `PROJECT_STATUS.md`, `TASKS.md`,
+Modified in the commit: `AGENTS.md`, `PROJECT_STATUS.md`, `TASKS.md`,
 `docs/language_specification.md`, `docs/linting.md`,
 `docs/decisions/ADR-0029-rename-and-copy.md`,
 `docs/decisions/ADR-0030-lexical-path-builtins.md`,
@@ -198,8 +223,8 @@ Modified: `AGENTS.md`, `PROJECT_STATUS.md`, `TASKS.md`,
 `src/fs_safety.rs`, `src/interp.rs`, `src/ir.rs`, `src/lint.rs`,
 `tests/ai.rs`, `tests/e2e.rs`, `tests/native.rs`,
 `tools/differential_fuzz.py`, `README.md`, `examples/ai/README.md`,
-`RESEARCH/TOOL_INVENTORY.md`, and the `AGENT_STATE/` records. New:
-`src/ai/model.rs`, `src/ai/dataset.rs`,
+`RESEARCH/TOOL_INVENTORY.md`, and the `AGENT_STATE/` records. Added in the
+commit: `src/ai/model.rs`, `src/ai/dataset.rs`,
 `docs/ai/MODEL_INSPECTION.md`, `docs/ai/DATASET_INSPECTION.md`,
 `docs/AGENT_SKILLS.md`,
 `docs/decisions/ADR-0039-deterministic-print-and-float-min-max.md`,
@@ -211,15 +236,25 @@ Modified: `AGENTS.md`, `PROJECT_STATUS.md`, `TASKS.md`,
 `docs/decisions/ADR-0045-json-schema-conformance-and-preflight.md`,
 `docs/decisions/ADR-0046-deterministic-dataset-splits.md`,
 `docs/decisions/ADR-0047-exact-dataset-deduplication.md`,
+`docs/decisions/ADR-0048-deterministic-dataset-shuffle.md`,
+`docs/ai/DATASET_SHUFFLING.md`,
 `docs/ai/DATASET_DEDUPLICATION.md`,
 `docs/ai/DATASET_SPLITTING.md`,
 `examples/ai/train.jsonl`, thirteen `.opencode/skills/*/SKILL.md` files, and the
 T-078/T-079, T-080, T-081, T-082, T-083, T-084, T-085, T-086, T-087, T-088,
 T-089, T-090, T-091, T-092, T-093, T-094, T-095, T-096, T-097, T-098, T-099,
-and T-100 checkpoints. No generated
+T-100, and T-101 checkpoints. No generated
 binaries or credentials are tracked.
 
-## Verified commands (2026-11-26, after T-100/T-099/T-098/T-097/T-096/T-095/T-094/T-093/T-092)
+## Verified commands (2026-11-26, after T-101/T-100/T-099/T-098/T-097/T-096/T-095/T-094/T-093/T-092)
+
+- T-101 gate — `cargo test --lib ai::dataset` passed 23 and
+  `cargo test --test ai dataset_shuffle` passed 2; `cargo test` passed 713 (399
+  library unit + 15 CLI unit + 45 AI integration + 113 e2e + 141 native);
+  clippy and fmt clean; release build succeeded; fuzzer self-tests passed 7 and
+  100/100 generated cases agreed on seed 1; all five examples built and ran
+  natively; two `--seed 7` shuffles produced byte-identical output; the
+  repository skill validator passed all 13 project-local skills.
 
 - T-100 gate — `cargo test --lib ai::dataset` passed 19 and
   `cargo test --test ai dataset_dedup` passed 2; `cargo test` passed 707 (395
@@ -335,8 +370,8 @@ binaries or credentials are tracked.
 - `cargo build --release` — success
 - `cargo clippy --all-targets -- -D warnings` — clean
 - `cargo fmt --check --all` — clean
-- `cargo test` — 395 library unit + 15 CLI unit + 43 AI integration +
-  113 e2e + 141 native = 707 passed
+- `cargo test` — 399 library unit + 15 CLI unit + 45 AI integration +
+  113 e2e + 141 native = 713 passed
 - `VANTYX_CC=gcc cargo test --test native` — 141 passed
 - `python3 tools/test_differential_fuzz.py` — 7 passed
 - `python3 tools/differential_fuzz.py --iterations 100 --seed 1` —
@@ -370,23 +405,26 @@ binaries or credentials are tracked.
 - CI run 45507195701 — success on `1aba7ba` with T-077
 - CI run 45504177763 — success on `de0bac7` with the rustfmt gate
 - CI run 45503321172 — success on `66b4efc` with T-075
+- CI run 45920832199 — success on `33c966e` with T-078–T-100 and the skill
+  validator
 
 ## Next steps
 
-1. Review the complete working-tree diff; commit T-078 through T-100 together
-   only if the user authorizes commits, then push, watch CI, and record the run
-   ID.
+1. T-101 is verified locally; commit and push it, then record the commit hash
+   and CI run. T-078 through T-100 remain committed as `33c966e` with CI run
+   45920832199 green.
 2. Continue targeted interpreter/native probes. Remaining native surfaces
    include file/directory builtins under unusual conditions, recursive
    copy/rename, modules, and deeper match/nesting interactions; audit any
    lowering that can render a constant or omit an operand, and build effectful
    cases with both clang and GCC.
-3. Extend offline dataset tooling with tokenizer-aware counts, shuffle, and
-   label stratification; exact duplicate detection shipped in T-100 and
-   schema/required-field validation shipped in T-094. Keep tokenization,
-   shuffle, and stratification as separate bounded tasks with their own tests.
-4. Add a lightweight skill check (frontmatter and required sections) and keep
-   `docs/AGENT_SKILLS.md` synchronized when a skill is added or changed.
+3. Extend offline dataset tooling with tokenizer-aware counts and label
+   stratification; exact duplicate detection shipped in T-100, schema/
+   required-field validation shipped in T-094, and deterministic seeded
+   shuffling shipped in T-101. Keep tokenization and stratification as separate
+   bounded tasks with their own tests.
+4. Keep `docs/AGENT_SKILLS.md` synchronized when a skill is added or changed;
+   CI validates frontmatter, required sections, size, and unique IDs.
 5. Continue remaining P1/P2 candidates: metadata objects/preservation,
    recursive move, REPL multi-line history and field completion, linter
    follow-ups, and string performance with measured benchmarks.

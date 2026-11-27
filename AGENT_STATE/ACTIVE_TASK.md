@@ -1,9 +1,53 @@
 # Active Task
 
+## T-101 — Deterministic JSONL dataset shuffle
+
+- Status: VERIFIED locally; commit pending at the time of this record; CI pending
+- Priority: P3 (AI host tooling)
+- Dependencies: T-092, T-094, T-098, T-100, ADR-0043, ADR-0044, ADR-0046,
+  ADR-0047
+
+### Implemented
+
+- `src/ai/dataset.rs` adds `ShuffleSummary`, `shuffle`, `shuffle_with_schema`,
+  `shuffle_inner`, `read_shuffle_records`, `write_shuffle`, and
+  `shuffle_record_digest`. Records are ordered by
+  `SHA-256("vantyx-dataset-shuffle-v1\0" || seed_le64 || record_bytes)` with
+  the exact record bytes as a tie-breaker, so the order depends only on the set
+  of records and the seed.
+- The whole dataset is held in memory under `MAX_SHUFFLE_BYTES` (64 MiB) and
+  `MAX_SHUFFLE_RECORDS` (1,000,000); the existing 16 MiB line cap still applies.
+- The command validates every record (and the optional schema) before creating
+  the output, refuses an existing output and the input path, uses `create_new`,
+  removes the output on failure, and verifies the record count before success.
+- `src/ai_cli.rs` adds `vantyx ai shuffle <file> --out <file> [--seed <n>]
+  [--schema <file>] [--json]` with text and JSON provenance reports.
+
+### Evidence
+
+- `cargo test --lib ai::dataset` — 23 passed.
+- `cargo test --test ai dataset_shuffle` — 2 passed.
+- `cargo test` — 713 passed (399 library unit + 15 CLI unit + 45 AI integration
+  + 113 e2e + 141 native).
+- `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check --all`
+  clean; `cargo build --release` succeeded.
+- `python3 tools/test_differential_fuzz.py` passed 7 tests;
+  `python3 tools/differential_fuzz.py --iterations 100 --seed 1` agreed 100/100.
+- All five examples built and ran natively with identical output.
+- Manual smoke: two `--seed 7` runs produced byte-identical output and SHA-256
+  values; the skill validator accepted all thirteen skills.
+
+### Remaining
+
+- Commit and push, then record the commit hash and CI run in the status files.
+- Scope limits: no external-memory sort, PRNG-defined permutation, reservoir
+  sampling, tokenizer-aware count, label stratification, or split integration.
+  A one-record dataset is necessarily unchanged.
+
 ## T-100 — Exact JSONL duplicate-record removal
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-099
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P3 (AI host tooling)
 - Dependencies: T-092, T-094, T-098, ADR-0043, ADR-0044, ADR-0046, ADR-0047
 
@@ -41,16 +85,15 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-100 together and
-  push when authorized; watch CI and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: exact-byte identity only; no JSON canonicalization, near-
   duplicate detection, external sorting, shuffle, tokenizer-aware counts, or
   label stratification.
 
 ## T-099 — Native `range(...)` list values outside `for` loops
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-098
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P1 (native backend/language completeness)
 - Dependencies: T-024, T-096, ADR-0009
 
@@ -85,16 +128,15 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-099 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: `range(...)` materializes a list rather than a lazy iterator;
   a 10,000,000-element range allocates a large native list and native
   allocations remain intentionally leaked in v0.1.
 
 ## T-098 — Deterministic train/held-out dataset splits
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-097
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P3 (AI host tooling)
 - Dependencies: T-092, T-094, T-043, ADR-0007, ADR-0015, ADR-0043, ADR-0044,
   ADR-0046
@@ -138,8 +180,7 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-098 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: no shuffle, deduplication, tokenizer-aware counts, label
   stratification, or extra validation split; the output pair is not atomic
   across a crash; the achieved ratio can differ from the requested ratio and is
@@ -147,8 +188,8 @@
 
 ## T-097 — Filesystem OS-error suffix and glob parse diagnostic parity
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-096
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P1 (interpreter/native correctness)
 - Dependencies: T-058, T-060, T-086, T-096, ADR-0026, ADR-0033
 
@@ -179,16 +220,15 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-097 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: Unix only; only the first diagnostic line is compared. An
   initial helper implementation called itself and segfaulted the native binary;
   the probe caught it before the regression test was added.
 
 ## T-096 — Runtime diagnostic parity for conversions, map keys, range limits, and file I/O
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-095
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P1 (interpreter/native correctness)
 - Dependencies: T-058, T-060, T-061, T-078, T-079, T-086, T-087, ADR-0030
 
@@ -229,8 +269,7 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-096 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: only the first diagnostic line is covered at these sites; the
   source excerpt and caret can still differ because the native runtime reports
   its own line/column. The differential probes are outside the repository and
@@ -238,8 +277,8 @@
 
 ## T-095 — JSON Schema conformance and shared preflight
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-094
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P3 (AI host correctness)
 - Dependencies: T-043, T-094, ADR-0007, ADR-0015, ADR-0045
 
@@ -283,8 +322,7 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-095 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: no `$ref`/`$defs`, `oneOf`, `not`, `if`/`then`/`else`,
   `pattern`, `format`, `uniqueItems`, `contains`, `propertyNames`, tuple
   `items`, or remote references. Preflight checks shapes, not satisfiability.
@@ -292,8 +330,8 @@
 
 ## T-094 — Dataset schema validation
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-093
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P3 (AI host tooling)
 - Dependencies: T-092, T-043, ADR-0007, ADR-0015, ADR-0044
 
@@ -325,8 +363,7 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-095 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: structural validation only; no tokenization, splits, shuffle,
   deduplication, label-leakage detection, custom formats, or licensing
   certification. The schema path is recorded but not hashed, and the dataset
@@ -334,20 +371,21 @@
 
 ## T-093 — Reusable agent skill library
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-092
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P2 (agent tooling)
 - Dependencies: `AGENTS.md`, `.opencode/agents/`, `docs/ai/`, `benchmarks/`,
   `tools/`
 
 ### Implemented
 
-- Added twelve project-local OpenCode skills under `.opencode/skills/<id>/SKILL.md`:
+- Added thirteen project-local OpenCode skills under `.opencode/skills/<id>/SKILL.md`:
   `rust-forensics`, `compiler-engineering`, `python-reverse-engineering`,
   `runtime-memory-safety`, `ai-systems-engineering`, `model-training`,
-  `gpu-numerical-performance`, `security-audit`, `performance-benchmarking`,
-  `multi-agent-orchestration`, `cross-platform-engineering`, and
-  `autonomous-recovery`.
+  `gpu-numerical-performance`, `security-audit-engineering`,
+  `performance-benchmarking`, `multi-agent-orchestration`,
+  `cross-platform-engineering`, `autonomous-recovery`, and
+  `engineering-skill-orchestration`.
 - Each skill declares YAML `name` and `description`, states when to use it,
   lists required tools, gives a concrete Vantyx workflow with commands,
   defines safety constraints and acceptance criteria, includes troubleshooting,
@@ -357,25 +395,27 @@
 
 ### Evidence
 
-- A shell check over `.opencode/skills/*/SKILL.md` listed twelve unique IDs,
-  each with both frontmatter fields.
-- The active OpenCode harness advertised all twelve in its available-skill list
+- A shell check over `.opencode/skills/*/SKILL.md` listed thirteen unique IDs,
+  each with both frontmatter fields, and
+  `python3 .opencode/skills/engineering-skill-orchestration/scripts/validate_skills.py
+  --root .opencode/skills` validated the library.
+- The active OpenCode harness advertised all thirteen in its available-skill list
   after the files were created, confirming that `.opencode/skills/` and the
   frontmatter are the supported mechanism.
 - No Rust code changed for this task; the language gate is unaffected.
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-093 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: skills are instructions, not enforcement. Agent permissions and
-  `opencode/autoinvoke` still control availability, and there is no CI lint for
-  skill frontmatter or required sections yet.
+  `opencode/autoinvoke` still control availability. CI validates frontmatter,
+  required sections, size, and unique IDs, but not the correctness of every
+  command in a skill.
 
 ## T-092 — Bounded JSONL dataset inspection
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-091
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P3 (AI host tooling)
 - Dependencies: T-037, T-038, T-041, T-090, ADR-0007, ADR-0015, ADR-0043
 
@@ -415,8 +455,7 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-093 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: syntactic/structural validation only; no tokenization, splits,
   shuffle, deduplication, schema/required-field checks, nested-field summaries,
   or duplicate-key detection. The digest is not an atomic snapshot of a
@@ -424,8 +463,8 @@
 
 ## T-091 — Safetensors shard-index aggregation
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-090
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+  (T-078 through T-100 are in the same commit)
 - Priority: P3 (AI host tooling)
 - Dependencies: T-090, ADR-0007, ADR-0015, ADR-0041, ADR-0042
 
@@ -471,12 +510,11 @@
   `cargo build`, and `cargo build --release` — clean.
 - A manual two-shard index with leading whitespace printed the aggregate text
   and JSON summaries with both per-shard digests.
-- CI pending.
+- CI run 45920832199 green.
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-091 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: validation is best-effort and not atomic; a shard can change
   between its digest and its header check, and a symlink can be retargeted
   concurrently. The inspector does not scan the directory for unlisted shards,
@@ -486,8 +524,9 @@
 
 ## T-090 — Offline GGUF and Safetensors model inspection
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-089
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+(T-078 through T-089
+  are in the same commit)
 - Priority: P3 (AI host tooling)
 - Dependencies: T-037, T-038, T-041, ADR-0007, ADR-0015, ADR-0041
 
@@ -522,12 +561,11 @@
   AI integration + 113 e2e + 138 native).
 - `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check --all`,
   `cargo build`, and `cargo build --release` — clean.
-- CI pending.
+- CI run 45920832199 green.
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-091 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: GGUF v1 is rejected; GGUF text is decoded lossily; unknown GGML
   type IDs are reported with a warning instead of a guessed byte size; tensor
   values, embedded signatures/checksums, licenses, and chat templates are not
@@ -537,8 +575,9 @@
 
 ## T-089 — Refuse same-file `copy_file` targets
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-088
-  and T-090 are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+(T-078 through T-088
+  and T-090 are in the same commit)
 - Priority: P0 (interpreter/native safety)
 - Dependencies: T-061, ADR-0029
 
@@ -571,20 +610,20 @@
   + 113 e2e + 138 native).
 - `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check --all`,
   `cargo build`, and `cargo build --release` — clean.
-- CI pending.
+- CI run 45920832199 green.
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-091 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: the check runs before the target is opened, so a caller can
   still race it. It does not compare contents, protect bind-mount or reflink
   aliases, or make the copy atomic.
 
 ## T-088 — Source-order evaluation of named constructor arguments
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-087
-  and T-089–T-090 are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+(T-078 through T-087
+  and T-089–T-090 are in the same commit)
 - Priority: P1 (interpreter/native correctness)
 - Dependencies: T-001, T-072, ADR-0001
 
@@ -634,8 +673,7 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-091 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: only named struct-constructor arguments need reordering; enum
   variant payloads are positional and function calls reject named arguments
   natively. The fix adds no general expression-sequencing IR node and does not
@@ -643,8 +681,9 @@
 
 ## T-087 — Lexical function scope in the interpreter
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-086
-  and T-088 are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+(T-078 through T-086
+  and T-088 are in the same commit)
 - Priority: P1 (interpreter/native correctness)
 - Dependencies: T-001, T-072, ADR-0040
 
@@ -678,12 +717,11 @@
   native `functions_use_lexical_globals_matching`; the `functions_program`
   fuzzer shape now declares two globals and a caller that shadows both.
 - Full gate results are recorded in `SESSION_STATE.md` and
-  `PROJECT_STATUS.md`; CI pending.
+  `PROJECT_STATUS.md`; CI run 45920832199 green.
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-087 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: the fix covers name reads and assignment targets. It does not
   add closures, nested functions, or a separate global table; it preserves the
   existing root-scope representation and the leaked-allocation policy. No
@@ -692,8 +730,9 @@
 
 ## T-086 — Trailing-dot path stem and extension parity
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-085
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+(T-078 through T-085
+  are in the same commit)
 - Priority: P1 (interpreter/native correctness)
 - Dependencies: T-062, ADR-0030
 
@@ -723,19 +762,19 @@
   `path_trailing_dot_names_keep_the_whole_stem` over six stems and six empty
   extensions.
 - Full gate results are recorded in `SESSION_STATE.md` and
-  `PROJECT_STATUS.md`; CI pending.
+  `PROJECT_STATUS.md`; CI run 45920832199 green.
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-086 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: lexical byte behavior only; no filesystem access, `..`
   normalization, Windows syntax, or NUL-containing string support.
 
 ## T-085 — Lint rule for unused function parameters
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-084
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+(T-078 through T-084
+  are in the same commit)
 - Priority: P2 (tooling)
 - Dependencies: T-073, ADR-0037
 
@@ -773,16 +812,16 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-085 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: lexical only. There is no trait or interface conformance
   reason to keep an unread name, no suppression attributes, no configuration,
   and no automatic fix. Imported-module functions are linted in place.
 
 ## T-084 — Evaluate the argument of `bool` in the native backend
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-083
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+(T-078 through T-083
+  are in the same commit)
 - Priority: P1 (interpreter/native correctness)
 - Dependencies: T-001, T-010, T-072, T-080, ADR-0001
 
@@ -816,8 +855,7 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-084 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: `bool` still accepts only statically typed `Bool`; the
   temporary is evaluated for effects and then discarded. Other built-ins that
   can reject an argument statically need the same audit if their lowering
@@ -825,8 +863,9 @@
 
 ## T-083 — Evaluate expressions interpolated as `Unit`
 
-- Status: VERIFIED locally; commit, push, and CI pending (T-078 through T-082
-  are also uncommitted in the same working tree)
+- Status: VERIFIED locally; pushed in `33c966e`; CI run 45920832199 green
+(T-078 through T-082
+  are in the same commit)
 - Priority: P1 (interpreter/native correctness)
 - Dependencies: T-001, T-010, T-072, T-079, ADR-0001, ADR-0039
 
@@ -863,15 +902,14 @@
 
 ### Remaining
 
-- Review the working-tree diff, then commit T-078 through T-083 together only
-  when the user authorizes commits; push, watch CI, and record the run ID.
+- Committed as `33c966e`, pushed, and CI run 45920832199 passed.
 - Scope limits: a `Unit` still renders as constant `()`; only its evaluation is
   preserved. The native backend still rejects `Any`, so interpolation of
   dynamically typed expressions remains outside the native subset.
 
 ## T-082 — Evaluate both operands of native `Unit` equality
 
-- Status: VERIFIED locally; commit and CI pending in the same tree
+- Status: VERIFIED locally; commit `33c966e`; CI run 45920832199 green in the same tree
 - Priority: P1 (interpreter/native correctness)
 - Native `Unit ==`/`!=` lowered to a constant and emitted neither operand;
   `binary_expr` hoisted only when both sides had effects, so a sole effectful
@@ -884,7 +922,7 @@
 
 ## T-081 — Compiler-independent argument order for native `contains` on strings
 
-- Status: VERIFIED locally; commit and CI pending
+- Status: VERIFIED locally; commit `33c966e`; CI run 45920832199 green
 - Priority: P1 (interpreter/native correctness and portability)
 - Dependencies: T-001, T-010, T-060, T-072, ADR-0001
 - Native lowering emitted `vantyx_str_contains(haystack, needle)` with both
@@ -903,7 +941,7 @@
 
 ## T-080 — Evaluate the argument of `type` in the native backend
 
-- Status: VERIFIED locally; commit and CI pending in the same tree
+- Status: VERIFIED locally; commit `33c966e`; CI run 45920832199 green in the same tree
 - Priority: P1 (interpreter/native correctness)
 - The backend previously yielded a static string without evaluating `value`,
   skipping nested output, mutation, and runtime errors, so
@@ -917,7 +955,7 @@
 
 ## T-079 — Deterministic `print` evaluation and float `min`/`max` semantics
 
-- Status: VERIFIED locally; commit and CI pending
+- Status: VERIFIED locally; commit `33c966e`; CI run 45920832199 green
 - Priority: P1 (interpreter/native correctness)
 - Both engines evaluate all `print` arguments, render them, then write one
   line; float `min`/`max` use one explicit rule (single NaN yields the other
@@ -930,7 +968,7 @@
 
 ## T-078 — Strict numeric string conversion in the native runtime
 
-- Status: VERIFIED locally; commit and CI pending
+- Status: VERIFIED locally; commit `33c966e`; CI run 45920832199 green
 - Priority: P1 (interpreter/native correctness)
 - `int(text)`/`float(text)` trim Unicode whitespace and validate the exact
   interpreter grammar before calling `strtoll`/`strtod`; float `ERANGE` is

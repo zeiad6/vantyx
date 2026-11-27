@@ -4,6 +4,20 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-26 — Dataset shuffle orders by a seeded content hash
+
+- Define the permutation as a sort by
+  `SHA-256("vantyx-dataset-shuffle-v1\0" || seed_le64 || record_bytes)` with
+  the record bytes as a tie-breaker. This makes the output a pure function of
+  the record set and the seed, independent of input order, and avoids pinning a
+  PRNG algorithm.
+- Hold the dataset in memory and state the bounds (64 MiB, 1,000,000 records)
+  instead of implying an external-memory shuffle. Defer a streaming/external
+  sort and reservoir sampling until their contracts and tests exist.
+- Reuse the dataset validation gate, `create_new`, and the failed-output
+  cleanup pattern; do not integrate shuffling into `split`, which keeps each
+  step auditable.
+
 ## 2026-11-26 — Schema conformance is fixed at the shared validator
 
 - Treat JSON Schema instance equality as a separate operation from Rust's
@@ -36,11 +50,12 @@ file records operational choices.
 ## 2026-11-26 — Agent skills are project-local and advisory
 
 - Store reusable workflows as `.opencode/skills/<id>/SKILL.md` with `name` and
-  `description` frontmatter; the harness advertised all twelve after creation,
+  `description` frontmatter; the harness advertised all thirteen after creation,
   which confirms the mechanism.
 - Treat skills as instructions, not enforcement. Agent permissions and
-  auto-invocation still control availability, and there is no CI frontmatter or
-  required-section check yet; document that limit instead of implying a gate.
+  auto-invocation still control availability. CI validates frontmatter, required
+  sections, size, and unique IDs, but not the correctness of every command in a
+  skill; document that limit instead of implying a stronger gate.
 - Keep each skill Vantyx-specific: workflow, commands, safety constraints,
   acceptance criteria, troubleshooting, and an example, with claims tied to
   observed evidence.

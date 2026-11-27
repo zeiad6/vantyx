@@ -387,6 +387,9 @@ executes a model, and remote HTTPS requires explicit opt-in.
 # Remove exact duplicate records, keeping the first occurrence
 ./target/release/vantyx ai dedup examples/ai/train.jsonl \
   --out /tmp/vtx-train.unique.jsonl --json
+# Write a deterministic seeded permutation (never overwrites existing files)
+./target/release/vantyx ai shuffle examples/ai/train.jsonl \
+  --out /tmp/vtx-train.shuffled.jsonl --seed 7 --json
 
 # Any local OpenAI-compatible server (Ollama, llama.cpp, LM Studio, ...)
 ./target/release/vantyx ai models --endpoint http://127.0.0.1:11434/v1

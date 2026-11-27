@@ -66,7 +66,7 @@ Rust API while language-level integration remains blocked.
 | `ai/sse.rs` | Incremental server-sent-events parser | Buffer without bound |
 | `ai/tokens.rs` | Labelled token estimate and budget checks | Claim exact model tokenization |
 | `ai/model.rs` | Bounded GGUF/Safetensors header inspection, Safetensors shard-index aggregation, tensor-range validation, streaming SHA-256 | Load weights, execute model code, or download anything |
-| `ai/dataset.rs` | Bounded JSONL validation, optional schema validation, top-level field/type summaries, numbered invalid lines, streaming SHA-256, deterministic train/held-out splits, exact duplicate-record removal | Tokenize, shuffle, canonicalize, or modify datasets |
+| `ai/dataset.rs` | Bounded JSONL validation, optional schema validation, top-level field/type summaries, numbered invalid lines, streaming SHA-256, deterministic train/held-out splits, exact duplicate-record removal, deterministic seeded shuffling | Tokenize, canonicalize, or modify datasets |
 | `ai/extract.rs` | Strict JSON extraction, schema validation, bounded repair, usage accounting | Return unvalidated model output or exceed the repair limit |
 | `ai/embedding.rs` | Vector math, normalization, in-memory index | Hide O(n) search cost |
 | `ai/bm25.rs` | Deterministic lexical retrieval | Claim semantic retrieval |
@@ -216,10 +216,10 @@ path
 
 Invalid content or an I/O failure exits `1`; usage errors exit `64`. The
 command never executes dataset content, contacts a provider, or modifies the
-file. It does not tokenize, shuffle, or implement full JSON Schema; use
-`vantyx ai dedup` to remove exact duplicate records. Schema validation covers
-the supported subset used by `vantyx ai extract`. See
-[DATASET_INSPECTION.md](DATASET_INSPECTION.md) and
+file. It does not tokenize or implement full JSON Schema; use
+`vantyx ai dedup` to remove exact duplicate records and `vantyx ai shuffle` to
+reorder them. Schema validation covers the supported subset used by
+`vantyx ai extract`. See [DATASET_INSPECTION.md](DATASET_INSPECTION.md) and
 [ADR-0043](../decisions/ADR-0043-bounded-jsonl-dataset-inspection.md), plus
 [ADR-0044](../decisions/ADR-0044-bounded-dataset-schema-validation.md) for
 schema validation.
@@ -267,6 +267,27 @@ canonicalized. The digest set is capped at 1,000,000 distinct records; the
 input itself is streamed and remains under the 256 MiB cap. See
 [DATASET_DEDUPLICATION.md](DATASET_DEDUPLICATION.md) and
 [ADR-0047](../decisions/ADR-0047-exact-dataset-deduplication.md).
+
+## Dataset shuffle path
+
+`vantyx ai shuffle <file> --out <file> [--seed <n>]` runs the same inspection
+gate, then writes a deterministic permutation:
+
+```text
+inspect the input and, when supplied, the schema
+  → reject invalid lines or schema-invalid records before creating output
+  → read, validate, and hash the input into a bounded in-memory record list
+  → sort by SHA-256(domain || seed || record) with record bytes as tie-breaker
+  → create the output with create_new (never overwrite or replace the input)
+  → write every record in sorted order and remove the output on failure
+  → text or --json report with seed, counts, and input/output SHA-256 values
+```
+
+The order depends only on the set of records and the seed, not on input order.
+The whole dataset is held in memory under a 64 MiB input cap and a
+1,000,000-record cap; the 16 MiB line cap still applies. See
+[DATASET_SHUFFLING.md](DATASET_SHUFFLING.md) and
+[ADR-0048](../decisions/ADR-0048-deterministic-dataset-shuffle.md).
 
 ## Cloud path
 

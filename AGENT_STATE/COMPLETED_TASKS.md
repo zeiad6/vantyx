@@ -3,12 +3,19 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-101 — Deterministic JSONL dataset shuffle (2026-11-26; 713-test gate;
+  `vantyx ai shuffle` validates first, orders records by a domain-separated
+  SHA-256 of the seed and exact record bytes with a byte tie-breaker, refuses
+  overwrites and same-input output, removes failed output, holds the dataset in
+  memory under 64 MiB and 1,000,000 records, normalizes BOM/CRLF/blank lines
+  with warnings, and reports seed and input/output provenance; four unit tests
+  and two CLI tests; commit and CI pending at record time).
 - T-100 — Exact JSONL duplicate-record removal (2026-11-26; 707-test gate;
   `vantyx ai dedup` validates first, keeps the first exact record in input
   order, uses a domain-separated SHA-256 digest, refuses overwrites and
   same-input output, removes failed output, caps the digest set at 1,000,000
   distinct records, and reports input/output provenance; four unit tests and
-  two CLI tests; commit and CI pending).
+  two CLI tests; commit `33c966e`; CI run 45920832199 green).
 - T-099 — Native `range(...)` list values outside `for` loops (2026-11-26;
   701-test gate; the interpreter returned a `List[Int]` in any expression
   position while native rejected it with `E0401`; IR now lowers 1–3 `Int`
@@ -16,19 +23,19 @@ See `TASKS.md` for full acceptance criteria and evidence.
   typed list through a new `vantyx_range_list` helper with the shared
   step-zero/10,000,000-element checks; `range_values_match` and two
   value-position error headlines; clang and GCC; `diff6.py` 31/31 with only
-  the known `List[Any]` display limitation; commit and CI pending).
+  the known `List[Any]` display limitation; commit `33c966e`; CI run 45920832199 green).
 - T-098 — Deterministic train/held-out dataset splits (2026-11-26; 700-test
   gate; `vantyx ai split` validates first, assigns records by a seeded
   content hash independent of line order, refuses overwrites, normalizes
   BOM/CRLF/blank lines with warnings, guarantees non-empty splits, and reports
   actual counts and output SHA-256 values; five unit tests and two CLI tests;
-  commit and CI pending).
+  commit `33c966e`; CI run 45920832199 green).
 - T-097 — Filesystem OS-error suffix and glob parse diagnostics (2026-11-26;
   693-test gate; native filesystem failures now append Rust's `(os error N)`,
   and malformed glob patterns use `invalid glob pattern: ...` with quoted range
   endpoints; `runtime_error_headlines_match_interpreter` gained 11 cases;
-  `diff3.py` went from 10 mismatches to 44/44; clang and GCC; commit and CI
-  pending).
+  `diff3.py` went from 10 mismatches to 44/44; clang and GCC; commit
+  `33c966e`; CI run 45920832199 green).
 - T-096 — Runtime diagnostic parity for conversions, map keys, range limits,
   and file I/O (2026-11-26; 693-test gate; both engines now agree on the first
   `error[...]` line for `int(Float)` including `Infinity`/`NaN` and the `2^63`
@@ -36,21 +43,22 @@ See `TASKS.md` for full acceptance criteria and evidence.
   `glob` failures; `runtime_error_headlines_match_interpreter` and Unix-only
   `file_error_headlines_match_interpreter`; both failed before the fixes;
   clang and GCC; `/tmp/opencode/probe/diff.py` 55/55 and `diff2.py` 34/34;
-  commit and CI pending).
+  commit `33c966e`; CI run 45920832199 green).
 - T-095 — JSON Schema conformance and shared preflight (2026-11-26; 691-test
   gate; `required` applies only to objects; empty `enum`/`allOf` fail
   preflight; `anyOf` and sibling keywords evaluate cumulatively; `const`/`enum`
   use JSON Schema instance equality; `minimum`/`maximum` compare exactly beyond
   `2^53`; `extract` and tool calls preflight schemas; 13 `ai::schema` tests,
   `extract_rejects_malformed_schemas_before_calling_the_provider`,
-  `rejects_invalid_tool_schemas_before_running`, ADR-0045; commit and CI
-  pending).
+  `rejects_invalid_tool_schemas_before_running`, ADR-0045; commit `33c966e`;
+  CI run 45920832199 green).
 - T-094 — Dataset schema validation (2026-11-26; 691-test gate;
   `vantyx ai dataset --schema <file>` preflights one bounded schema and
   validates every structurally valid record, reports the first 20 violations
   plus the total, adds an optional `schema` summary, and requires zero
   schema-invalid records for exit `0`; 10 dataset unit tests, 3 dataset CLI
-  tests, `docs/ai/DATASET_INSPECTION.md`, ADR-0044; commit and CI pending).
+  tests, `docs/ai/DATASET_INSPECTION.md`, ADR-0044; commit `33c966e`; CI run
+  45920832199 green).
 
 CI run 45496041422 passed on `5e1092f` with 613 tests and the differential
 fuzz step. CI run 45493833079 passed on `a4fe86b` with 584 tests and the
@@ -200,8 +208,8 @@ documentation commit `0491c63` also passed run 45489360135.
 - T-077 — Differential-fuzzer control-flow coverage and bounded shrinking
   (2026-11-24; tenth `control_program` shape, opt-in `--shrink` with
   `--shrink-budget`, timeout exit `124`, seven Python self-tests in CI, tenth
-  shape 20/20 on seeds 1–20, full ten-shape run 200/200 on seed 1; other seeds
-  and CI pending).
+  shape 20/20 on seeds 1–20, full ten-shape run 200/200 on seed 1; later
+  seeds also agreed 200/200; CI run 45920832199 green).
 - T-085 — Lint rule for unused function parameters (2026-11-24;
   `vantyx lint` previously skipped parameters, so a never-read parameter
   produced no finding; `Binding` now records a `parameter` flag and `L0004`
@@ -209,7 +217,7 @@ documentation commit `0491c63` also passed run 45489360135.
   suppressing the finding, and loop/match bindings unchanged; six lint unit
   tests and one e2e CLI test; 642-test gate, clippy, fmt, release build, five
   examples linted clean, seven Python self-tests, and fuzzer 20/20 on seed 1;
-  commit and CI pending).
+  commit `33c966e`; CI run 45920832199 green).
 - T-084 — Evaluate the argument of `bool` in the native backend (2026-11-24;
   native `bool` lowered a statically non-`Bool` argument to the `R0007` helper
   without emitting the argument, so `print(bool(side()))` skipped `side`'s
@@ -217,20 +225,21 @@ documentation commit `0491c63` also passed run 45489360135.
   it before the rejection, mirroring `type`; one e2e test, one differential
   native test, and a fuzzer error case; 636-test gate, 133 native tests under
   GCC, clippy, fmt, both builds, five examples, fuzzer 40/40 on seeds 1–3 under
-  clang and GCC, and fuzz smoke clean; commit and CI pending).
+  clang and GCC, and fuzz smoke clean; commit `33c966e`; CI run 45920832199 green).
 - T-083 — Evaluate expressions interpolated as `Unit` (2026-11-24; native
   interpolation previously rendered `()` without emitting the expression, so
   `"{side()}"` skipped the call's output; `display_value` now keeps the
   expression via `((void)(value), vantyx_str_from_unit())`; one e2e test, one
   differential native test, and fuzzer cases; 634-test gate, 132 native tests
   under GCC, clippy, fmt, both builds, five examples, fuzzer 40/40 on seeds
-  1–3 under clang and GCC, and fuzz smoke clean; commit and CI pending).
+  1–3 under clang and GCC, and fuzz smoke clean; commit `33c966e`; CI run
+  45920832199 green).
 - T-082 — Evaluate both operands of native `Unit` equality (2026-11-24;
   native `Unit ==`/`!=` lower to a constant, and the backend hoisted only when
   both sides had effects, so a sole effectful operand was dropped; `binary_expr`
   now hoists both operands whenever either has effects; one e2e test, one
   differential native test, and fuzzer cases; 634-test gate, 132 native tests
-  under GCC; commit and CI pending).
+  under GCC; commit `33c966e`; CI run 45920832199 green).
 - T-081 — Compiler-independent argument order for native `contains` on strings
   (2026-11-24; native string `contains` inlined both operands into a C helper,
   so GCC evaluated effectful arguments right to left while clang and the
@@ -238,14 +247,15 @@ documentation commit `0491c63` also passed run 45489360135.
   temporaries in source order; extended native left-to-right text test plus a
   clang/GCC cross-compiler differential test; 630-test gate, clippy, fmt, both
   builds, five examples, fuzzer 80/80 on seed 1, and fuzz smoke clean; commit
-  and CI pending).
+  `33c966e`; CI run 45920832199 green).
 - T-080 — Evaluate the argument of `type` in the native backend (2026-11-24;
   native `type(value)` previously yielded a static string without evaluating
   `value`, so nested output, mutation, and runtime errors were skipped and
   `print(type(assert(false)))` exited `0`; the backend now binds the argument
   to a typed temporary and discards it before yielding the name; one e2e test,
   one differential native test, and fuzzer cases; 629-test gate, clippy, fmt,
-  fuzzer 60/60 on seed 1, and Python self-tests clean; commit and CI pending).
+  fuzzer 60/60 on seed 1, and Python self-tests clean; commit `33c966e`; CI
+  run 45920832199 green).
 - T-079 — Deterministic `print` evaluation and float `min`/`max` semantics
   (2026-11-24; both engines now evaluate all `print` arguments, render them,
   then write the line, so a failing argument leaves no partial stdout and
@@ -253,13 +263,14 @@ documentation commit `0491c63` also passed run 45489360135.
   NaN yields the other operand; ties return the second operand) instead of C
   `fmin`/`fmax`; two e2e tests, two differential native tests, and fuzzer
   coverage; 627-test gate, clippy, fmt, both builds, five examples, fuzzer
-  100/100 on seeds 1, 2, and 500, and fuzz smoke clean; commit and CI pending).
+  100/100 on seeds 1, 2, and 500, and fuzz smoke clean; commit `33c966e`; CI
+  run 45920832199 green).
 - T-078 — Strict numeric string conversion in the native runtime (2026-11-24;
   `int()`/`float()` now trim Unicode whitespace and validate the interpreter's
   exact grammar before `strtoll`/`strtod`; the 28-form probe went from 8
   divergences to 0; e2e and differential native tests plus expanded fuzzer
   numeric/error shapes; 623-test gate, clippy, fmt, both builds, five examples,
-  fuzzer 100/100, and fuzz smoke clean; commit and CI pending).
+  fuzzer 100/100, and fuzz smoke clean; commit `33c966e`; CI run 45920832199 green).
 - T-086 — Trailing-dot path stem and extension parity (2026-11-25; native
   `path_stem`/`path_extension` used an earlier dot when the final dot was
   trailing, so `a/b..` produced `b`/`.` instead of the interpreter's `b..`/`""`;
@@ -267,7 +278,7 @@ documentation commit `0491c63` also passed run 45489360135.
   dot is considered, the e2e and native round trips gained trailing-dot cases,
   and `path_trailing_dot_names_keep_the_whole_stem` compares both engines;
   a 2,514-path differential probe (2,500 random plus 14 fixed) emitted no
-  diff; commit and CI pending).
+  diff; commit `33c966e`; CI run 45920832199 green).
 - T-088 — Source-order evaluation of named constructor arguments (2026-11-25;
   named struct-constructor arguments were lowered into declaration order, so
   the native C call evaluated effectful arguments in declaration order while
@@ -276,7 +287,7 @@ documentation commit `0491c63` also passed run 45489360135.
   temporaries in source order before the constructor call; e2e and
   differential native tests plus the fuzzer's collection shape; specification
   §5.5; 647-test gate, 136 native tests under GCC, clippy, fmt, both builds,
-  five examples, and fuzzer 100/100 clean; commit and CI pending).
+  five examples, and fuzzer 100/100 clean; commit `33c966e`; CI run 45920832199 green).
 - T-087 — Lexical function scope in the interpreter (2026-11-25; the
   interpreter searched one flat scope stack from newest to oldest, so a callee
   read or mutated caller locals that shared a global's name and raised `R0010`
@@ -285,8 +296,8 @@ documentation commit `0491c63` also passed run 45489360135.
   boundary on return and error; the checker and native backend already used
   lexical scope; one e2e test, one differential native test, the fuzzer's
   functions shape, specification §3.1/§11, and ADR-0040; 645-test gate, 135
-  native tests under GCC, clippy, fmt, and both builds clean; commit and CI
-  pending).
+  native tests under GCC, clippy, fmt, and both builds clean; commit
+  `33c966e`; CI run 45920832199 green).
 - T-090 — Offline GGUF and Safetensors model inspection (2026-11-25/26;
   `vantyx ai inspect` recognizes GGUF v2/v3 and Safetensors, parses only
   bounded metadata and the tensor directory, validates ranges, overlaps, dtype
@@ -296,7 +307,7 @@ documentation commit `0491c63` also passed run 45489360135.
   with `--json` and `--metadata`; unsupported/corrupt input is `AI_E_FORMAT`,
   I/O failure is `AI_E_IO`, and usage errors exit `64`; nine unit tests, two
   CLI integration tests, `docs/ai/MODEL_INSPECTION.md`, and ADR-0041; 664-test
-  gate, clippy, fmt, and both builds clean; commit and CI pending).
+  gate, clippy, fmt, and both builds clean; commit `33c966e`; CI run 45920832199 green).
 - T-089 — Same-file `copy_file` refusal (2026-11-25/26; opening the target for
   writing truncated the source before any bytes were read, and symbolic-link
   and hard-link aliases did the same; `paths_refer_to_same_file` compares
@@ -304,7 +315,7 @@ documentation commit `0491c63` also passed run 45489360135.
   raise `R0015` `source and target are the same file` before the target is
   opened; two unit tests, one e2e test, one differential native test, ADR-0029,
   and specification §12; 664-test gate, clippy, fmt, and both builds clean;
-  commit and CI pending).
+  commit `33c966e`; CI run 45920832199 green).
 - T-091 — Safetensors shard-index aggregation (2026-11-26; `vantyx ai inspect`
   recognizes a `*.safetensors.index.json`, parses a bounded `weight_map` and
   optional metadata, validates every referenced shard with the T-090
@@ -316,7 +327,7 @@ documentation commit `0491c63` also passed run 45489360135.
   `metadata.total_size` disagrees; four unit tests (one Unix-only), one CLI
   integration test, `docs/ai/MODEL_INSPECTION.md`, and ADR-0042; 669-test gate,
   clippy, fmt, both builds, a manual two-shard probe, and the existing
-  differential fuzzer clean; commit and CI pending).
+  differential fuzzer clean; commit `33c966e`; CI run 45920832199 green).
 - T-092 — Bounded JSONL dataset inspection (2026-11-26; `vantyx ai dataset`
   streams UTF-8 JSONL through SHA-256, accepts a first-line BOM, CRLF, and
   blank lines, requires one top-level object per non-blank line, reports byte
@@ -326,12 +337,12 @@ documentation commit `0491c63` also passed run 45489360135.
   exits `1`, usage exits `64`, and a valid dataset exits `0`; five unit tests,
   two CLI integration tests, `docs/ai/DATASET_INSPECTION.md`, ADR-0043, the
   README AI section, and `examples/ai/train.jsonl`; 676-test gate, clippy, fmt,
-  both builds, and the full gate clean; commit and CI pending).
-- T-093 — Reusable agent skill library (2026-11-26; twelve project-local
+  both builds, and the full gate clean; commit `33c966e`; CI run 45920832199 green).
+- T-093 — Reusable agent skill library (2026-11-26; thirteen project-local
   OpenCode skills under `.opencode/skills/` with unique kebab-case IDs and
   `name`/`description` frontmatter, each with a Vantyx-specific workflow,
   commands, safety constraints, acceptance criteria, troubleshooting, and an
   example; `docs/AGENT_SKILLS.md` records discovery, inventory, selection, and
-  maintenance; a file check listed twelve valid skills and the harness
-  advertised all twelve after creation; no Rust code changed; commit and CI
-  pending).
+  maintenance; a CI validator checks frontmatter, required sections, size, and
+  unique IDs, and the harness advertised all thirteen after creation; no Rust
+  code changed; commit `33c966e`; CI run 45920832199 green).
