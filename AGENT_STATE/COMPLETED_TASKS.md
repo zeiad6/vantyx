@@ -4,7 +4,7 @@ Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
 - T-113 — Display-focused differential fuzz shape (2026-11-27; verified
-  locally; commit pending; CI pending; 734-test gate; `tools/differential_fuzz.py`
+  locally; commit `d8a476d`; CI pending; 734-test gate; `tools/differential_fuzz.py`
   adds a twelfth `display_program` shape for a three-node struct/list cycle, a
   self-referential node, a recursive `Chain` enum of depth 0–60,
   `Map[Key, Int]`, `Map[List[Int], Str]`, `Map[Shape, Int]`, nested empty

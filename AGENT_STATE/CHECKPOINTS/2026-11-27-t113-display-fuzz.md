@@ -1,6 +1,6 @@
 # Checkpoint — T-113 display-focused differential fuzz shape
 
-Status: VERIFIED locally; commit pending; CI pending
+Status: VERIFIED locally; commit `d8a476d`; CI pending
 Date: 2026-11-27
 
 ## Objective
@@ -72,7 +72,8 @@ tests alone.
 
 ## Remaining
 
-1. Commit T-113 (no push without authorization).
+1. T-113 is committed as `d8a476d` (not pushed; no push without
+   authorization); CI is pending.
 2. Record the CI outcome when the unpushed commits are pushed.
 3. Independent `qa-verifier` review remains unavailable because the subagent
    provider returned a free-usage limit error; no independent review is

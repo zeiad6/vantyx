@@ -2,7 +2,7 @@
 
 ## T-113 — Display-focused differential fuzz shape
 
-- Status: VERIFIED locally; commit pending; CI pending
+- Status: VERIFIED locally; commit `d8a476d`; CI pending
 - Priority: P1 (differential verification for native display)
 - Dependencies: T-072, T-112, ADR-0053
 

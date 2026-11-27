@@ -4,12 +4,13 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- None. T-113 is verified locally and awaiting commit; T-114 is queued after it.
+- None. T-114 is the next queued implementation task.
 
-## Verified locally, commit pending
+## Verified locally, commit pending CI
 
 - T-113 — Display-focused differential fuzz shape. VERIFIED locally; commit
-  pending; `tools/differential_fuzz.py` adds a twelfth `display_program` shape
+  `d8a476d`; CI pending. `tools/differential_fuzz.py` adds a twelfth
+  `display_program` shape
   covering a three-node struct/list cycle, a self-referential node, a recursive
   `Chain` enum of depth 0–60, `Map[Key, Int]` with struct keys,
   `Map[List[Int], Str]`, `Map[Shape, Int]`, nested empty collections, quoted

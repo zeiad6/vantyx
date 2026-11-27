@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `f612dcd` (T-112 status sync); T-113 is verified locally and uncommitted; the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-113 awaits commit; the status sync follows.
+- Last commit: `d8a476d` (T-113); the status sync follows; the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-113 is committed with CI pending.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -20,7 +20,7 @@
 ## Current task
 
 T-113 — Display-focused differential fuzz shape. Status: VERIFIED locally;
-commit pending; CI pending. `tools/differential_fuzz.py` adds a twelfth
+commit `d8a476d`; CI pending. `tools/differential_fuzz.py` adds a twelfth
 `display_program` shape covering a three-node struct/list cycle, a
 self-referential node, a recursive `Chain` enum of depth 0–60, `Map[Key, Int]`
 with struct keys, `Map[List[Int], Str]`, `Map[Shape, Int]`, nested empty
@@ -608,7 +608,8 @@ binaries or credentials are tracked.
 
 ## Next steps
 
-1. T-113 is verified locally and awaits commit. T-112 is committed as
+1. T-113 is committed as `d8a476d` with CI pending; the status sync follows.
+   T-112 is committed as
    `8911235` with CI pending, and its status sync is `f612dcd`. T-111 is
    committed as `45c438b` with CI pending. T-110 is committed as `02cdf10`
    with CI pending. T-105 is committed as `779783c`, pushed, and CI run

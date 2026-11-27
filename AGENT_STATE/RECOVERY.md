@@ -13,7 +13,7 @@
 
 ## Last recorded repository state (2026-11-27)
 
-- T-113 is verified locally and uncommitted. `tools/differential_fuzz.py` adds
+- T-113 is committed as `d8a476d` with CI pending. `tools/differential_fuzz.py` adds
   a twelfth `display_program` shape covering a three-node struct/list cycle, a
   self-referential node, a recursive `Chain` enum of depth 0–60,
   `Map[Key, Int]` with struct keys, `Map[List[Int], Str]`, `Map[Shape, Int]`,
@@ -51,8 +51,7 @@
   smoke, the 13-skill validator, and the link checker (122 links in 188
   Markdown files). Committed as `45c438b`; CI pending. Focused median
   59.893 ms → 34.414 ms and peak RSS 33,396 KiB → 17,564 KiB.
-- HEAD is at `f612dcd` (T-112 status sync); T-113 is verified locally and
-  uncommitted. The remote is at `a9a6d1a` (record the T-105 CI run), and CI
+- HEAD is at `d8a476d` (T-113); the status sync follows. The remote is at `a9a6d1a` (record the T-105 CI run), and CI
   run 45936329476 passed on it. T-112 is committed with CI pending. `779783c`
   contains T-105 and passed run 45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed
   45934367601. `8805381` recorded the T-104 CI run and passed 45934076343. `4269010` contains call-site native
