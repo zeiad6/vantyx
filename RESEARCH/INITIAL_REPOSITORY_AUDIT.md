@@ -32,7 +32,7 @@ second `research/` tree with duplicate content.
 | Builds | `cargo build` and `cargo build --release` succeed |
 | Lints | `cargo clippy --all-targets -- -D warnings` clean |
 | Formatting | `cargo fmt --check --all` clean after the T-076 mechanical baseline; CI enforces it |
-| Differential fuzzer | `tools/differential_fuzz.py` has ten program shapes, bounded `--shrink` minimization, controlled timeout handling, seven Python self-tests, and numeric-string grammar plus signed-zero/NaN `min`/`max`, failing-`print`, and `Unit` equality/interpolation cases in its numeric, functions, and error shapes. The full ten-shape run agreed 200/200 on seeds 1, 2, 3, 500, and 1000; 180/180 agreed on each of seeds 500 and 1000 with nine shapes, and the tenth shape matched 20/20 on seeds 1–20 (T-077). T-079 added the signed-zero and print cases after a targeted probe, T-080 added side-effecting `type` cases to the functions and error shapes, T-081 added a cross-compiler clang/GCC regression test for string `contains` argument order, and T-082/T-083 added `Unit` equality and interpolation cases; post-T-083 runs agreed 40/40 on seeds 1, 2, and 3 under both clang and GCC |
+| Differential fuzzer | `tools/differential_fuzz.py` has twelve program shapes, bounded `--shrink` minimization, controlled timeout handling, nine Python self-tests, and numeric-string grammar plus signed-zero/NaN `min`/`max`, failing-`print`, and `Unit` equality/interpolation cases in its numeric, functions, and error shapes. The full ten-shape run agreed 200/200 on seeds 1, 2, 3, 500, and 1000; 180/180 agreed on each of seeds 500 and 1000 with nine shapes, and the tenth shape matched 20/20 on seeds 1–20 (T-077). T-079 added the signed-zero and print cases after a targeted probe, T-080 added side-effecting `type` cases to the functions and error shapes, T-081 added a cross-compiler clang/GCC regression test for string `contains` argument order, and T-082/T-083 added `Unit` equality and interpolation cases; post-T-083 runs agreed 40/40 on seeds 1, 2, and 3 under both clang and GCC. T-113 added a display shape for cyclic structs, recursive enum chains, and structural map keys; the twelve-shape run agreed 100/100 on seeds 1, 2, 3, and 500 |
 | Fuzz smoke | 9 depth/limit cases and 400 random/mutated inputs with controlled diagnostics |
 | Examples | All five `examples/*.vtx` match interpreter and native output |
 | CI | Run 45507195701 green on `1aba7ba` with T-077; run 45504177763 green on `de0bac7` with the rustfmt gate; run 45503321172 green on `66b4efc` with T-075; run 45499019615 green on `53a8b82` with the expanded fuzzer; run 45496041422 green on `5e1092f` with 613 tests; run 45493833079 green on `a4fe86b` with 584 tests |
@@ -126,14 +126,16 @@ limitations and risks, not claims of correctness.
 
 ### G-02 — Differential coverage is still narrow (P1, improved by T-077)
 
-The fuzzer now has ten typed program grammars (scalars/control flow,
+The fuzzer now has twelve typed program grammars (scalars/control flow,
 collections, pattern matching, nested aliasing, typed functions, strings,
-numerics, result-enum `?` propagation, runtime-error agreement, and
-loop-heavy control flow). T-077 added bounded line-oriented shrinking,
-controlled timeout handling, and seven Python self-tests. The fuzzer itself
-still has no sanitizer integration or coverage measurement, and the shrinker
-cannot split a line; CI now runs the native differential suite with generated
-programs compiled under ASan/UBSan (T-110). It found two real P0 defects. An earlier expansion found a
+numerics, result-enum `?` propagation, runtime-error agreement, loop-heavy
+control flow, global initialization order, and recursive/cyclic display with
+structural map keys). T-077 added bounded line-oriented shrinking, controlled
+timeout handling, and seven Python self-tests; T-113 added the display shape
+and raised the self-test suite to nine. The fuzzer itself still has no coverage
+measurement, and the shrinker cannot split a line; CI now runs the native
+differential suite with generated programs compiled under ASan/UBSan (T-110).
+It found two real P0 defects. An earlier expansion found a
 test-quality bug: the collection generator used `xs[-1]`, an invalid negative
 index, so that program stopped at its first index and never exercised the
 remaining statements. A green fuzzer run is evidence, not proof. Targeted
@@ -230,8 +232,8 @@ not.
 
 ## Highest-priority tasks
 
-1. **P1 — Continue differential fuzzing.** The ten-shape fuzzer and bounded
-   shrinker are in place (T-077); run the fuzzer itself under sanitizers, add
+1. **P1 — Continue differential fuzzing.** The twelve-shape fuzzer and bounded
+   shrinker are in place (T-077/T-113); run the fuzzer itself under sanitizers, add
    coverage measurement and more seeds, and fix any mismatch. This is the cheapest way
    to find another silent native divergence. The T-086 path probe confirms the
    method: a 30-path edge-case program exposed a trailing-dot fallback that

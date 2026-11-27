@@ -6,13 +6,14 @@ programs from fixed grammars, runs each one through `vantyx run` and
 `vantyx build`, and compares the exit code and stdout. A mismatch is a
 failure; the program is printed and can be saved for a regression test.
 
-The ten program shapes cover scalar expressions and control flow,
+The twelve program shapes cover scalar expressions and control flow,
 collections/structs/enums, guarded/range/or-pattern matching, nested
 collections with aliasing, typed functions with early returns and recursion,
 string escapes/interpolation/UTF-8 builtins, numeric formatting and
-conversions, result-enum `?` propagation, runtime-error agreement, and
-loop-heavy control flow with `break`/`continue`, match statements, map
-iteration, and guard side effects. Every generated program is designed to run
+conversions, result-enum `?` propagation, runtime-error agreement, loop-heavy
+control flow with `break`/`continue`, match statements, map iteration, and
+guard side effects, global initialization order, and recursive/cyclic display
+with structural map keys. Every generated program is designed to run
 to completion or fail at the same point in both engines; a program that only
 prints its prefix before a runtime error has little differential value.
 
@@ -383,6 +384,79 @@ fn main():
     print(len(deep))
 
 main()
+"""
+
+
+def display_program(rng: random.Random) -> str:
+    """Recursive, cyclic, and structural-key display in both engines."""
+    root_label = rng.choice(STR_LITERALS)
+    child_label = rng.choice(STR_LITERALS)
+    leaf_label = rng.choice(STR_LITERALS)
+    depth = rng.randint(0, 60)
+    radius = rng.choice(["0.0", "1.5", "-2.25"])
+    first_tags = [rng.randint(-9, 9) for _ in range(rng.randint(0, 3))]
+    second_tags = [rng.randint(-9, 9) for _ in range(rng.randint(0, 3))]
+    key_id = rng.randint(-9, 9)
+    other_id = key_id + rng.randint(1, 5)
+    value_a = rng.randint(-9, 9)
+    value_b = rng.randint(-9, 9)
+    value_c = rng.randint(-9, 9)
+    value_d = rng.randint(-9, 9)
+    list_a = [1] + [rng.randint(-9, 9) for _ in range(rng.randint(0, 3))]
+    list_b = [2] + [rng.randint(-9, 9) for _ in range(rng.randint(0, 3))]
+    row_a = [rng.randint(-9, 9) for _ in range(rng.randint(0, 3))]
+    row_b = [rng.randint(-9, 9) for _ in range(rng.randint(0, 3))]
+    map_value = rng.randint(-9, 9)
+    quoted = rng.sample(STR_LITERALS, rng.randint(2, 4))
+    return f"""struct Node:
+    label: Str
+    children: List[Node]
+
+struct Key:
+    id: Int
+    tags: List[Int]
+
+enum Chain:
+    End
+    Link(next: Chain)
+
+enum Shape:
+    Circle(radius: Float)
+    Empty
+
+fn build(n: Int) -> Chain:
+    if n == 0:
+        return End()
+    return Link(build(n - 1))
+
+fn main():
+    let root = Node(label={root_label}, children=[])
+    let child = Node(label={child_label}, children=[])
+    let leaf = Node(label={leaf_label}, children=[])
+    push(root.children, child)
+    push(child.children, leaf)
+    push(leaf.children, root)
+    print(root)
+    print(len(str(root)))
+    let self_node = Node(label="self", children=[])
+    push(self_node.children, self_node)
+    print(self_node)
+    let chain = build({depth})
+    print(chain)
+    print(len(str(chain)))
+    let by_key: Map[Key, Int] = {{Key({key_id}, [{", ".join(map(str, first_tags))}]): {value_a}, Key({other_id}, [{", ".join(map(str, second_tags))}]): {value_b}}}
+    print(by_key)
+    let by_list: Map[List[Int], Str] = {{[{", ".join(map(str, list_a))}]: "a", [{", ".join(map(str, list_b))}]: "b"}}
+    print(by_list)
+    let by_shape: Map[Shape, Int] = {{Circle({radius}): {value_c}, Empty(): {value_d}}}
+    print(by_shape)
+    let rows: List[List[Int]] = [[{", ".join(map(str, row_a))}], [{", ".join(map(str, row_b))}], []]
+    print(rows)
+    let maps: List[Map[Str, Int]] = [{{"a": {map_value}}}, {{}}]
+    print(maps)
+    let quoted: List[Str] = [{", ".join(quoted)}]
+    print(quoted)
+    print([root, leaf])
 """
 
 
@@ -935,6 +1009,7 @@ GENERATORS = [
     collection_program,
     match_program,
     nested_program,
+    display_program,
     functions_program,
     string_program,
     numeric_program,

@@ -1,5 +1,49 @@
 # Active Task
 
+## T-113 — Display-focused differential fuzz shape
+
+- Status: VERIFIED locally; commit pending; CI pending
+- Priority: P1 (differential verification for native display)
+- Dependencies: T-072, T-112, ADR-0053
+
+### Implemented
+
+- `tools/differential_fuzz.py::display_program` generates a three-node
+  `Node` cycle, a self-referential node, a recursive `Chain` enum of depth
+  0–60, `Map[Key, Int]` with struct keys, `Map[List[Int], Str]`,
+  `Map[Shape, Int]`, nested empty typed collections, quoted UTF-8 strings,
+  and a list of cyclic nodes.
+- `GENERATORS` registers the shape after `nested_program`; the module
+  docstring now describes twelve shapes.
+- `tools/test_differential_fuzz.py` adds deterministic/well-formed checks for
+  the new generator and a determinism check over every registered generator;
+  the suite now has 9 tests.
+
+### Evidence
+
+- `python3 tools/test_differential_fuzz.py` — 9 tests OK.
+- Seven generated programs from seeds 1, 2, 3, 4, 5, 7, and 11 matched
+  interpreter and native stdout and exit codes.
+- `python3 tools/differential_fuzz.py --iterations 100 --seed {1,2,3,500}` —
+  100/100 on every seed.
+- Full gate: fmt/clippy clean; `cargo test` 734 passed; GCC native 150;
+  sanitized native 150; examples matched; fuzz smoke 9 depth/limit cases and
+  400 inputs; 13 skills; 125 links in 192 Markdown files.
+
+### Remaining
+
+- Commit T-113 and record the hash; CI pending.
+- Independent review remains unavailable (subagent free-usage limit).
+- T-114 is queued to free nested display temporaries after append.
+
+### Scope limits
+
+- Generator-only work: no Rust, language, or native behavior changed.
+- Collections stay small and enum depth stays at or below 60; cycles that
+  would require `Any` are not generated.
+- Randomized agreement expands coverage but does not prove absence of display
+  defects.
+
 ## T-112 — Single-buffer native collection and nominal display
 
 - Status: VERIFIED; commit `8911235`; CI pending

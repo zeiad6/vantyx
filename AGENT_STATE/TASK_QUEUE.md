@@ -4,7 +4,29 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- None. The next task is selected after the T-112 status sync.
+- None. T-113 is verified locally and awaiting commit; T-114 is queued after it.
+
+## Verified locally, commit pending
+
+- T-113 — Display-focused differential fuzz shape. VERIFIED locally; commit
+  pending; `tools/differential_fuzz.py` adds a twelfth `display_program` shape
+  covering a three-node struct/list cycle, a self-referential node, a recursive
+  `Chain` enum of depth 0–60, `Map[Key, Int]` with struct keys,
+  `Map[List[Int], Str]`, `Map[Shape, Int]`, nested empty collections, quoted
+  UTF-8 strings, and a list of cyclic nodes. `tools/test_differential_fuzz.py`
+  adds determinism/well-formedness checks and now passes 9 tests; 100/100 cases
+  agreed on seeds 1, 2, 3, and 500; no language or native behavior changed;
+  734-test gate.
+
+## Queued
+
+- T-114 — Free nested native display temporaries. QUEUED; ADR-0054 is proposed.
+  T-112 removed quadratic prefix copying, but each nested element or field is
+  still rendered into a fresh string that v0.1 never frees. The display
+  helpers return fresh heap strings for every type except `Bool`/`Unit`, so
+  owned variants for those two plus a single free point can release each
+  temporary after the builder copies it. This is not general reclamation; final
+  display strings and other native allocations remain intentionally unreclaimed.
 
 ## Completed in `8911235` (CI pending)
 

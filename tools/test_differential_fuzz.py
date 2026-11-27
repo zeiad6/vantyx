@@ -9,6 +9,7 @@ differential run remains `tools/differential_fuzz.py`.
 from __future__ import annotations
 
 import importlib.util
+import random
 import sys
 import unittest
 from pathlib import Path
@@ -45,6 +46,30 @@ class RunTests(unittest.TestCase):
         )
         self.assertEqual(code, 124)
         self.assertIn("timeout", stderr)
+
+
+class GeneratorTests(unittest.TestCase):
+    def test_display_program_is_deterministic_and_well_formed(self) -> None:
+        first = fuzz.display_program(random.Random(7))
+        second = fuzz.display_program(random.Random(7))
+        self.assertEqual(first, second)
+        self.assertIn("struct Node:", first)
+        self.assertIn("push(leaf.children, root)", first)
+        self.assertIn("Map[Key, Int]", first)
+        self.assertIn("Map[List[Int], Str]", first)
+        self.assertIn("Map[Shape, Int]", first)
+        self.assertIn("print([root, leaf])", first)
+        self.assertNotIn("{{", first)
+        self.assertNotIn("}}", first)
+        self.assertEqual(first.count("{"), first.count("}"))
+
+    def test_every_generator_is_registered_and_deterministic(self) -> None:
+        for generator in fuzz.GENERATORS:
+            with self.subTest(generator=generator.__name__):
+                first = generator(random.Random(11))
+                second = generator(random.Random(11))
+                self.assertEqual(first, second)
+                self.assertTrue(first.strip())
 
 
 class ShrinkTests(unittest.TestCase):

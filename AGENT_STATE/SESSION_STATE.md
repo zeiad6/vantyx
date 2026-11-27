@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `8911235` (T-112); the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-112 is committed with CI pending; the status sync follows.
+- Last commit: `f612dcd` (T-112 status sync); T-113 is verified locally and uncommitted; the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-113 awaits commit; the status sync follows.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -18,6 +18,20 @@
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
+
+T-113 — Display-focused differential fuzz shape. Status: VERIFIED locally;
+commit pending; CI pending. `tools/differential_fuzz.py` adds a twelfth
+`display_program` shape covering a three-node struct/list cycle, a
+self-referential node, a recursive `Chain` enum of depth 0–60, `Map[Key, Int]`
+with struct keys, `Map[List[Int], Str]`, `Map[Shape, Int]`, nested empty
+collections, quoted UTF-8 strings, and a list of cyclic nodes.
+`tools/test_differential_fuzz.py` adds determinism and well-formedness checks
+and now passes 9 tests. The twelve-shape fuzzer agreed 100/100 on seeds 1, 2,
+3, and 500; seven generated programs built and matched manually. No Rust,
+language, or native behavior changed. The 734-test gate, GCC native suite,
+ASan/UBSan native suite, examples, fuzz smoke, 13-skill validator, and link
+checker pass. Independent `qa-verifier` review remains unavailable because the
+provider returned a free-usage limit error; no independent result is claimed.
 
 T-112 — Single-buffer native collection and nominal display. Status: VERIFIED
 locally; commit `8911235`; CI pending. Native list, map, struct, and enum display
@@ -594,14 +608,12 @@ binaries or credentials are tracked.
 
 ## Next steps
 
-1. T-105 is committed as `779783c`, pushed, and CI run 45936065460 is green.
-   T-104 is committed as `4269010`, pushed,
-   and CI run 45933776137 is green; its status sync `8805381` passed run
-   45934076343, and `61cb9be` passed run 45934367601. T-103 is committed as
-   `46b7d54`, pushed, and CI run 45928466694 is green; its status sync
-   `a263cb3` passed run 45928756101. The T-102 status-sync commit `0a309c8`
-   also passed CI run 45926037169. Keep the commit/CI fields current as later
-   status updates land.
+1. T-113 is verified locally and awaits commit. T-112 is committed as
+   `8911235` with CI pending, and its status sync is `f612dcd`. T-111 is
+   committed as `45c438b` with CI pending. T-110 is committed as `02cdf10`
+   with CI pending. T-105 is committed as `779783c`, pushed, and CI run
+   45936065460 is green; its status sync `a9a6d1a` passed run 45936329476.
+   Keep the commit/CI fields current as later status updates land.
 2. Continue targeted interpreter/native probes on surfaces not yet covered:
    module cycles and duplicate imports, `/dev/null`, `/dev/full`, and
    `/proc/version`, a 546-path/300-join matrix, a 1,055-statement text
@@ -621,9 +633,10 @@ binaries or credentials are tracked.
    as a separate bounded task with its own tests.
 5. Keep `docs/AGENT_SKILLS.md` synchronized when a skill is added or changed;
    CI validates frontmatter, required sections, size, and unique IDs.
-6. Continue remaining P1/P2 candidates: metadata objects/preservation,
-   recursive move, REPL multi-line history and field completion, linter
-   follow-ups, and string performance with measured benchmarks.
+6. Continue remaining P1/P2 candidates: T-114 (queued) frees nested display
+   temporaries after append; metadata objects/preservation, recursive move,
+   REPL multi-line history and field completion, linter follow-ups, and string
+   performance with measured benchmarks remain open.
 7. Retry independent subagent review when provider capacity returns.
 8. T-040 remains blocked on a local inference server/model; cloud access is
    not guaranteed.

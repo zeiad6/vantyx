@@ -831,3 +831,18 @@ file records operational choices.
   before/after measurement and the full benchmark run separately; the host was
   slower during the full run, so only within-run and same-batch comparisons
   are valid.
+
+## T-113 — Display-focused differential fuzz shape
+
+- Add a dedicated `display_program` generator instead of extending
+  `nested_program`, so a failure points to the display shape rather than the
+  older nested-collection shape.
+- Cover struct/list cycles, deep recursive enums, and struct/list/enum map keys
+  because T-112 changed every native display path and fixed regression tests
+  alone do not explore the combination of nested values and cycle/depth guards.
+- Keep collections small and enum depth at or below 60 so each case completes
+  quickly; do not generate cycles that require `Any`, which native rejects with
+  `E0401`.
+- Update the stale docstring count from ten to twelve instead of preserving an
+  inaccurate count; the registered generator list is the source of truth.
+- This is verification work: no Rust, language, or native behavior changes.

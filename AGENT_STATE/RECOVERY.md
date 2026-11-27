@@ -13,6 +13,17 @@
 
 ## Last recorded repository state (2026-11-27)
 
+- T-113 is verified locally and uncommitted. `tools/differential_fuzz.py` adds
+  a twelfth `display_program` shape covering a three-node struct/list cycle, a
+  self-referential node, a recursive `Chain` enum of depth 0–60,
+  `Map[Key, Int]` with struct keys, `Map[List[Int], Str]`, `Map[Shape, Int]`,
+  nested empty collections, quoted UTF-8 strings, and a list of cyclic nodes.
+  `tools/test_differential_fuzz.py` adds determinism/well-formedness checks and
+  now passes 9 tests. The twelve-shape fuzzer agreed 100/100 on seeds 1, 2, 3,
+  and 500; seven generated programs built and matched manually. The full gate
+  passed: fmt/clippy clean, 734 tests, GCC native 150, sanitized native 150,
+  examples, fuzz smoke, 13 skills, and 125 links in 192 Markdown files. No
+  Rust, language, or native behavior changed. Commit pending.
 - T-112 is committed as `8911235` and adds single-buffer native collection and
   nominal display: list, map, struct, and enum rendering append every part into
   one growable `VantyxStrBuilder` in source order, removing quadratic prefix
@@ -40,10 +51,10 @@
   smoke, the 13-skill validator, and the link checker (122 links in 188
   Markdown files). Committed as `45c438b`; CI pending. Focused median
   59.893 ms → 34.414 ms and peak RSS 33,396 KiB → 17,564 KiB.
-- HEAD is at `8911235` (T-112); the remote is at `a9a6d1a` (record the T-105
-  CI run), and CI run 45936329476 passed on it. T-112 is committed with CI
-  pending. `779783c` contains T-105 and passed run
-  45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed
+- HEAD is at `f612dcd` (T-112 status sync); T-113 is verified locally and
+  uncommitted. The remote is at `a9a6d1a` (record the T-105 CI run), and CI
+  run 45936329476 passed on it. T-112 is committed with CI pending. `779783c`
+  contains T-105 and passed run 45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed
   45934367601. `8805381` recorded the T-104 CI run and passed 45934076343. `4269010` contains call-site native
   call-depth diagnostics (T-104), and CI run 45933776137 passed on it.
   `a263cb3` recorded the T-103 CI run and passed run 45928756101. `46b7d54` contains deterministic scalar-list

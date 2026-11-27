@@ -3,6 +3,14 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-113 — Display-focused differential fuzz shape (2026-11-27; verified
+  locally; commit pending; CI pending; 734-test gate; `tools/differential_fuzz.py`
+  adds a twelfth `display_program` shape for a three-node struct/list cycle, a
+  self-referential node, a recursive `Chain` enum of depth 0–60,
+  `Map[Key, Int]`, `Map[List[Int], Str]`, `Map[Shape, Int]`, nested empty
+  collections, quoted UTF-8 strings, and a list of cyclic nodes;
+  `tools/test_differential_fuzz.py` now passes 9 tests; 100/100 agreement on
+  seeds 1, 2, 3, and 500; no Rust or native behavior changed).
 - T-112 — Single-buffer native collection and nominal display (2026-11-27;
   committed as `8911235`; CI pending; 734-test gate; list, map, struct, and enum
   display append into one growable `VantyxStrBuilder` in source order,

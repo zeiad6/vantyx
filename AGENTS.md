@@ -130,16 +130,19 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   statement-expression conditions are parenthesized and `and`/`or` skip the
   right operand when the left decides the result (T-070/T-071, ADR-0036).
   `tools/differential_fuzz.py` found both defects and is part of the gate
-  (T-072). It now generates ten program shapes (scalars/control flow,
+  (T-072). It now generates twelve program shapes (scalars/control flow,
   collections, pattern matching, nested aliasing, typed functions, strings,
-  numerics, result-enum `?` propagation, runtime-error agreement, and
-  loop-heavy control flow with `break`/`continue`, match statements, map
-  iteration, early returns, and guard side effects added by T-077); 180/180
-  cases agreed on each of seeds 1, 500, and 1000 with nine shapes, the tenth
-  shape matched 20/20 generated programs on seeds 1–20, and the full ten-shape
-  run agreed 200/200 on seeds 1, 2, 3, 500, and 1000. `--shrink` performs
-  bounded line-oriented minimization, and `tools/test_differential_fuzz.py`
-  covers the comparison and shrink logic. The numeric and runtime-error
+  numerics, result-enum `?` propagation, runtime-error agreement, loop-heavy
+  control flow with `break`/`continue`, match statements, map iteration, early
+  returns, and guard side effects added by T-077, global initialization order,
+  and recursive/cyclic display with structural map keys added by T-113);
+  180/180 cases agreed on each of seeds 1, 500, and 1000 with the original
+  nine shapes, the tenth shape matched 20/20 generated programs on seeds 1–20,
+  the full ten-shape run agreed 200/200 on seeds 1, 2, 3, 500, and 1000, and
+  the twelve-shape run agreed 100/100 on seeds 1, 2, 3, and 500 after T-113.
+  `--shrink` performs bounded line-oriented minimization, and
+  `tools/test_differential_fuzz.py` covers the comparison and shrink logic
+  with nine tests. The numeric and runtime-error
   shapes include accepted and rejected numeric-string conversions after T-078.
   Native `print` now evaluates every argument into a temporary before rendering
   and writing, and float `min`/`max` use one explicit tie/NaN rule in both
