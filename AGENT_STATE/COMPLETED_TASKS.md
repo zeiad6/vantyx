@@ -9,7 +9,7 @@ See `TASKS.md` for full acceptance criteria and evidence.
   overwrites and same-input output, removes failed output, holds the dataset in
   memory under 64 MiB and 1,000,000 records, normalizes BOM/CRLF/blank lines
   with warnings, and reports seed and input/output provenance; four unit tests
-  and two CLI tests; commit and CI pending at record time).
+  and two CLI tests; commit `c54c61c`; CI run 45923211883 green).
 - T-100 — Exact JSONL duplicate-record removal (2026-11-26; 707-test gate;
   `vantyx ai dedup` validates first, keeps the first exact record in input
   order, uses a domain-separated SHA-256 digest, refuses overwrites and

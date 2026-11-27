@@ -4,15 +4,14 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `33c966e` (native parity fixes, dataset tooling, and agent
-  skills; T-078 through T-100); T-101 is uncommitted in the working tree
-- Remote: `origin/main` at `33c966e`; CI run 45920832199 green
+- Last commit: `c54c61c` (deterministic JSONL dataset shuffling; T-101)
+- Remote: `origin/main` at `c54c61c`; CI run 45923211883 green
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
 
-T-101 — Deterministic JSONL dataset shuffle. Status: VERIFIED locally; commit
-and CI pending. `vantyx ai shuffle <file> --out <file> [--seed <n>]` runs the
+T-101 — Deterministic JSONL dataset shuffle. Status: VERIFIED; pushed in
+`c54c61c`; CI run 45923211883 green. `vantyx ai shuffle <file> --out <file> [--seed <n>]` runs the
 dataset validation gate first, orders records by a domain-separated SHA-256 of
 the seed and exact record bytes with a byte tie-breaker, refuses to overwrite
 or replace the input, holds the dataset in memory under 64 MiB and 1,000,000
@@ -407,12 +406,13 @@ binaries or credentials are tracked.
 - CI run 45503321172 — success on `66b4efc` with T-075
 - CI run 45920832199 — success on `33c966e` with T-078–T-100 and the skill
   validator
+- CI run 45923211883 — success on `c54c61c` with T-101
 
 ## Next steps
 
-1. T-101 is verified locally; commit and push it, then record the commit hash
-   and CI run. T-078 through T-100 remain committed as `33c966e` with CI run
-   45920832199 green.
+1. T-101 is committed as `c54c61c`, pushed, and CI run 45923211883 is green;
+   no Git action is pending. T-078 through T-100 remain committed as `33c966e`
+   with CI run 45920832199 green.
 2. Continue targeted interpreter/native probes. Remaining native surfaces
    include file/directory builtins under unusual conditions, recursive
    copy/rename, modules, and deeper match/nesting interactions; audit any

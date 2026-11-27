@@ -2,7 +2,7 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
-## Completed in the current change (T-101; commit and CI pending)
+## Completed in `c54c61c` (CI run 45923211883 green)
 
 - T-101 — Deterministic JSONL dataset shuffle. VERIFIED; `vantyx ai shuffle`
   validates first, orders records by a domain-separated SHA-256 of the seed and

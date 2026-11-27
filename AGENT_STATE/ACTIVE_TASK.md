@@ -2,7 +2,7 @@
 
 ## T-101 — Deterministic JSONL dataset shuffle
 
-- Status: VERIFIED locally; commit pending at the time of this record; CI pending
+- Status: VERIFIED; pushed in `c54c61c`; CI run 45923211883 green
 - Priority: P3 (AI host tooling)
 - Dependencies: T-092, T-094, T-098, T-100, ADR-0043, ADR-0044, ADR-0046,
   ADR-0047
@@ -39,7 +39,7 @@
 
 ### Remaining
 
-- Commit and push, then record the commit hash and CI run in the status files.
+- Committed as `c54c61c`, pushed, and CI run 45923211883 passed.
 - Scope limits: no external-memory sort, PRNG-defined permutation, reservoir
   sampling, tokenizer-aware count, label stratification, or split integration.
   A one-record dataset is necessarily unchanged.

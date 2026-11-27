@@ -13,10 +13,10 @@
 
 ## Last recorded repository state (2026-11-26)
 
-- `origin/main` and HEAD are at `33c966e` (native parity fixes, dataset
-  tooling, and agent skills; T-078 through T-100); CI run 45920832199 passed.
-  T-101 (deterministic JSONL shuffle) is the current working-tree change and is
-  verified locally; commit and CI are pending at this record.
+- `origin/main` and HEAD are at `c54c61c` (deterministic JSONL dataset
+  shuffling; T-101); CI run 45923211883 passed. `33c966e` contains the native
+  parity fixes, dataset tooling, and agent skills (T-078 through T-100); CI run
+  45920832199 passed.
 - Earlier commits: `1aba7ba` contains T-077 differential-fuzzer control-flow
   coverage and bounded shrinking (run 45507195701 green), `de0bac7` contains
   the rustfmt baseline and CI formatting gate (run 45504177763 green),
@@ -33,11 +33,11 @@
   fuzzer 500/500 on seed 7 and 100/100 on seed 1, the skill validator, and
   fuzz smoke clean. T-099 added native `range(...)` values and T-100 added
   exact dataset deduplication; ADR-0047 records the dedup decision.
-- The T-101 working tree passes 713 tests (399 library unit + 15 CLI unit + 45
-  AI integration + 113 e2e + 141 native), clippy and fmt clean, debug and
-  release builds, five examples, seven Python self-tests, 100/100 fuzz cases on
-  seed 1, and the thirteen-skill validator. T-101 adds deterministic seeded
-  shuffling; ADR-0048 records the decision.
+- The committed tree at `c54c61c` passes 713 tests (399 library unit + 15 CLI
+  unit + 45 AI integration + 113 e2e + 141 native), clippy and fmt clean, debug
+  and release builds, five examples, seven Python self-tests, 100/100 fuzz
+  cases on seed 1, and the thirteen-skill validator. T-101 adds deterministic
+  seeded shuffling; ADR-0048 records the decision.
 - If a checkout is missing `33c966e`, fetch `origin/main` and inspect
   `git status --short`; do not discard unexplained work or rewrite history.
 

@@ -1,7 +1,7 @@
 # Checkpoint — T-101 deterministic JSONL dataset shuffle
 
 Date: 2026-11-26
-Status: VERIFIED locally; commit and CI pending at checkpoint time
+Status: VERIFIED; pushed in `c54c61c`; CI run 45923211883 green
 
 ## What changed
 
@@ -39,6 +39,6 @@ Status: VERIFIED locally; commit and CI pending at checkpoint time
 
 ## Next
 
-Commit and push, then record the commit hash and CI run in `PROJECT_STATUS.md`,
-`AGENTS.md`, `AGENT_STATE/SESSION_STATE.md`, `AGENT_STATE/RECOVERY.md`, and
-`AGENT_STATE/TASK_QUEUE.md`.
+T-101 is committed as `c54c61c`, pushed, and CI run 45923211883 passed. Continue
+with the next bounded dataset task (tokenizer-aware counts or label
+stratification) or another queued P1/P2 task.
