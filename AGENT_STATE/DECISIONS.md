@@ -4,6 +4,23 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-27 — Native display uses the string builder
+
+- Route list, map, struct, and enum display through the existing
+  `VantyxStrBuilder` (ADR-0052) rather than adding a second buffer type or
+  keeping repeated concatenation.
+- Keep cycle/depth guards before builder creation and keep the existing
+  `seen`/`vantyx_enter_struct` stacks active across nested display calls, so
+  markers and early returns are byte-identical.
+- Keep payload-free enum variants on the single static string path; there is
+  nothing to append.
+- Accept one temporary rendered string per element for now. Removing those
+  requires typed display appenders and is deferred until measurement shows
+  they dominate.
+- Measure the change on a tracked `display_ops` workload with release binaries
+  from before and after in one alternating batch; do not compare against the
+  earlier full-suite run because host state differed.
+
 ## 2026-11-27 — Native `print` reports output failures per line
 
 - Flush stdout at the end of every `print`, not only in `main`, because the

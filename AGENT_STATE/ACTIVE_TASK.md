@@ -1,5 +1,65 @@
 # Active Task
 
+## T-112 — Single-buffer native collection and nominal display
+
+- Status: VERIFIED; commit pending; CI pending
+- Priority: P1 (native memory efficiency and interpreter/native parity)
+- Dependencies: ADR-0010, ADR-0012, ADR-0052, ADR-0053
+
+### Implemented
+
+- `src/codegen_c.rs::vantyx_list_display` appends `[`, each `, `-separated
+  rendered element, and `]` into one `VantyxStrBuilder`.
+- `vantyx_map_display` appends `{`, each `, `-separated key, `: `, value, and
+  `}` into one builder.
+- `display_functions` generates struct display functions that append the type
+  name, each `field=` label and rendered field, and `)`, and enum display
+  functions that append each payload variant's name, fields, and `)`;
+  payload-free variants keep the single static string.
+- Cycle and depth guards plus the `seen`/`vantyx_enter_struct` stacks run
+  before the builder is created and remain active during nested display.
+- Exact bytes, insertion order, quoting, `[...]`/`{...}`/`Type(...)` cycle
+  markers, the `…` depth marker, and early returns are unchanged.
+- `tests/native.rs::large_collection_display_matches` covers a 5,000-element
+  `List[Int]`, a struct containing that list, a list of enum payloads, a
+  2,000-entry `Map[Str, Int]`, and a 70-level recursive enum.
+- `benchmarks/display_ops.{vtx,c,rs,py}` and `benchmarks/run.py` add the
+  10,000-int list display workload.
+- ADR-0053, `docs/memory_model.md`, `docs/benchmarks.md`,
+  `benchmarks/results/2026-11-27-display-buffer.md`, `TASKS.md`,
+  `PROJECT_STATUS.md`, `README.md`, `AGENTS.md`, and
+  `docs/PROJECT_BASELINE.md` are updated.
+
+### Evidence
+
+- 2026-11-27: `cargo test` — 734 passed (404 library unit + 15 CLI unit + 47
+  AI integration + 118 e2e + 150 native, 0 failed).
+- 2026-11-27: `VANTYX_CC=gcc cargo test --test native` — 150 passed.
+- 2026-11-27: sanitizer command with `tools/clang-sanitize.sh` — 150 passed
+  under ASan/UBSan with leak detection disabled.
+- 2026-11-27: `cargo fmt --check --all` and
+  `cargo clippy --all-targets -- -D warnings` clean.
+- 2026-11-27: `cargo build --release` succeeded; all five examples matched
+  interpreter output.
+- 2026-11-27: seven Python self-tests passed; 100/100 differential cases on
+  seed 1 agreed; fuzz smoke produced controlled diagnostics for 9 depth/limit
+  cases and 400 inputs; 13 skills validated; link checker passed.
+- 2026-11-27: `python3 benchmarks/run.py --reps 5` verified identical output
+  across all implementations and wrote `benchmarks/results/2026-11-27.{json,md}`
+  with nine workloads; `display_ops` native median 4.674 ms vs interpreter
+  15.134 ms, C 3.377 ms, Rust 3.724 ms.
+- 2026-11-27: focused same-batch before/after measurement — median
+  754.707 ms → 5.737 ms, peak RSS 568,244 KiB → 2,520 KiB; raw runs in
+  `benchmarks/results/2026-11-27-display-buffer.md`.
+- Independent `qa-verifier` review was attempted on 2026-11-27, but the
+  subagent session failed before doing any work: the provider returned a
+  free-usage limit error. No independent review result is claimed.
+
+### Remaining
+
+- Commit T-112, then sync status to the commit hash (do not push).
+- Record the independent review outcome.
+
 ## T-111 — Single-buffer native string construction
 
 - Status: VERIFIED; commit `45c438b`; CI pending

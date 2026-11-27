@@ -113,11 +113,13 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   `bffe38f` with the 731-test gate (CI pending); T-110 CI sanitizer and fuzz
   smoke coverage is committed in `02cdf10` with the 731-test gate (CI
   pending); T-111 single-buffer native string construction is committed in
-  `45c438b` with the 733-test gate (CI pending)). The
+  `45c438b` with the 733-test gate (CI pending); T-112 single-buffer native
+  collection and nominal display is part of the T-112 change with the
+  734-test gate (CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 733 passed (404 library unit + 15 CLI unit + 47 AI integration +
-  118 e2e + 149 native); the full native suite also passes with `VANTYX_CC=gcc`.
+- `cargo test`: 734 passed (404 library unit + 15 CLI unit + 47 AI integration +
+  118 e2e + 150 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - CI runs the native differential suite with generated programs compiled under
   AddressSanitizer and UndefinedBehaviorSanitizer via `tools/clang-sanitize.sh`

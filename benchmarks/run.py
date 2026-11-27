@@ -48,6 +48,7 @@ WORKLOADS = [
     "struct_ops",
     "string_ops",
     "string_interp",
+    "display_ops",
 ]
 IMPLEMENTATIONS = ["vantyx-interp", "vantyx-native", "python", "c", "rust"]
 
@@ -60,6 +61,7 @@ DESCRIPTIONS = {
     "struct_ops": "80,000 struct allocations, field mutations, and sum",
     "string_ops": "15 string doublings (65,536 chars) and character scan",
     "string_interp": "200,000 four-part string interpolations and length sums",
+    "display_ops": "10,000-int list display built and measured",
 }
 
 

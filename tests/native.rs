@@ -908,6 +908,48 @@ fn recursive_struct_list_display_matches() {
 }
 
 #[test]
+fn large_collection_display_matches() {
+    assert_same(
+        "large-collection-display",
+        "struct Item:\n\
+         \x20   id: Int\n\
+         \x20   name: Str\n\
+         \x20   tags: List[Int]\n\n\
+         enum Shape:\n\
+         \x20   Circle(radius: Float)\n\
+         \x20   Polygon(points: List[Int])\n\
+         \x20   Empty\n\n\
+         enum Chain:\n\
+         \x20   End\n\
+         \x20   Link(next: Chain)\n\n\
+         fn build(n: Int) -> Chain:\n\
+         \x20   if n == 0:\n\
+         \x20       return End()\n\
+         \x20   return Link(build(n - 1))\n\n\
+         fn main():\n\
+         \x20   var xs: List[Int] = []\n\
+         \x20   var i: Int = 0\n\
+         \x20   while i < 5000:\n\
+         \x20       push(xs, i)\n\
+         \x20       i = i + 1\n\
+         \x20   print(len(str(xs)))\n\
+         \x20   let item = Item(id=7, name=\"héllo\", tags=xs)\n\
+         \x20   print(len(str(item)))\n\
+         \x20   print(item)\n\
+         \x20   let shapes: List[Shape] = [Circle(2.5), Polygon([1, 2, 3]), Empty()]\n\
+         \x20   print(shapes)\n\
+         \x20   var m: Map[Str, Int] = {}\n\
+         \x20   var j: Int = 0\n\
+         \x20   while j < 2000:\n\
+         \x20       m[str(j)] = j\n\
+         \x20       j = j + 1\n\
+         \x20   print(len(str(m)))\n\
+         \x20   print(m[\"1999\"])\n\
+         \x20   print(len(str(build(70))))\n",
+    );
+}
+
+#[test]
 fn list_iteration_and_mutation_match() {
     assert_same(
         "list-iteration",

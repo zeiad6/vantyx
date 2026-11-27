@@ -586,25 +586,27 @@ impl<'a> Emitter<'a> {
                 "if (!vantyx_enter_struct(raw)) return vantyx_strdup({});",
                 c_string(&format!("{}(...)", structure.name))
             ));
+            self.line("VantyxStrBuilder builder;");
+            self.line("vantyx_sb_init(&builder);");
             self.line(&format!(
-                "vantyx_str result = vantyx_strdup({});",
+                "vantyx_sb_append_str(&builder, {});",
                 c_string(&format!("{}(", structure.name))
             ));
             for (index, field) in structure.fields.iter().enumerate() {
                 if index > 0 {
-                    self.line("result = vantyx_str_concat(result, vantyx_strdup(\", \"));");
+                    self.line("vantyx_sb_append_str(&builder, \", \");");
                 }
                 self.line(&format!(
-                    "result = vantyx_str_concat(result, vantyx_strdup({}));",
+                    "vantyx_sb_append_str(&builder, {});",
                     c_string(&format!("{}=", field.name))
                 ));
                 let value = format!("value->{}", self.field(&field.name));
                 let rendered = self.display_field(&field.ty, &value, "depth + 1");
-                self.line(&format!("result = vantyx_str_concat(result, {rendered});"));
+                self.line(&format!("vantyx_sb_append_str(&builder, {rendered});"));
             }
-            self.line("result = vantyx_str_concat(result, vantyx_strdup(\")\"));");
+            self.line("vantyx_sb_append_str(&builder, \")\");");
             self.line("vantyx_leave_struct();");
-            self.line("return result;");
+            self.line("return vantyx_sb_finish(&builder);");
             self.indent -= 1;
             self.line("}");
             self.blank();
@@ -631,13 +633,15 @@ impl<'a> Emitter<'a> {
                         c_string(&variant.name)
                     ));
                 } else {
+                    self.line("VantyxStrBuilder builder;");
+                    self.line("vantyx_sb_init(&builder);");
                     self.line(&format!(
-                        "vantyx_str result = vantyx_strdup({});",
+                        "vantyx_sb_append_str(&builder, {});",
                         c_string(&format!("{}(", variant.name))
                     ));
                     for (index, field) in variant.fields.iter().enumerate() {
                         if index > 0 {
-                            self.line("result = vantyx_str_concat(result, vantyx_strdup(\", \"));");
+                            self.line("vantyx_sb_append_str(&builder, \", \");");
                         }
                         let value = format!(
                             "value->payload.{}.{}",
@@ -645,10 +649,10 @@ impl<'a> Emitter<'a> {
                             self.field(&field.name)
                         );
                         let rendered = self.display_field(&field.ty, &value, "depth + 1");
-                        self.line(&format!("result = vantyx_str_concat(result, {rendered});"));
+                        self.line(&format!("vantyx_sb_append_str(&builder, {rendered});"));
                     }
-                    self.line("result = vantyx_str_concat(result, vantyx_strdup(\")\"));");
-                    self.line("return result;");
+                    self.line("vantyx_sb_append_str(&builder, \")\");");
+                    self.line("return vantyx_sb_finish(&builder);");
                 }
                 self.indent -= 1;
                 self.line("}");
@@ -5334,15 +5338,17 @@ static vantyx_str vantyx_list_display(VantyxList* list, int depth) {
     }
     if (seen_len >= 128) return vantyx_strdup("\xE2\x80\xA6");
     seen[seen_len++] = list;
-    vantyx_str result = vantyx_strdup("[");
+    VantyxStrBuilder builder;
+    vantyx_sb_init(&builder);
+    vantyx_sb_append_str(&builder, "[");
     for (int64_t index = 0; index < list->len; index++) {
-        if (index > 0) result = vantyx_str_concat(result, vantyx_strdup(", "));
+        if (index > 0) vantyx_sb_append_str(&builder, ", ");
         const void* item = (const char*)list->items + index * list->elem_size;
-        result = vantyx_str_concat(result, vantyx_value_display(item, list->elem_desc, depth + 1));
+        vantyx_sb_append_str(&builder, vantyx_value_display(item, list->elem_desc, depth + 1));
     }
-    result = vantyx_str_concat(result, vantyx_strdup("]"));
+    vantyx_sb_append_str(&builder, "]");
     seen_len--;
-    return result;
+    return vantyx_sb_finish(&builder);
 }
 
 static vantyx_str vantyx_list_to_str(VantyxList* list) {
@@ -5587,18 +5593,20 @@ static vantyx_str vantyx_map_display(VantyxMap* map, int depth) {
     }
     if (seen_len >= 128) return vantyx_strdup("\xE2\x80\xA6");
     seen[seen_len++] = map;
-    vantyx_str result = vantyx_strdup("{");
+    VantyxStrBuilder builder;
+    vantyx_sb_init(&builder);
+    vantyx_sb_append_str(&builder, "{");
     for (int64_t index = 0; index < map->len; index++) {
-        if (index > 0) result = vantyx_str_concat(result, vantyx_strdup(", "));
+        if (index > 0) vantyx_sb_append_str(&builder, ", ");
         const void* key = (const char*)map->keys + index * map->key_size;
         const void* value = (const char*)map->values + index * map->value_size;
-        result = vantyx_str_concat(result, vantyx_value_display(key, map->key_desc, depth + 1));
-        result = vantyx_str_concat(result, vantyx_strdup(": "));
-        result = vantyx_str_concat(result, vantyx_value_display(value, map->value_desc, depth + 1));
+        vantyx_sb_append_str(&builder, vantyx_value_display(key, map->key_desc, depth + 1));
+        vantyx_sb_append_str(&builder, ": ");
+        vantyx_sb_append_str(&builder, vantyx_value_display(value, map->value_desc, depth + 1));
     }
-    result = vantyx_str_concat(result, vantyx_strdup("}"));
+    vantyx_sb_append_str(&builder, "}");
     seen_len--;
-    return result;
+    return vantyx_sb_finish(&builder);
 }
 
 static vantyx_str vantyx_map_to_str(VantyxMap* map) {

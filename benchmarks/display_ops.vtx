@@ -1,0 +1,7 @@
+fn main():
+    var xs: List[Int] = []
+    var i: Int = 0
+    while i < 10000:
+        push(xs, i)
+        i = i + 1
+    print(len(str(xs)))

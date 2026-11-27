@@ -3,6 +3,13 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-112 — Single-buffer native collection and nominal display (2026-11-27;
+  commit pending; CI pending; 734-test gate; list, map, struct, and enum
+  display append into one growable `VantyxStrBuilder` in source order,
+  removing quadratic prefix copying and retained prefixes while preserving
+  exact bytes, ordering, quoting, cycle markers, and depth limits; one
+  differential native test; ADR-0053; focused measurement median
+  754.707 ms → 5.737 ms and peak RSS 568,244 KiB → 2,520 KiB).
 - T-111 — Single-buffer native string construction (2026-11-27; committed as
   `45c438b`; CI pending; 733-test gate; interpolation and multi-operand string
   `+` chains append typed parts into one growable `VantyxStrBuilder` in source

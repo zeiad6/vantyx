@@ -5,22 +5,24 @@
 A reproducible baseline was measured on **2026-11-22**, re-measured on
 **2026-11-24** after the native scalar-key map hash index (T-044), and
 re-measured on **2026-11-27** with the new `string_interp` workload after
-single-buffer native string construction (T-111, ADR-0052). Raw results are
-stored as generated, not hand-edited:
+single-buffer native string construction (T-111, ADR-0052) and the new
+`display_ops` workload after single-buffer native collection display (T-112,
+ADR-0053). Raw results are stored as generated, not hand-edited:
 
 - [`benchmarks/results/2026-11-22.json`](../benchmarks/results/2026-11-22.json) — initial full data
 - [`benchmarks/results/2026-11-22.md`](../benchmarks/results/2026-11-22.md) — initial generated summary
 - [`benchmarks/results/2026-11-24.json`](../benchmarks/results/2026-11-24.json) — full data after the map hash index
 - [`benchmarks/results/2026-11-24.md`](../benchmarks/results/2026-11-24.md) — generated summary for that run
-- [`benchmarks/results/2026-11-27.json`](../benchmarks/results/2026-11-27.json) — full eight-workload data including `string_interp`
+- [`benchmarks/results/2026-11-27.json`](../benchmarks/results/2026-11-27.json) — full nine-workload data including `string_interp` and `display_ops`
 - [`benchmarks/results/2026-11-27.md`](../benchmarks/results/2026-11-27.md) — generated summary for that run
 - [`benchmarks/results/2026-11-27-string-buffer.md`](../benchmarks/results/2026-11-27-string-buffer.md) — focused before/after comparison for ADR-0052
+- [`benchmarks/results/2026-11-27-display-buffer.md`](../benchmarks/results/2026-11-27-display-buffer.md) — focused before/after comparison for ADR-0053
 
 These are single-machine baseline numbers, not a competitive claim. They exist
-to guide optimization and to make regressions visible. The 2026-11-27 full run
-was slower than 2026-11-24 across every implementation, including C and Rust,
+to guide optimization and to make regressions visible. The 2026-11-27 full runs
+were slower than 2026-11-24 across every implementation, including C and Rust,
 so absolute numbers are not comparable across those dates; within-run
-comparisons and the focused alternating before/after comparison are the valid
+comparisons and the focused alternating before/after comparisons are the valid
 evidence.
 
 ## Rules
@@ -45,6 +47,7 @@ evidence.
 | `struct_ops` | 80,000 heap-allocated structs, field mutation, and sum |
 | `string_ops` | 15 string doublings (65,536 characters) and a character scan |
 | `string_interp` | 200,000 four-part string interpolations and length sums |
+| `display_ops` | 10,000-int list display built and measured |
 
 Each workload exists as `.vtx`, `.py`, `.c`, and `.rs` under
 `benchmarks/`. The Vantyx source is run twice: once through `vantyx run`
@@ -119,28 +122,34 @@ native executable from `vantyx build`.
 
 ### 2026-11-27 full run
 
-This run added `string_interp` and used the same runner and five repetitions.
-Every implementation was slower than the 2026-11-24 run (for example C
-`arith_loop` 4.877 ms versus 2.838 ms), which points to machine state rather
-than a Vantyx regression; use these numbers only within this run.
+This run added `display_ops` to the eight workloads from T-111 and used the
+same runner and five repetitions. Every implementation was slower than the
+2026-11-24 run (for example C `arith_loop` 4.917 ms versus 2.838 ms), which
+points to machine state rather than a Vantyx regression; use these numbers only
+within this run.
 
 | Workload | Vantyx interp | Vantyx native | Python | C | Rust |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `arith_loop` | 1370.086 | 5.004 | 404.224 | 4.877 | 5.590 |
-| `enum_ops` | 1462.600 | 8.126 | 289.040 | 7.384 | 7.822 |
-| `fib` | 194.445 | 3.508 | 51.905 | 2.833 | 3.962 |
-| `list_ops` | 456.531 | 4.625 | 175.137 | 4.364 | 5.176 |
-| `map_ops` | 119.085 | 3.559 | 40.100 | 3.041 | 3.653 |
-| `struct_ops` | 475.604 | 10.780 | 182.003 | 11.848 | 12.680 |
-| `string_ops` | 70.963 | 8.694 | 46.606 | 2.751 | 3.848 |
-| `string_interp` | 485.718 | 75.805 | 140.444 | 36.979 | 40.433 |
+| `arith_loop` | 1358.041 | 4.987 | 404.354 | 4.917 | 5.495 |
+| `enum_ops` | 1422.775 | 7.709 | 285.689 | 6.947 | 7.774 |
+| `fib` | 188.697 | 3.571 | 49.895 | 2.756 | 3.424 |
+| `list_ops` | 439.369 | 4.444 | 171.380 | 4.244 | 4.971 |
+| `map_ops` | 116.528 | 3.094 | 37.873 | 2.641 | 3.682 |
+| `struct_ops` | 461.516 | 8.730 | 174.517 | 11.383 | 12.039 |
+| `string_ops` | 66.456 | 3.122 | 43.330 | 2.578 | 3.344 |
+| `string_interp` | 466.672 | 73.550 | 136.544 | 36.183 | 39.807 |
+| `display_ops` | 15.134 | 4.674 | 35.986 | 3.377 | 3.724 |
 
-The `string_ops` native spread in this run was 3.201–14.592 ms, another sign of
-host interference. The focused, alternating comparison of the pre-change and
-post-change binaries for `string_interp` is in
+The focused, alternating comparison of the pre-change and post-change binaries
+for `string_interp` is in
 [`2026-11-27-string-buffer.md`](../benchmarks/results/2026-11-27-string-buffer.md):
 median wall time 59.893 ms to 34.414 ms and median peak RSS 33,396 KiB to
-17,564 KiB on the same machine in one batch.
+17,564 KiB on the same machine in one batch. The equivalent comparison for
+`display_ops` is in
+[`2026-11-27-display-buffer.md`](../benchmarks/results/2026-11-27-display-buffer.md):
+median wall time 754.707 ms to 5.737 ms and median peak RSS 568,244 KiB to
+2,520 KiB, reflecting the removal of quadratic prefix copying and retained
+prefixes.
 
 For comparison, the 2026-11-24 pre-T-055 `string_ops` native median was
 8.318 ms; it fell to the 1.6–3.2 ms range across later runs after single-byte
@@ -154,29 +163,33 @@ Peak RSS and min/max spread are in the raw result files. Representative values:
 
 | Workload | Vantyx native RSS | Vantyx interp RSS | C RSS | Rust RSS |
 | --- | ---: | ---: | ---: | ---: |
-| `arith_loop` | 2.02 MiB | 3.78 MiB | 1.58 MiB | 2.08 MiB |
-| `enum_ops` | 2.01 MiB | 3.72 MiB | 1.60 MiB | 2.09 MiB |
-| `list_ops` | 3.46 MiB | 13.81 MiB | 2.77 MiB | 3.37 MiB |
-| `struct_ops` | 5.02 MiB | 43.06 MiB | 4.65 MiB | 5.06 MiB |
-| `string_interp` (2026-11-27) | 17.29 MiB | 3.92 MiB | 1.48 MiB | 1.99 MiB |
+| `arith_loop` | 2.09 MiB | 3.82 MiB | 1.60 MiB | 2.08 MiB |
+| `enum_ops` | 2.09 MiB | 3.91 MiB | 1.60 MiB | 2.11 MiB |
+| `list_ops` | 3.32 MiB | 15.85 MiB | 2.77 MiB | 3.37 MiB |
+| `struct_ops` | 5.16 MiB | 44.71 MiB | 4.60 MiB | 5.11 MiB |
+| `string_interp` (2026-11-27) | 17.16 MiB | 3.90 MiB | 1.60 MiB | 2.00 MiB |
+| `display_ops` (2026-11-27) | 2.50 MiB | 4.33 MiB | 1.65 MiB | 2.36 MiB |
 
 Build time and binary size:
 
 | Workload | Vantyx build s | C build s | Rust build s | Vantyx binary B | C binary B | Rust binary B |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `arith_loop` | 0.195 | 0.097 | 0.155 | 16,744 | 15,992 | 4,493,248 |
-| `enum_ops` | 0.143 | 0.077 | 0.104 | 16,784 | 15,992 | 4,493,272 |
-| `fib` | 0.122 | 0.074 | 0.087 | 16,784 | 16,016 | 4,493,104 |
-| `list_ops` | 0.134 | 0.085 | 0.192 | 16,840 | 16,144 | 4,494,328 |
-| `map_ops` | 0.258 | 0.084 | 0.313 | 21,824 | 16,240 | 4,516,256 |
-| `struct_ops` | 0.142 | 0.082 | 0.124 | 16,832 | 16,144 | 4,494,736 |
-| `string_ops` | 0.136 | 0.081 | 0.128 | 16,880 | 16,192 | 4,494,072 |
+| `arith_loop` | 0.347 | 0.144 | 0.175 | 17,104 | 15,992 | 4,493,248 |
+| `enum_ops` | 0.378 | 0.153 | 0.188 | 17,232 | 15,992 | 4,493,272 |
+| `fib` | 0.332 | 0.145 | 0.167 | 17,232 | 16,016 | 4,493,104 |
+| `list_ops` | 0.354 | 0.159 | 0.211 | 17,200 | 16,144 | 4,494,328 |
+| `map_ops` | 0.657 | 0.165 | 0.502 | 22,136 | 16,240 | 4,516,256 |
+| `struct_ops` | 0.379 | 0.165 | 0.230 | 17,200 | 16,144 | 4,494,736 |
+| `string_ops` | 0.368 | 0.160 | 0.225 | 17,248 | 16,192 | 4,494,072 |
+| `string_interp` | 0.340 | 0.140 | 0.196 | 17,208 | 16,032 | 4,495,560 |
+| `display_ops` | 0.497 | 0.136 | 0.233 | 21,768 | 16,128 | 4,497,200 |
 
 ## Interpretation
 
-- **Native vs interpreter:** native is roughly 20×–250× faster on these
-  workloads. `map_ops` is ~37× faster than the interpreter because the native
-  backend uses a hash index while the interpreter remains linear.
+- **Native vs interpreter:** native is faster on every workload in this run,
+  from about 3× on `display_ops` to roughly 20×–250× on the others. `map_ops`
+  is ~37× faster than the interpreter because the native backend uses a hash
+  index while the interpreter remains linear.
 - **Native vs C/Rust:** on these workloads the native backend is in the same
   performance band. Do not read small differences (including cases where
   Vantyx is marginally ahead) as a language-level win; they are within
@@ -185,8 +198,10 @@ Build time and binary size:
   single-byte ASCII iteration and indexing stopped allocating a heap string per
   character (T-055). `enum_ops` (T-056) puts heap-allocated native enums in the
   same band as stack-value C and Rust enums, so a representation rewrite is not
-  justified by this evidence. Immutable concatenation still allocates a fresh
-  exact-size string.
+  justified by this evidence. Interpolation, multi-operand string `+` chains,
+  and collection/struct/enum display now build into one growable buffer
+  (T-111/T-112); two-operand concatenation still allocates a fresh exact-size
+  string.
 - **Maps:** the scalar-key hash index (ADR-0016) cut `map_ops` from 64.212 ms
   to the 1–4 ms band. Native is about 1.3× slower than C's hash table and
   faster than the Rust `HashMap` result on this run. Structural keys still take
@@ -195,9 +210,11 @@ Build time and binary size:
 - **Interpreter:** it is a semantic oracle, not a performance target. It is
   slower than Python on these microbenchmarks, and its map workload is
   intentionally linear rather than a `dict`.
-- **Memory:** native RSS is low (2–5 MiB) because native programs leak but do
-  not maintain interpreter metadata. The interpreter's `struct_ops` peak is
-  much higher due to `Rc<RefCell<...>>` per struct and per field.
+- **Memory:** native RSS is low (2–5 MiB on most workloads, 17.16 MiB for
+  `string_interp`, which retains one result string per iteration) because
+  native programs leak but do not maintain interpreter metadata. The
+  interpreter's `struct_ops` peak is much higher due to `Rc<RefCell<...>>` per
+  struct and per field.
 
 ## Reproduce
 

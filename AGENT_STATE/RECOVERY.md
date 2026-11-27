@@ -13,6 +13,19 @@
 
 ## Last recorded repository state (2026-11-27)
 
+- The T-112 working tree adds single-buffer native collection and nominal
+  display: list, map, struct, and enum rendering append every part into one
+  growable `VantyxStrBuilder` in source order, removing quadratic prefix
+  copying and retained prefixes while preserving exact bytes, ordering,
+  quoting, cycle markers, depth limits, and early returns. One differential
+  native test, ADR-0053, a new `display_ops` benchmark workload, and a focused
+  same-batch result file are added. It passes 734 tests (404 library unit + 15
+  CLI unit + 47 AI integration + 118 e2e + 150 native), the full 150-test
+  native suite under `VANTYX_CC=gcc` and under clang ASan/UBSan with leak
+  detection disabled, clippy and fmt clean, the release build, five examples,
+  seven Python self-tests, 100/100 seed-1 differential cases, fuzz smoke, the
+  13-skill validator, and the link checker. Commit pending; CI pending.
+  Focused median 754.707 ms → 5.737 ms and peak RSS 568,244 KiB → 2,520 KiB.
 - The T-111 working tree adds single-buffer native string construction:
   interpolation and multi-operand string `+` chains append typed parts into
   one growable `VantyxStrBuilder` in source order, flatten nested

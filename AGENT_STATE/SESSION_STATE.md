@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `45c438b` (T-111); the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-111 is committed with CI pending; the working tree is clean.
+- Last commit: `45c438b` (T-111); the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. The T-112 working tree is verified locally and is being committed; CI is pending.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -19,8 +19,27 @@
 
 ## Current task
 
-T-111 — Single-buffer native string construction. Status: VERIFIED locally;
-commit `45c438b`; CI pending. Native interpolation and multi-operand string `+`
+T-112 — Single-buffer native collection and nominal display. Status: VERIFIED
+locally; commit pending; CI pending. Native list, map, struct, and enum display
+now append into one growable `VantyxStrBuilder` buffer in source order instead
+of concatenating the growing result once per element or field, removing
+quadratic prefix copying and retained prefixes while preserving exact bytes,
+ordering, quoting, cycle markers, depth limits, and early returns. One new
+differential native test covers a 5,000-element list, a struct containing it, a
+list of enum payloads, a 2,000-entry map, and a 70-level recursive enum.
+ADR-0053 records the decision; `docs/memory_model.md`, `docs/benchmarks.md`,
+`benchmarks/results/2026-11-27-display-buffer.md`, `TASKS.md`,
+`PROJECT_STATUS.md`, `README.md`, `AGENTS.md`, and
+`docs/PROJECT_BASELINE.md` are updated. The 734-test gate, GCC native suite,
+ASan/UBSan native suite, examples, fuzz self-tests, 100/100 seed-1 differential
+cases, fuzz smoke, 13-skill validator, and link checker pass. The focused
+same-batch measurement is median 754.707 ms → 5.737 ms and peak RSS
+568,244 KiB → 2,520 KiB. Independent `qa-verifier` review was attempted but the
+provider returned a free-usage limit error before any review work ran; no
+independent result is claimed.
+
+T-111 — Single-buffer native string construction. Status: VERIFIED; commit
+`45c438b`; CI pending. Native interpolation and multi-operand string `+`
 chains now append typed parts into one growable `VantyxStrBuilder` buffer in
 source order instead of allocating and retaining one string per part and
 concatenation. Nested interpolations flatten into the same buffer. Two plain
