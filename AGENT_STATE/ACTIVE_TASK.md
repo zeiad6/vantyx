@@ -1,5 +1,44 @@
 # Active Task
 
+## T-105 — Empty list literal adopts `join`'s `List[Str]` type
+
+- Status: VERIFIED locally; commit and CI pending
+- Priority: P1 (core language typing and interpreter/native parity)
+- Dependencies: ADR-0009, ADR-0028
+
+### Implemented
+
+- `join([], separator)` was checked as `List[Any]`, ran in the interpreter,
+  and was rejected by the native backend with `E0401`.
+- The `join` arm in `src/checker.rs` now checks a direct empty list literal
+  against `List[Str]`; non-empty arguments keep the previous inference path,
+  so `join([1, 2], ",")` still reports the existing list-level `E0301`.
+
+### Evidence
+
+- 2026-11-26: the `join_empty.vtx` probe failed natively with `E0401` at
+  `join([], ",")` before the change; after the change both engines print the
+  same three empty lines and exit `0`.
+- `cargo test --test native join_accepts_empty_list_literals` passed;
+  `cargo test --test e2e text_builtins` passed, including the existing
+  non-empty `join([1, 2], ",")` diagnostic.
+- Full gate: `cargo fmt --check --all` and
+  `cargo clippy --all-targets -- -D warnings` clean; `cargo test` = 724
+  passed (402 library unit + 15 CLI unit + 47 AI integration + 117 e2e + 143
+  native); the full 143-test native suite also passed with `VANTYX_CC=gcc`;
+  `cargo build --release` succeeded; five examples matched; seven Python
+  self-tests OK; 100/100 differential cases on seed 1; fuzz smoke 9
+  depth/limit cases and 400 random/mutated inputs controlled; 13 skills and
+  117 links valid.
+
+### Remaining
+
+- Commit, push, record the CI run, and update the commit/CI fields.
+- Scope limits: only a direct empty list literal in `join`'s first argument
+  is affected. `len([])`, `print([])`, and `let xs = []; push(...)` still
+  infer `List[Any]` and remain under the native `E0401` boundary because no
+  element type is available; annotate the binding or collection.
+
 ## T-104 — Native call-depth diagnostics report the call site
 
 - Status: VERIFIED; pushed in `4269010`; CI run 45933776137 green

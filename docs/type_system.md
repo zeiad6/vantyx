@@ -18,7 +18,7 @@ Struct(Name), Enum(Name)
 - `let x = expr` gets the type of `expr`; an annotation constrains and checks it.
 - Arithmetic: `Int op Int → Int` (except `/ → Float`), `Float op Float → Float`; mixing is an error.
 - Comparison → `Bool`; logical operators require `Bool`.
-- List literals unify element types; failure to unify yields `List[Any]`.
+- List literals unify element types; failure to unify yields `List[Any]`. An empty literal adopts an expected type from an annotation or from an unambiguous builtin parameter (`join`), and otherwise yields `List[Any]`.
 - Map literals unify key and value types independently; failure yields `Map[Any, Any]`.
 - Calls use declared parameter types; unannotated parameters are `Any`.
 - Unannotated return types are inferred from returns. If returns disagree, the result is `Any` (runtime checked) unless an annotation demands otherwise.

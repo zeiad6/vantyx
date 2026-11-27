@@ -3,6 +3,13 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-105 — Empty list literal adopts `join`'s `List[Str]` type (2026-11-26;
+  724-test gate; `join([], separator)` previously checked as `List[Any]` and
+  failed natively with `E0401`; the checker now passes `List[Str]` as the
+  expected type for a direct empty list literal while non-empty arguments keep
+  the old inference path and list-level `E0301`; `join_accepts_empty_list_literals`
+  covers empty and annotated empty lists; `len([])`, `print([])`, and
+  unannotated empty-list bindings remain under the native `E0401` boundary).
 - T-104 — Native call-depth diagnostics report the call site (2026-11-26;
   723-test gate; the `R0012` guard now reports the call site's file, line, and
   column in both engines, including across modules, instead of the callee

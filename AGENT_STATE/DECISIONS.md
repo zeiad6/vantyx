@@ -4,6 +4,21 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-26 — Empty list literals take `join`'s parameter type
+
+- `join` is the only builtin whose first parameter has one unambiguous
+  collection type (`List[Str]`). An empty list literal in that position now
+  takes `List[Str]` instead of defaulting to `List[Any]`, so `join([], ",")`
+  compiles natively and matches the interpreter.
+- Apply the expected type only to a direct empty list literal. Non-empty
+  literals keep element-first inference and the existing list-level `E0301`,
+  so the change does not turn one clear diagnostic into one error per element.
+- Do not default other empty literals (`len([])`, `print([])`,
+  `let xs = []; push(xs, ...)`) to an arbitrary element type. No element type
+  is available, the interpreter's `List[Any]` behavior is established, and
+  native rejects `List[Any]` with `E0401`; users annotate the binding or
+  collection.
+
 ## 2026-11-26 — Depth-limit diagnostics name the call site
 
 - Report `R0012` at the failing call site, not at the callee declaration,

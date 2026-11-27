@@ -4,8 +4,9 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `8805381` (record T-104 CI run 45933776137); CI run 45934076343 green on it. A later docs-only status commit may exist; use `git log -1` for the exact HEAD.
-- Remote: `origin/main` at `8805381`; CI run 45934076343 green on `8805381`;
+- Last commit: `61cb9be` (record T-104 status-sync CI run 45934076343); CI run 45934367601 green on it. T-105 is uncommitted in the working tree.
+- Remote: `origin/main` at `61cb9be`; CI run 45934367601 green on `61cb9be`;
+  CI run 45934076343 green on `8805381`;
   CI run 45933776137 green on `4269010`;
   CI run 45928756101 green on `a263cb3`;
   CI run 45928466694 green on `46b7d54`; CI run 45926037169 green on
@@ -16,9 +17,23 @@
 
 ## Current task
 
+T-105 — Empty list literal adopts `join`'s `List[Str]` type. Status: VERIFIED
+locally; commit and CI pending. `join([], separator)` was accepted by the checker as
+`List[Any]`, ran in the interpreter, and was rejected by the native backend
+with `E0401`. The `join` checker arm now checks a direct empty list literal
+against `List[Str]`; non-empty arguments keep the previous inference path, so
+`join([1, 2], ",")` still reports the existing list-level `E0301`. The new
+`tests/native.rs::join_accepts_empty_list_literals` covers empty literals and
+an annotated empty list. `len([])`, `print([])`, and `let xs = []; push(...)`
+remain under the native `E0401` boundary because no element type is available.
+724-test gate; the GCC native suite, release build, five examples, seven
+Python self-tests, 100/100 differential cases, fuzz smoke, 13 skills, and 117
+links passed. See `ACTIVE_TASK.md`.
+
 T-104 — Native call-depth diagnostics report the call site. Status: VERIFIED;
 pushed in `4269010`; CI run 45933776137 green; the status sync `8805381`
-passed run 45934076343. The native `R0012` guard reported the
+passed run 45934076343, and `61cb9be` passed run 45934367601. The native
+`R0012` guard reported the
 callee declaration and, on a cross-file call, the callee's file; the
 interpreter reports the failing call site. `src/codegen_c.rs` adds
 `vantyx_call_line`/`vantyx_call_column`, sets them immediately after argument
@@ -459,21 +474,26 @@ binaries or credentials are tracked.
 - CI run 45928756101 — success on `a263cb3` (T-103 status sync)
 - CI run 45933776137 — success on `4269010` with T-104
 - CI run 45934076343 — success on `8805381` (T-104 status sync)
+- CI run 45934367601 — success on `61cb9be` (T-104 status-sync record)
 
 ## Next steps
 
-1. T-104 is committed as `4269010`, pushed, and CI run 45933776137 is green;
-   the status sync `8805381` passed run 45934076343. T-103 is committed as
+1. T-105 is verified locally; commit, push, record the CI run, and update the
+   commit/CI fields. T-104 is committed as `4269010`, pushed,
+   and CI run 45933776137 is green; its status sync `8805381` passed run
+   45934076343, and `61cb9be` passed run 45934367601. T-103 is committed as
    `46b7d54`, pushed, and CI run 45928466694 is green; its status sync
    `a263cb3` passed run 45928756101. The T-102 status-sync commit `0a309c8`
    also passed CI run 45926037169. Keep the commit/CI fields current as later
    status updates land.
 2. Continue targeted interpreter/native probes on surfaces not yet covered:
-   map float/NaN keys, collection equality edges, enum payload aliasing, and
-   nested loop control flow now match; next probe file/directory builtins
-   under unusual conditions and deeper module interactions. Audit lowering
-   that can render a constant or omit an operand, and build effectful cases
-   with both clang and GCC.
+   module cycles and duplicate imports, `/dev/null`, `/dev/full`, and
+   `/proc/version`, a 546-path/300-join matrix, a 1,055-statement text
+   matrix, float formatting extremes, and math edge cases now match. The
+   probes found the T-105 empty-list `join` gap. Next probe file/directory
+   builtins under permissions and race conditions, deeply nested modules, and
+   lowering that can render a constant or omit an operand; build effectful
+   cases with both clang and GCC.
 3. Continue P1 standard-library work. `sorted` is now limited to scalar lists;
    comparator/key/reverse/in-place variants need first-class functions or a new
    design, so prefer bounded candidates first: map/filter/reduce over scalar

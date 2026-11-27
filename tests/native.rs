@@ -721,6 +721,20 @@ fn list_builtins_match() {
 }
 
 #[test]
+fn join_accepts_empty_list_literals() {
+    assert_same(
+        "join-empty",
+        "fn main():\n\
+         \x20   print(join([], \",\"))\n\
+         \x20   print(join([], \"\"))\n\
+         \x20   let xs: List[Str] = []\n\
+         \x20   print(join(xs, \"-\"))\n\
+         \x20   print(join([\"a\", \"b\"], \",\"))\n\
+         \x20   print(join([\"\"], \",\"))\n",
+    );
+}
+
+#[test]
 fn sorted_scalar_lists_match() {
     assert_same(
         "sorted",

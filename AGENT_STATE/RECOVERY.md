@@ -13,9 +13,9 @@
 
 ## Last recorded repository state (2026-11-26)
 
-- `origin/main` and HEAD are at `8805381` (record the T-104 CI run), and CI
-  run 45934076343 passed on it. A later docs-only status commit may exist; use
-  `git log -1` for the exact HEAD. `4269010` contains call-site native
+- `origin/main` and HEAD are at `61cb9be` (record the T-104 status-sync CI
+  run), and CI run 45934367601 passed on it. `8805381` recorded the T-104 CI
+  run and passed 45934076343. `4269010` contains call-site native
   call-depth diagnostics (T-104), and CI run 45933776137 passed on it.
   `a263cb3` recorded the T-103 CI run and passed run 45928756101. `46b7d54` contains deterministic scalar-list
   sorting (T-103), and CI run 45928466694 passed on it. `0a309c8` recorded the T-102 CI
@@ -26,8 +26,17 @@
   shuffling (T-101), and `33c966e` contains the native parity fixes, dataset
   tooling, and agent skills (T-078 through T-100); CI runs 45923211883 and
   45920832199 passed.
+- The T-105 working tree makes a direct empty list literal in `join` take
+  `List[Str]`, so `join([], ",")` compiles natively instead of failing with
+  `E0401`. It passes 724 tests (402 library unit + 15 CLI unit + 47 AI
+  integration + 117 e2e + 143 native), the full native suite under
+  `VANTYX_CC=gcc`, clippy and fmt clean, release build, five examples, seven
+  Python self-tests, 100/100 fuzz cases on seed 1, fuzz smoke, and the
+  thirteen-skill and 117-link validators; the commit is pending. `len([])`,
+  `print([])`, and unannotated empty-list bindings still infer `List[Any]` and
+  remain under the native `E0401` boundary.
 - The T-104 tree moves the native `R0012` depth-limit diagnostic to the
-  failing call site, including across modules. It passes 723 tests
+  failing call site, including across modules. It passed 723 tests
   (402 library unit + 15 CLI unit + 47 AI integration + 117 e2e + 142 native),
   the full native suite under `VANTYX_CC=gcc`, clippy and fmt clean, debug and
   release builds, five examples, seven Python self-tests, 100/100 fuzz cases on

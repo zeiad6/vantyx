@@ -2,6 +2,16 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
+## Verified locally, pending commit/CI
+
+- T-105 — Empty list literal adopts `join`'s `List[Str]` type. VERIFIED
+  locally; `join([], separator)` previously checked as `List[Any]` and failed
+  natively with `E0401`. The checker now passes `List[Str]` as the expected
+  type for a direct empty list literal; non-empty arguments keep the old
+  inference path and diagnostic. New native differential test; 724-test gate,
+  GCC native suite, release build, five examples, seven Python self-tests,
+  100/100 differential cases, fuzz smoke, 13 skills, and 117 links.
+
 ## Completed in `4269010` (CI run 45933776137 green)
 
 - T-104 — Native call-depth diagnostics report the call site. VERIFIED;

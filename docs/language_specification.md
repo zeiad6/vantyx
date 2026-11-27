@@ -338,7 +338,7 @@ Arguments are evaluated left to right. Arity and statically known types are chec
 `value.field` requires a struct type; unknown fields are `E0304`. On `Any`, the runtime checks the actual value.
 
 ### 5.8 List and map literals
-Elements are checked left to right. If all element types unify, the literal has `List[T]`; otherwise `List[Any]`. An expected type from an annotation propagates into the literal. Map keys must unify and values must unify; otherwise `Map[Any, Any]`.
+Elements are checked left to right. If all element types unify, the literal has `List[T]`; otherwise `List[Any]`. An expected type from an annotation propagates into the literal. An empty list literal also adopts the parameter type in a builtin position where that type is unambiguous (`join`'s `List[Str]`); otherwise it remains `List[Any]`. Map keys must unify and values must unify; otherwise `Map[Any, Any]`.
 
 ### 5.9 Match expressions
 ```vantyx

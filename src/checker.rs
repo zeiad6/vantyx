@@ -2694,7 +2694,16 @@ impl<'a> Checker<'a> {
                 if !arity(self, 2, 2) {
                     return Type::Str;
                 }
-                let list_ty = arg_ty(self, 0, None);
+                // `join` has one unambiguous `List[Str]` parameter, so an
+                // empty list literal can take that type instead of defaulting
+                // to `List[Any]`, which the native backend cannot represent.
+                let list_expected = Type::List(Box::new(Type::Str));
+                let list_ty = match &args[0].value.kind {
+                    ExprKind::List(elements) if elements.is_empty() => {
+                        arg_ty(self, 0, Some(&list_expected))
+                    }
+                    _ => arg_ty(self, 0, None),
+                };
                 match &list_ty {
                     Type::List(inner) if **inner == Type::Str || inner.is_any() => {}
                     Type::Any => {}
