@@ -4,8 +4,9 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `61cb9be` (record T-104 status-sync CI run 45934076343); CI run 45934367601 green on it. T-105 is uncommitted in the working tree.
-- Remote: `origin/main` at `61cb9be`; CI run 45934367601 green on `61cb9be`;
+- Last commit: `779783c` (T-105); CI run 45936065460 green on it. T-104 status sync `61cb9be` passed run 45934367601.
+- Remote: `origin/main` at `779783c`; CI run 45936065460 green on `779783c`;
+  CI run 45934367601 green on `61cb9be`;
   CI run 45934076343 green on `8805381`;
   CI run 45933776137 green on `4269010`;
   CI run 45928756101 green on `a263cb3`;
@@ -17,8 +18,8 @@
 
 ## Current task
 
-T-105 — Empty list literal adopts `join`'s `List[Str]` type. Status: VERIFIED
-locally; commit and CI pending. `join([], separator)` was accepted by the checker as
+T-105 — Empty list literal adopts `join`'s `List[Str]` type. Status: VERIFIED;
+pushed in `779783c`; CI run 45936065460 green. `join([], separator)` was accepted by the checker as
 `List[Any]`, ran in the interpreter, and was rejected by the native backend
 with `E0401`. The `join` checker arm now checks a direct empty list literal
 against `List[Str]`; non-empty arguments keep the previous inference path, so
@@ -475,11 +476,12 @@ binaries or credentials are tracked.
 - CI run 45933776137 — success on `4269010` with T-104
 - CI run 45934076343 — success on `8805381` (T-104 status sync)
 - CI run 45934367601 — success on `61cb9be` (T-104 status-sync record)
+- CI run 45936065460 — success on `779783c` with T-105
 
 ## Next steps
 
-1. T-105 is verified locally; commit, push, record the CI run, and update the
-   commit/CI fields. T-104 is committed as `4269010`, pushed,
+1. T-105 is committed as `779783c`, pushed, and CI run 45936065460 is green.
+   T-104 is committed as `4269010`, pushed,
    and CI run 45933776137 is green; its status sync `8805381` passed run
    45934076343, and `61cb9be` passed run 45934367601. T-103 is committed as
    `46b7d54`, pushed, and CI run 45928466694 is green; its status sync

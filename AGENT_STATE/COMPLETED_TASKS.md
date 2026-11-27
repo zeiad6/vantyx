@@ -4,7 +4,8 @@ Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
 - T-105 — Empty list literal adopts `join`'s `List[Str]` type (2026-11-26;
-  724-test gate; `join([], separator)` previously checked as `List[Any]` and
+  pushed in `779783c`; CI run 45936065460 green; 724-test gate;
+  `join([], separator)` previously checked as `List[Any]` and
   failed natively with `E0401`; the checker now passes `List[Str]` as the
   expected type for a direct empty list literal while non-empty arguments keep
   the old inference path and list-level `E0301`; `join_accepts_empty_list_literals`

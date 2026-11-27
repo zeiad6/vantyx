@@ -1,7 +1,7 @@
 # Checkpoint — T-105 empty list literal adopts `join`'s `List[Str]` type
 
 Date: 2026-11-26
-Status: VERIFIED locally; commit, push, and CI pending
+Status: VERIFIED; pushed in `779783c`; CI run 45936065460 green
 
 ## Objective
 
@@ -57,6 +57,8 @@ After: both engines exit `0`, print the same three empty lines for
   inputs produced controlled diagnostics.
 - Skill validator — 13 skills valid; link checker — 117 links in 177 Markdown
   files OK.
+- `git push origin main` — `61cb9be..779783c`; CI run 45936065460 passed on
+  `779783c`.
 
 ## Blockers and limits
 
@@ -71,13 +73,10 @@ After: both engines exit `0`, print the same three empty lines for
 
 ## Next exact commands
 
-1. `git diff --check && git status --short`
-2. `git add -A && git commit -m "Adopt List[Str] for empty join arguments"`
-3. `git push origin main`
-4. `gh run watch <new-run-id> --exit-status` and record the result in
-   `TASKS.md`, `PROJECT_STATUS.md`, `AGENTS.md`, `docs/PROJECT_BASELINE.md`,
-   `AGENT_STATE/SESSION_STATE.md`, `AGENT_STATE/RECOVERY.md`, and this
-   checkpoint.
+1. `git status --short` and confirm the tree is clean.
+2. Continue probes on file/directory builtins under permissions and races,
+   deeper module interactions, and lowering that can render a constant or
+   omit an operand; build effectful cases with both clang and GCC.
 
 ## Risks
 

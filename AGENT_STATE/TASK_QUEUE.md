@@ -2,10 +2,10 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
-## Verified locally, pending commit/CI
+## Completed in `779783c` (CI run 45936065460 green)
 
-- T-105 — Empty list literal adopts `join`'s `List[Str]` type. VERIFIED
-  locally; `join([], separator)` previously checked as `List[Any]` and failed
+- T-105 — Empty list literal adopts `join`'s `List[Str]` type. VERIFIED;
+  pushed in `779783c`; `join([], separator)` previously checked as `List[Any]` and failed
   natively with `E0401`. The checker now passes `List[Str]` as the expected
   type for a direct empty list literal; non-empty arguments keep the old
   inference path and diagnostic. New native differential test; 724-test gate,

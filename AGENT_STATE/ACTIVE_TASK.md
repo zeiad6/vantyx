@@ -2,7 +2,7 @@
 
 ## T-105 — Empty list literal adopts `join`'s `List[Str]` type
 
-- Status: VERIFIED locally; commit and CI pending
+- Status: VERIFIED; pushed in `779783c`; CI run 45936065460 green
 - Priority: P1 (core language typing and interpreter/native parity)
 - Dependencies: ADR-0009, ADR-0028
 
@@ -33,7 +33,7 @@
 
 ### Remaining
 
-- Commit, push, record the CI run, and update the commit/CI fields.
+- None; pushed in `779783c` and CI run 45936065460 is green.
 - Scope limits: only a direct empty list literal in `join`'s first argument
   is affected. `len([])`, `print([])`, and `let xs = []; push(...)` still
   infer `List[Any]` and remain under the native `E0401` boundary because no

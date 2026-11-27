@@ -93,7 +93,7 @@ python3 benchmarks/run.py --reps 5
   diagnostics are pushed in `4269010` with the 723-test gate and CI run
   45933776137 green; the status sync `8805381` passed run 45934076343, and
   `61cb9be` passed run 45934367601; T-105 empty-list `join` inference is
-  verified locally with the 724-test gate and commit/CI are pending). The
+  pushed in `779783c` with the 724-test gate and CI run 45936065460 green). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 724 passed (402 library unit + 15 CLI unit + 47 AI integration +
