@@ -791,3 +791,26 @@ file records operational choices.
   explicitly above it. On-disk external sorting is a larger separate design.
 - Leave JSON canonicalization, near-duplicate detection, shuffle,
   tokenizer-aware counts, and label stratification out of this task.
+
+## T-111 — Single-buffer native string construction
+
+- Use one growable `VantyxStrBuilder` for interpolation and multi-operand
+  string `+` chains instead of one `vantyx_str_concat` allocation per part and
+  intermediate. The final buffer is transferred to the result; it is not
+  copied or freed.
+- Append parts strictly in source order and evaluate each part immediately
+  before appending. This preserves calls, output, mutation, and runtime-error
+  order, which a two-pass exact-size allocation would complicate.
+- Flatten nested interpolations into the same buffer. String concatenation is
+  byte-associative, and the flattened order is the same left-to-right order
+  the interpreter evaluates.
+- Keep the two-plain-operand and one-part interpolation paths unchanged. The
+  builder overhead is not justified for the simplest shapes.
+- Share `vantyx_float_format` with `vantyx_float_str` so builder output cannot
+  drift from scalar rendering.
+- Do not free intermediates. v0.1 has no ownership or liveness analysis and
+  strings may be aliased; reclamation still requires its own ADR.
+- Do not claim a language-wide speedup. Record the focused alternating
+  before/after measurement and the full benchmark run separately; the host was
+  slower during the full run, so only within-run and same-batch comparisons
+  are valid.

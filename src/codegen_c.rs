@@ -1518,36 +1518,73 @@ impl<'a> Emitter<'a> {
                 IrStrPart::Value(value) => self.display_expr(value),
             };
         }
-        if !parts.iter().any(part_has_effects) {
-            let mut rendered = Vec::with_capacity(parts.len());
-            for part in parts {
-                rendered.push(match part {
-                    IrStrPart::Text(text) => c_string(text),
-                    IrStrPart::Value(value) => self.display_expr(value),
-                });
-            }
-            let mut result = rendered[0].clone();
-            for next in &rendered[1..] {
-                result = format!("vantyx_str_concat({result}, {next})");
-            }
-            return result;
-        }
-        let mut prelude = String::new();
-        let mut names = Vec::with_capacity(parts.len());
+        let builder = self.fresh("sb");
+        let mut body = format!("VantyxStrBuilder {builder}; vantyx_sb_init(&{builder}); ");
         for part in parts {
-            let rendered = match part {
-                IrStrPart::Text(text) => c_string(text),
-                IrStrPart::Value(value) => self.display_expr(value),
-            };
-            let name = self.fresh("str");
-            let _ = write!(prelude, "vantyx_str {name} = {rendered}; ");
-            names.push(name);
+            body.push_str(&self.append_str_part(&builder, part));
         }
-        let mut result = names[0].clone();
-        for next in &names[1..] {
-            result = format!("vantyx_str_concat({result}, {next})");
+        body.push_str(&format!("vantyx_sb_finish(&{builder});"));
+        format!("({{ {body} }})")
+    }
+
+    fn append_str_part(&mut self, builder: &str, part: &IrStrPart) -> String {
+        match part {
+            IrStrPart::Text(text) => {
+                format!("vantyx_sb_append_str(&{builder}, {}); ", c_string(text))
+            }
+            IrStrPart::Value(value) => self.append_value_to_builder(builder, value),
         }
-        format!("({{ {prelude}{result}; }})")
+    }
+
+    fn append_value_to_builder(&mut self, builder: &str, value: &IrExpr) -> String {
+        // Flatten a nested interpolation into the same buffer instead of
+        // allocating an intermediate string and copying it.
+        if let IrExprKind::Str(parts) = &value.kind {
+            let mut body = String::new();
+            for part in parts {
+                body.push_str(&self.append_str_part(builder, part));
+            }
+            return body;
+        }
+        match &value.ty {
+            IrType::Str => format!("vantyx_sb_append_str(&{builder}, {}); ", self.expr(value)),
+            IrType::Int => format!("vantyx_sb_append_int(&{builder}, {}); ", self.expr(value)),
+            IrType::Float => {
+                format!("vantyx_sb_append_float(&{builder}, {}); ", self.expr(value))
+            }
+            IrType::Bool => format!("vantyx_sb_append_bool(&{builder}, {}); ", self.expr(value)),
+            IrType::Unit => {
+                let rendered = self.expr(value);
+                format!("(void)({rendered}); vantyx_sb_append_unit(&{builder}); ")
+            }
+            _ => format!(
+                "vantyx_sb_append_str(&{builder}, {}); ",
+                self.display_expr(value)
+            ),
+        }
+    }
+
+    fn string_add_chain(&mut self, lhs: &IrExpr, rhs: &IrExpr) -> Option<String> {
+        let mut operands = Vec::new();
+        collect_str_add_operands(lhs, &mut operands);
+        collect_str_add_operands(rhs, &mut operands);
+        if operands.len() < 2 {
+            return None;
+        }
+        let needs_builder = operands.len() >= 3
+            || operands
+                .iter()
+                .any(|operand| matches!(&operand.kind, IrExprKind::Str(parts) if parts.len() > 1));
+        if !needs_builder {
+            return None;
+        }
+        let builder = self.fresh("sb");
+        let mut body = format!("VantyxStrBuilder {builder}; vantyx_sb_init(&{builder}); ");
+        for operand in operands {
+            body.push_str(&self.append_value_to_builder(&builder, operand));
+        }
+        body.push_str(&format!("vantyx_sb_finish(&{builder});"));
+        Some(format!("({{ {body} }})"))
     }
 
     fn list_expr(&mut self, elements: &[IrExpr], ty: &IrType, span: crate::span::Span) -> String {
@@ -1755,6 +1792,17 @@ impl<'a> Emitter<'a> {
             }
             let symbol = if op == BinOp::And { "&&" } else { "||" };
             return format!("(({left_value}) {symbol} ({right_value}))");
+        }
+
+        // A chain of string `+` operations is built in one buffer. Operands
+        // are appended in source order, so side effects and runtime errors
+        // keep left-to-right evaluation. Two plain operands stay on the
+        // single-concatenation path.
+        if op == BinOp::Add
+            && matches!(result_ty, IrType::Str)
+            && let Some(built) = self.string_add_chain(lhs, rhs)
+        {
+            return built;
         }
 
         // Bind both operands whenever either one has effects. Semantically
@@ -2534,6 +2582,21 @@ fn collect_expr_desc_types(expr: &IrExpr, out: &mut Vec<IrType>) {
     }
 }
 
+fn collect_str_add_operands<'a>(expr: &'a IrExpr, out: &mut Vec<&'a IrExpr>) {
+    if matches!(&expr.ty, IrType::Str)
+        && let IrExprKind::Binary {
+            op: BinOp::Add,
+            lhs,
+            rhs,
+        } = &expr.kind
+    {
+        collect_str_add_operands(lhs, out);
+        collect_str_add_operands(rhs, out);
+        return;
+    }
+    out.push(expr);
+}
+
 fn part_has_effects(part: &IrStrPart) -> bool {
     match part {
         IrStrPart::Text(_) => false,
@@ -3051,10 +3114,24 @@ static vantyx_str vantyx_str_from_int(int64_t value) {
     return vantyx_strdup(buffer);
 }
 
-static vantyx_str vantyx_float_str(double value) {
-    if (isnan(value)) return "NaN";
-    if (isinf(value)) return value < 0 ? "-Infinity" : "Infinity";
-    if (value == 0.0) return signbit(value) ? "-0.0" : "0.0";
+/* Format a float exactly as Vantyx's `str(float)` requires and return the
+   number of bytes written, excluding the terminating NUL. The buffer must
+   hold at least 512 bytes; that is sufficient for every finite double,
+   including the longest expanded decimal form. */
+static size_t vantyx_float_format(double value, char* buffer) {
+    const char* special = NULL;
+    if (isnan(value)) {
+        special = "NaN";
+    } else if (isinf(value)) {
+        special = value < 0 ? "-Infinity" : "Infinity";
+    } else if (value == 0.0) {
+        special = signbit(value) ? "-0.0" : "0.0";
+    }
+    if (special != NULL) {
+        size_t length = strlen(special);
+        memcpy(buffer, special, length + 1);
+        return length;
+    }
 
     // Rust's `f64` Display prints the shortest decimal that round-trips and
     // never uses exponent notation. Find the shortest significant-digit
@@ -3105,7 +3182,6 @@ static vantyx_str vantyx_float_str(double value) {
     }
     int point = exponent + 1;
 
-    char buffer[512];
     size_t out = 0;
     if (negative) buffer[out++] = '-';
     if (point <= 0) {
@@ -3124,12 +3200,88 @@ static vantyx_str vantyx_float_str(double value) {
         for (int i = point; i < digit_count; i++) buffer[out++] = digits[i];
     }
     buffer[out] = '\0';
+    return out;
+}
+
+static vantyx_str vantyx_float_str(double value) {
+    char buffer[512];
+    vantyx_float_format(value, buffer);
     return vantyx_strdup(buffer);
 }
 
 static vantyx_str vantyx_str_from_float(double value) { return vantyx_float_str(value); }
 static vantyx_str vantyx_str_from_bool(bool value) { return value ? "true" : "false"; }
 static vantyx_str vantyx_str_from_unit(void) { return "()"; }
+
+/* Single-buffer string construction for interpolation and `+` chains. The
+   builder appends parts in source order and transfers its buffer to the
+   caller once, so a k-part interpolation allocates once instead of k times.
+   Allocations are still not reclaimed in v0.1, but peak live memory and
+   allocator traffic drop substantially for string-heavy loops. */
+typedef struct {
+    char* data;
+    size_t len;
+    size_t cap;
+} VantyxStrBuilder;
+
+static void vantyx_sb_init(VantyxStrBuilder* builder) {
+    builder->cap = 64;
+    builder->len = 0;
+    builder->data = (char*)vantyx_alloc_array(builder->cap, 1);
+    builder->data[0] = '\0';
+}
+
+static void vantyx_sb_reserve(VantyxStrBuilder* builder, size_t extra) {
+    size_t needed = vantyx_checked_add(builder->len, extra, "string");
+    needed = vantyx_checked_add(needed, 1, "string");
+    if (needed <= builder->cap) return;
+    size_t capacity = builder->cap;
+    while (capacity < needed) {
+        capacity = capacity > SIZE_MAX / 2 ? needed : capacity * 2;
+    }
+    char* grown = (char*)realloc(builder->data, capacity);
+    if (grown == NULL) {
+        fputs("error: out of memory\n", stderr);
+        exit(2);
+    }
+    builder->data = grown;
+    builder->cap = capacity;
+}
+
+static void vantyx_sb_append_bytes(VantyxStrBuilder* builder, const char* text, size_t length) {
+    vantyx_sb_reserve(builder, length);
+    memcpy(builder->data + builder->len, text, length);
+    builder->len += length;
+    builder->data[builder->len] = '\0';
+}
+
+static void vantyx_sb_append_str(VantyxStrBuilder* builder, vantyx_str text) {
+    vantyx_sb_append_bytes(builder, text, strlen(text));
+}
+
+static void vantyx_sb_append_int(VantyxStrBuilder* builder, int64_t value) {
+    char buffer[32];
+    int length = snprintf(buffer, sizeof buffer, "%" PRId64, value);
+    vantyx_sb_append_bytes(builder, buffer, (size_t)length);
+}
+
+static void vantyx_sb_append_float(VantyxStrBuilder* builder, double value) {
+    char buffer[512];
+    size_t length = vantyx_float_format(value, buffer);
+    vantyx_sb_append_bytes(builder, buffer, length);
+}
+
+static void vantyx_sb_append_bool(VantyxStrBuilder* builder, bool value) {
+    vantyx_sb_append_str(builder, value ? "true" : "false");
+}
+
+static void vantyx_sb_append_unit(VantyxStrBuilder* builder) {
+    vantyx_sb_append_str(builder, "()");
+}
+
+static vantyx_str vantyx_sb_finish(VantyxStrBuilder* builder) {
+    return builder->data;
+}
 
 static int64_t vantyx_str_len(vantyx_str text) {
     int64_t count = 0;

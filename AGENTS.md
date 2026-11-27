@@ -82,7 +82,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
 | `tests/native.rs` | Differential interpreter vs native tests |
 | `tests/ai.rs` | Offline AI CLI and loopback HTTP integration tests |
 
-## Current verified baseline (2026-11-26)
+## Current verified baseline (2026-11-27)
 
 - Public repository: https://github.com/zeiad6/vantyx (MIT; renamed from
   `zeiad6/auren`; CI run 45365926013 green on `e3d8bdd` with 457 tests; a clean
@@ -112,11 +112,12 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   gate (CI pending); T-109 module-graph file-cap boundary is committed in
   `bffe38f` with the 731-test gate (CI pending); T-110 CI sanitizer and fuzz
   smoke coverage is committed in `02cdf10` with the 731-test gate (CI
-  pending)). The
+  pending); T-111 single-buffer native string construction is part of the
+  T-111 change with the 733-test gate (CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 731 passed (404 library unit + 15 CLI unit + 47 AI integration +
-  118 e2e + 147 native); the full native suite also passes with `VANTYX_CC=gcc`.
+- `cargo test`: 733 passed (404 library unit + 15 CLI unit + 47 AI integration +
+  118 e2e + 149 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - CI runs the native differential suite with generated programs compiled under
   AddressSanitizer and UndefinedBehaviorSanitizer via `tools/clang-sanitize.sh`

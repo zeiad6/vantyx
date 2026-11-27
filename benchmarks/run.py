@@ -47,6 +47,7 @@ WORKLOADS = [
     "map_ops",
     "struct_ops",
     "string_ops",
+    "string_interp",
 ]
 IMPLEMENTATIONS = ["vantyx-interp", "vantyx-native", "python", "c", "rust"]
 
@@ -58,6 +59,7 @@ DESCRIPTIONS = {
     "map_ops": "3,000 map inserts and 3,000 lookups (native/C/Rust/Python hash; interpreter linear)",
     "struct_ops": "80,000 struct allocations, field mutations, and sum",
     "string_ops": "15 string doublings (65,536 chars) and character scan",
+    "string_interp": "200,000 four-part string interpolations and length sums",
 }
 
 

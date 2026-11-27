@@ -1,5 +1,63 @@
 # Active Task
 
+## T-111 — Single-buffer native string construction
+
+- Status: VERIFIED; commit pending; CI pending
+- Priority: P1 (native memory efficiency and string-heavy loop performance)
+- Dependencies: ADR-0008, ADR-0039, ADR-0052
+
+### Implemented
+
+- `src/codegen_c.rs` extracts `vantyx_float_format(double, char*)` from
+  `vantyx_float_str` so scalar rendering and builder appends share one
+  implementation.
+- Adds a stack `VantyxStrBuilder` with a 64-byte initial heap buffer, checked
+  `realloc` growth, NUL-terminated appends, and typed appenders for `Str`,
+  `Int`, `Float`, `Bool`, and `Unit`.
+- `string_expr` builds every interpolation with two or more parts into one
+  builder and flattens nested interpolations into the same buffer.
+- `binary_expr` routes a string `+` chain through `string_add_chain` when it
+  has at least three operands or a multi-part interpolation operand;
+  `collect_str_add_operands` flattens Str-typed `Add` nodes in source order.
+- Two plain operands and one-part interpolation keep the previous allocation
+  shape. No language or diagnostic semantics changed.
+- `tests/native.rs::string_building_matches_interpreter` and
+  `string_building_error_order_matches` cover rendering and error order.
+- `benchmarks/string_interp.{vtx,c,rs,py}` and `benchmarks/run.py` add the
+  200,000-iteration four-part interpolation workload.
+- ADR-0052, `docs/memory_model.md`, `docs/benchmarks.md`,
+  `benchmarks/results/2026-11-27-string-buffer.md`, `TASKS.md`,
+  `PROJECT_STATUS.md`, `README.md`, `AGENTS.md`, and
+  `docs/PROJECT_BASELINE.md` are updated.
+
+### Evidence
+
+- 2026-11-27: `cargo test` — 733 passed (404 library unit + 15 CLI unit + 47
+  AI integration + 118 e2e + 149 native, 0 failed).
+- 2026-11-27: `VANTYX_CC=gcc cargo test --test native` — 149 passed.
+- 2026-11-27: sanitizer command with `tools/clang-sanitize.sh` — 149 passed
+  under ASan/UBSan with leak detection disabled.
+- 2026-11-27: `cargo fmt --check --all` and
+  `cargo clippy --all-targets -- -D warnings` clean.
+- 2026-11-27: `cargo build --release` succeeded; all five examples matched
+  interpreter output.
+- 2026-11-27: seven Python self-tests passed; 100/100 differential cases on
+  seed 1 agreed; fuzz smoke produced controlled diagnostics for 9 depth/limit
+  cases and 400 inputs; 13 skills validated; link checker passed (122 links in
+  188 Markdown files).
+- 2026-11-27: focused same-batch before/after measurement — median
+  59.893 ms → 34.414 ms, peak RSS 33,396 KiB → 17,564 KiB; raw runs in
+  `benchmarks/results/2026-11-27-string-buffer.md`.
+- Independent `qa-verifier` review was attempted on 2026-11-27, but the
+  subagent session failed before doing any work: the provider returned a
+  free-usage limit error. No independent review result is claimed; the local
+  gates and manual differential probes are the recorded evidence.
+
+### Remaining
+
+- Commit T-111, then sync status to the commit hash (do not push).
+- Record the independent review outcome.
+
 ## T-110 — CI runs native sanitizers and fuzz smoke
 
 - Status: VERIFIED; commit `02cdf10`; CI pending

@@ -373,6 +373,79 @@ fn unit_interpolation_evaluates_expressions() {
 }
 
 #[test]
+fn string_building_matches_interpreter() {
+    assert_same(
+        "string-building",
+        "enum Shape:\n\
+         \x20   Circle(radius: Float)\n\
+         \x20   Square(side: Int)\n\n\
+         struct Point:\n\
+         \x20   x: Int\n\
+         \x20   y: Int\n\n\
+         struct Box:\n\
+         \x20   value: Str\n\n\
+         fn side(tag: Str) -> Str:\n\
+         \x20   print(\"side {tag}\")\n\
+         \x20   return tag\n\n\
+         fn bump(box: Box) -> Str:\n\
+         \x20   box.value = \"g1\"\n\
+         \x20   return \"B\"\n\n\
+         fn unit_value() -> Unit:\n\
+         \x20   print(\"unit side\")\n\n\
+         fn main():\n\
+         \x20   let unit: Unit = unit_value()\n\
+         \x20   let flag: Bool = true\n\
+         \x20   let count: Int = -42\n\
+         \x20   let ratio: Float = -0.0\n\
+         \x20   let name: Str = \"héllo\"\n\
+         \x20   print(\"{unit}|{flag}|{count}|{ratio}|{name}\")\n\
+         \x20   print(\"a\" + side(\"1\") + \"b\" + side(\"2\") + \"c\")\n\
+         \x20   print(side(\"R\") + (\"x\" + side(\"3\")))\n\
+         \x20   let box = Box(value=\"g0\")\n\
+         \x20   print(box.value + bump(box) + box.value)\n\
+         \x20   print(\"{count + 1}-{ratio + 1.5}\")\n\
+         \x20   let p = Point(x=3, y=4)\n\
+         \x20   let shape = Circle(2.5)\n\
+         \x20   print(\"{p} {shape}\")\n\
+         \x20   print(\"pair \" + \"{count}\" + \"!\")\n\
+         \x20   print(\"unit call {unit_value()} end\")\n\
+         \x20   print(\"{name}{name}{name}\")\n\
+         \x20   let long: Str = \"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\"\n\
+         \x20   print(\"{long}{long}{long}\")\n",
+    );
+}
+
+#[test]
+fn string_building_error_order_matches() {
+    let source = "fn fail() -> Str:\n\
+                  \x20   print(\"before fail\")\n\
+                  \x20   return str(1 // 0)\n\n\
+                  fn main():\n\
+                  \x20   print(\"x\" + fail() + \"y\")\n";
+    let Some(engines) = run_engines("string-building-error", source) else {
+        return;
+    };
+    assert!(engines.build.status.success());
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(2));
+    assert_eq!(native.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout),
+        "stdout differs before the string-building error"
+    );
+    assert!(
+        String::from_utf8_lossy(&native.stdout).contains("before fail"),
+        "the failing operand must run after the earlier parts"
+    );
+    assert_eq!(
+        first_error_line(&engines.interpreter),
+        first_error_line(&native),
+        "error headline differs for string-building-error"
+    );
+}
+
+#[test]
 fn conversions_and_strings_match() {
     assert_same(
         "conversions",

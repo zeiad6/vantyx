@@ -2,17 +2,26 @@
 
 ## Status
 
-A reproducible baseline was measured on **2026-11-22** and re-measured on
-**2026-11-24** after the native scalar-key map hash index (T-044), on one
-machine. Raw results are stored as generated, not hand-edited:
+A reproducible baseline was measured on **2026-11-22**, re-measured on
+**2026-11-24** after the native scalar-key map hash index (T-044), and
+re-measured on **2026-11-27** with the new `string_interp` workload after
+single-buffer native string construction (T-111, ADR-0052). Raw results are
+stored as generated, not hand-edited:
 
 - [`benchmarks/results/2026-11-22.json`](../benchmarks/results/2026-11-22.json) — initial full data
 - [`benchmarks/results/2026-11-22.md`](../benchmarks/results/2026-11-22.md) — initial generated summary
-- [`benchmarks/results/2026-11-24.json`](../benchmarks/results/2026-11-24.json) — current full data
-- [`benchmarks/results/2026-11-24.md`](../benchmarks/results/2026-11-24.md) — current generated summary
+- [`benchmarks/results/2026-11-24.json`](../benchmarks/results/2026-11-24.json) — full data after the map hash index
+- [`benchmarks/results/2026-11-24.md`](../benchmarks/results/2026-11-24.md) — generated summary for that run
+- [`benchmarks/results/2026-11-27.json`](../benchmarks/results/2026-11-27.json) — full eight-workload data including `string_interp`
+- [`benchmarks/results/2026-11-27.md`](../benchmarks/results/2026-11-27.md) — generated summary for that run
+- [`benchmarks/results/2026-11-27-string-buffer.md`](../benchmarks/results/2026-11-27-string-buffer.md) — focused before/after comparison for ADR-0052
 
 These are single-machine baseline numbers, not a competitive claim. They exist
-to guide optimization and to make regressions visible.
+to guide optimization and to make regressions visible. The 2026-11-27 full run
+was slower than 2026-11-24 across every implementation, including C and Rust,
+so absolute numbers are not comparable across those dates; within-run
+comparisons and the focused alternating before/after comparison are the valid
+evidence.
 
 ## Rules
 
@@ -35,6 +44,7 @@ to guide optimization and to make regressions visible.
 | `map_ops` | 3,000 map inserts and 3,000 lookups (native/C/Rust/Python hash; interpreter linear) |
 | `struct_ops` | 80,000 heap-allocated structs, field mutation, and sum |
 | `string_ops` | 15 string doublings (65,536 characters) and a character scan |
+| `string_interp` | 200,000 four-part string interpolations and length sums |
 
 Each workload exists as `.vtx`, `.py`, `.c`, and `.rs` under
 `benchmarks/`. The Vantyx source is run twice: once through `vantyx run`
@@ -75,7 +85,10 @@ native executable from `vantyx build`.
 - Vantyx strings are immutable; concatenation allocates a new string. Python
   and Rust follow the same immutable-string model. The C workload uses a
   geometric-growth buffer; total copied bytes are similar for this doubling
-  pattern, but the allocation strategy is not identical.
+  pattern, but the allocation strategy is not identical. Native interpolation
+  and multi-operand `+` chains build one growable buffer and transfer it to the
+  result (ADR-0052), so the native backend no longer retains one intermediate
+  string per concatenation; the final string is still not reclaimed in v0.1.
 - Binary sizes are not directly comparable: the Rust binaries statically link
   the standard library, while the Vantyx and C binaries rely on libc/libm.
 
@@ -83,9 +96,9 @@ native executable from `vantyx build`.
 
 | Item | Value |
 | --- | --- |
-| Date | 2026-11-24 |
+| Date | 2026-11-27 |
 | CPU | Intel Core i7-8565U @ 1.80 GHz, 4 cores |
-| RAM | 1,978,576 kB |
+| RAM | 3,924,440 kB |
 | OS | Linux 7.2.15+kali-amd64 (glibc 2.43) |
 | Vantyx | 0.1.0, release build |
 | clang | 21.1.8 (Debian) |
@@ -104,6 +117,31 @@ native executable from `vantyx build`.
 | `struct_ops` | 237.671 | 5.348 | 100.108 | 6.078 | 6.548 |
 | `string_ops` | 36.897 | 1.565 | 24.949 | 1.242 | 1.799 |
 
+### 2026-11-27 full run
+
+This run added `string_interp` and used the same runner and five repetitions.
+Every implementation was slower than the 2026-11-24 run (for example C
+`arith_loop` 4.877 ms versus 2.838 ms), which points to machine state rather
+than a Vantyx regression; use these numbers only within this run.
+
+| Workload | Vantyx interp | Vantyx native | Python | C | Rust |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `arith_loop` | 1370.086 | 5.004 | 404.224 | 4.877 | 5.590 |
+| `enum_ops` | 1462.600 | 8.126 | 289.040 | 7.384 | 7.822 |
+| `fib` | 194.445 | 3.508 | 51.905 | 2.833 | 3.962 |
+| `list_ops` | 456.531 | 4.625 | 175.137 | 4.364 | 5.176 |
+| `map_ops` | 119.085 | 3.559 | 40.100 | 3.041 | 3.653 |
+| `struct_ops` | 475.604 | 10.780 | 182.003 | 11.848 | 12.680 |
+| `string_ops` | 70.963 | 8.694 | 46.606 | 2.751 | 3.848 |
+| `string_interp` | 485.718 | 75.805 | 140.444 | 36.979 | 40.433 |
+
+The `string_ops` native spread in this run was 3.201–14.592 ms, another sign of
+host interference. The focused, alternating comparison of the pre-change and
+post-change binaries for `string_interp` is in
+[`2026-11-27-string-buffer.md`](../benchmarks/results/2026-11-27-string-buffer.md):
+median wall time 59.893 ms to 34.414 ms and median peak RSS 33,396 KiB to
+17,564 KiB on the same machine in one batch.
+
 For comparison, the 2026-11-24 pre-T-055 `string_ops` native median was
 8.318 ms; it fell to the 1.6–3.2 ms range across later runs after single-byte
 ASCII iteration and indexing stopped allocating a heap string per character.
@@ -120,6 +158,7 @@ Peak RSS and min/max spread are in the raw result files. Representative values:
 | `enum_ops` | 2.01 MiB | 3.72 MiB | 1.60 MiB | 2.09 MiB |
 | `list_ops` | 3.46 MiB | 13.81 MiB | 2.77 MiB | 3.37 MiB |
 | `struct_ops` | 5.02 MiB | 43.06 MiB | 4.65 MiB | 5.06 MiB |
+| `string_interp` (2026-11-27) | 17.29 MiB | 3.92 MiB | 1.48 MiB | 1.99 MiB |
 
 Build time and binary size:
 

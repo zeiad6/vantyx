@@ -3,6 +3,13 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-111 — Single-buffer native string construction (2026-11-27; commit
+  pending; CI pending; 733-test gate; interpolation and multi-operand string
+  `+` chains append typed parts into one growable `VantyxStrBuilder` in source
+  order, preserving effects and runtime-error order while avoiding retained
+  intermediate strings; two differential native tests; ADR-0052; focused
+  measurement median 59.893 ms → 34.414 ms and peak RSS 33,396 KiB →
+  17,564 KiB).
 - T-110 — CI runs native sanitizers and fuzz smoke (2026-11-27; committed as
   `02cdf10`; CI pending; 731-test gate; `tools/clang-sanitize.sh` adds
   ASan/UBSan to generated native programs, CI runs the native suite through it

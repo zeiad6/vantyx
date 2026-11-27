@@ -1,0 +1,8 @@
+fn main():
+    var i: Int = 0
+    var total: Int = 0
+    while i < 200000:
+        let text: Str = "item-{i}-{i + 1}"
+        total = total + len(text)
+        i = i + 1
+    print(total)

@@ -4,7 +4,17 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- None. The next task is selected after the T-110 status sync.
+- T-111 — Single-buffer native string construction. VERIFIED locally; commit
+  pending. Interpolation and multi-operand string `+` chains build into one
+  growable `VantyxStrBuilder` buffer in source order, avoiding retained
+  intermediate strings while preserving effects and errors. Two differential
+  native tests; ADR-0052; 733-test gate; focused measurement median
+  59.893 ms → 34.414 ms and peak RSS 33,396 KiB → 17,564 KiB.
+
+## Completed in T-111 (CI pending)
+
+- T-111 — Single-buffer native string construction. See the in-progress entry
+  until the commit lands; then record the hash here.
 
 ## Completed in `02cdf10` (CI pending)
 

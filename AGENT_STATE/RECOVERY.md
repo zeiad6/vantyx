@@ -13,6 +13,20 @@
 
 ## Last recorded repository state (2026-11-27)
 
+- The T-111 working tree adds single-buffer native string construction:
+  interpolation and multi-operand string `+` chains append typed parts into
+  one growable `VantyxStrBuilder` in source order, flatten nested
+  interpolations, and transfer the final buffer to the result. Two plain
+  operands and one-part interpolation keep the old path. Two differential
+  native tests, ADR-0052, a new `string_interp` benchmark workload, and a
+  focused same-batch result file are added. It passes 733 tests (404 library
+  unit + 15 CLI unit + 47 AI integration + 118 e2e + 149 native), the full
+  149-test native suite under `VANTYX_CC=gcc` and under clang ASan/UBSan with
+  leak detection disabled, clippy and fmt clean, the release build, five
+  examples, seven Python self-tests, 100/100 seed-1 differential cases, fuzz
+  smoke, the 13-skill validator, and the link checker (122 links in 188
+  Markdown files). Commit pending; CI pending. Focused median 59.893 ms →
+  34.414 ms and peak RSS 33,396 KiB → 17,564 KiB.
 - HEAD is at `02cdf10` (T-110); the remote is at `a9a6d1a` (record the T-105
   CI run), and CI run 45936329476 passed on it. `779783c` contains T-105 and passed run
   45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed

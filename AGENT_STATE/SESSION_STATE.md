@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `02cdf10` (T-110); the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
+- Last commit: `02cdf10` (T-110); the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. The T-111 working tree is verified locally and is being committed now; CI is pending.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -18,6 +18,24 @@
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
+
+T-111 — Single-buffer native string construction. Status: VERIFIED locally;
+commit pending; CI pending. Native interpolation and multi-operand string `+`
+chains now append typed parts into one growable `VantyxStrBuilder` buffer in
+source order instead of allocating and retaining one string per part and
+concatenation. Nested interpolations flatten into the same buffer. Two plain
+operands and one-part interpolation keep the previous path. Two new
+differential native tests cover value rendering and failing-operand order.
+ADR-0052 records the decision; `docs/memory_model.md`, `docs/benchmarks.md`,
+`benchmarks/results/2026-11-27-string-buffer.md`, `TASKS.md`,
+`PROJECT_STATUS.md`, `README.md`, `AGENTS.md`, and
+`docs/PROJECT_BASELINE.md` are updated. The 733-test gate, GCC native suite,
+ASan/UBSan native suite, examples, fuzz self-tests, 100/100 seed-1 differential
+cases, fuzz smoke, 13-skill validator, and link checker pass. The focused
+same-batch measurement is median 59.893 ms → 34.414 ms and peak RSS
+33,396 KiB → 17,564 KiB. Independent `qa-verifier` review was attempted but
+the provider returned a free-usage limit error before any review work ran; no
+independent result is claimed.
 
 T-110 — CI runs native sanitizers and fuzz smoke. Status: VERIFIED; committed
 as `02cdf10`; CI pending. `.github/workflows/ci.yml` adds a `sanitizers` job that
