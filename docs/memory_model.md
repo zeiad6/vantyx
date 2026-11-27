@@ -42,7 +42,7 @@
 - `List[Any]`, `Map[Any, *]`, `Any` enum payloads, and `match` on `Any` are rejected with `E0401`. String indexing and iteration return newly allocated one-character strings, matching the interpreter's value semantics.
 - Integer arithmetic, list/string indices, and map capacity growth are checked; missing map keys raise `R0008`; allocation failure terminates with a runtime error.
 - List, map, struct, and enum display detect cycles through mutable containers. Structural equality tracks visited container pairs, so two distinct cycles compare coinductively, matching the interpreter.
-- Native calls are limited to depth 256 (`R0012`), preventing runaway recursion from exhausting the C stack.
+- Native calls are limited to depth 256 (`R0012`), preventing runaway recursion from exhausting the C stack. Both engines report the failing call site, including across module boundaries (T-104).
 - Future reclamation must preserve reference semantics and document its allocation policy in an ADR before implementation. The scalar-key map index (ADR-0016) adds roughly 16 bytes per entry at its 50% load factor; structural-key hashing remains a documented follow-up, not an implemented feature.
 
 ## Planned evolution

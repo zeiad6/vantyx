@@ -3,6 +3,11 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-104 — Native call-depth diagnostics report the call site (2026-11-26;
+  723-test gate; the `R0012` guard now reports the call site's file, line, and
+  column in both engines, including across modules, instead of the callee
+  declaration; `native_call_depth_limit_exits_two` compares the headline and
+  location lines; direct and two-module probes match; commit and CI pending).
 - T-103 — Deterministic scalar-list sorting (2026-11-26; 723-test gate;
   `sorted(list)` returns a new ascending `List[T]` for `Int`, `Float`, `Str`,
   or `Bool`, leaves the input unchanged, and is stable with `-0.0`/`0.0`

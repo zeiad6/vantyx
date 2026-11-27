@@ -4,18 +4,31 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `46b7d54` (deterministic scalar-list sorting; T-103)
-- Remote: `origin/main` at `46b7d54`; CI run 45928466694 green on `46b7d54`;
-  CI run 45926037169 green on `0a309c8`; CI run 45925745650 green on
+- Last commit: `a263cb3` (record T-103 CI run 45928466694); T-104 call-site depth-limit diagnostics are uncommitted in the working tree
+- Remote: `origin/main` at `a263cb3`; CI run 45928756101 green on `a263cb3`;
+  CI run 45928466694 green on `46b7d54`; CI run 45926037169 green on
+  `0a309c8`; CI run 45925745650 green on
   `a331f2d`; CI run 45923860569 green on `5d5655b`; CI run 45923211883 green
   on `c54c61c`
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
 
+T-104 — Native call-depth diagnostics report the call site. Status: VERIFIED
+locally; commit, push, and CI pending. The native `R0012` guard reported the
+callee declaration and, on a cross-file call, the callee's file; the
+interpreter reports the failing call site. `src/codegen_c.rs` adds
+`vantyx_call_line`/`vantyx_call_column`, sets them immediately after argument
+evaluation and before the invocation, reports them from the entry guard, and
+assigns the callee's source name only after the guard. Argument preludes are
+used whenever any argument has effects so a nested call cannot leave stale
+coordinates. `tests/native.rs::native_call_depth_limit_exits_two` compares the
+headline and location lines; a two-module probe reported `b.vtx:5:16` in both
+engines. 723-test gate. See `ACTIVE_TASK.md` and the new checkpoint.
+
 T-103 — Deterministic scalar-list sorting. Status: VERIFIED; pushed in
-`46b7d54`; CI run 45928466694 green. `sorted(list: List[T]) -> List[T]`
-returns a new
+`46b7d54`; CI run 45928466694 green; status sync `a263cb3` passed run
+45928756101. `sorted(list: List[T]) -> List[T]`
 ascending list for `T` in `Int`, `Float`, `Str`, or `Bool`; the input is
 unchanged. Ordering is stable, `-0.0` and `0.0` compare equal, every `NaN`
 sorts after every non-`NaN`, strings compare by UTF-8 bytes, and `false`
@@ -436,17 +449,25 @@ binaries or credentials are tracked.
 - CI run 45920832199 — success on `33c966e` with T-078–T-100 and the skill
   validator
 - CI run 45923211883 — success on `c54c61c` with T-101
+- CI run 45923860569 — success on `5d5655b` (T-101 status sync)
+- CI run 45925745650 — success on `a331f2d` with T-102
+- CI run 45926037169 — success on `0a309c8` (T-102 status sync)
+- CI run 45928466694 — success on `46b7d54` with T-103
+- CI run 45928756101 — success on `a263cb3` (T-103 status sync)
 
 ## Next steps
 
-1. T-103 is committed as `46b7d54`, pushed, and CI run 45928466694 is green.
-   The T-102 status-sync commit `0a309c8` also passed CI run 45926037169. Keep
-   the commit/CI fields current as later status updates land.
+1. T-104 is verified locally; commit, push, record the CI run, and update the
+   commit/CI fields. T-103 is committed as `46b7d54`, pushed, and CI run
+   45928466694 is green; its status sync `a263cb3` passed run 45928756101. The
+   T-102 status-sync commit `0a309c8` also passed CI run 45926037169. Keep the
+   commit/CI fields current as later status updates land.
 2. Continue targeted interpreter/native probes on surfaces not yet covered:
-   map float/NaN keys, collection equality edges, enum payload aliasing,
-   nested loop control flow, and file/directory builtins under unusual
-   conditions. Audit lowering that can render a constant or omit an operand,
-   and build effectful cases with both clang and GCC.
+   map float/NaN keys, collection equality edges, enum payload aliasing, and
+   nested loop control flow now match; next probe file/directory builtins
+   under unusual conditions and deeper module interactions. Audit lowering
+   that can render a constant or omit an operand, and build effectful cases
+   with both clang and GCC.
 3. Continue P1 standard-library work. `sorted` is now limited to scalar lists;
    comparator/key/reverse/in-place variants need first-class functions or a new
    design, so prefer bounded candidates first: map/filter/reduce over scalar

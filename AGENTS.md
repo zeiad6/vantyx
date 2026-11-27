@@ -87,9 +87,11 @@ python3 benchmarks/run.py --reps 5
   with T-077, and run 45920832199 passed on `33c966e` with T-078–T-100 and the
   skill validator, run 45923211883 passed on `c54c61c` with T-101, run
   45923860569 passed on `5d5655b`, T-102 label-stratified splits are pushed
-  in `a331f2d` with the 718-test gate and CI run 45925745650 green, and T-103
+  in `a331f2d` with the 718-test gate and CI run 45925745650 green, T-103
   deterministic scalar-list sorting is pushed in `46b7d54` with the 723-test
-  gate and CI run 45928466694 green). The
+  gate and CI run 45928466694 green, and T-104 call-site depth-limit
+  diagnostics are verified locally with the 723-test gate and a commit/CI
+  pending). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 723 passed (402 library unit + 15 CLI unit + 47 AI integration +
@@ -139,7 +141,9 @@ python3 benchmarks/run.py --reps 5
   the top-level bindings, never caller locals (T-087, ADR-0040), matching
   first-line runtime diagnostics for float-to-int conversion, missing map keys,
   `range` limits, and file/directory failures, including Rust's `(os error N)`
-  filesystem suffix and the shared glob parser wording (T-096, T-097), imported
+  filesystem suffix and the shared glob parser wording (T-096, T-097),
+  call-site `R0012` depth-limit locations that match the interpreter across
+  modules (T-104), imported
   modules, basic
   UTF-8 file I/O, file metadata probes, single-level directory operations,
   recursive directory creation and symlink-safe removal, lexical glob

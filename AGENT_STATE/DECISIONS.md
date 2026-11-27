@@ -4,6 +4,25 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-26 — Depth-limit diagnostics name the call site
+
+- Report `R0012` at the failing call site, not at the callee declaration,
+  because that is the location the interpreter uses and the location a user
+  needs in order to find the non-terminating call.
+- Pass the coordinates through `vantyx_call_line`/`vantyx_call_column` globals
+  set immediately before each user-function invocation rather than changing
+  every generated function signature. This matches the existing
+  `vantyx_source_name` mechanism and keeps the ABI stable.
+- Assign `vantyx_source_name` to the callee only after the depth guard, so a
+  cross-file failure reports the caller's file. The caller's file is already
+  current when the call begins and is restored after each call.
+- Use argument preludes whenever any argument has effects, not only for two or
+  more arguments. This prevents a nested call in an argument from leaving its
+  own coordinates for the outer call's check; the cost is one typed temporary
+  for single effectful arguments.
+- Keep the guard as an entry check; the reported location is the call site,
+  and the guard still prevents C-stack exhaustion.
+
 ## 2026-11-26 — `sorted` uses a stable merge sort over scalar lists
 
 - Define `sorted(list: List[T]) -> List[T]` for `T` in `Int`, `Float`, `Str`,

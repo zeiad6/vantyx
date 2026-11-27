@@ -44,7 +44,7 @@ For the supported subset:
 - Uninitialized global reads raise `R0009`.
 - Allocation failure terminates with a runtime error.
 - Generated C uses libc/libm only.
-- Native calls are limited to depth 256 (`R0012`).
+- Native calls are limited to depth 256 (`R0012`); the diagnostic names the failing call site in both engines, including across modules (T-104).
 - List and string indexes are bounds-checked; missing map keys raise `R0008`.
 - List and map growth checks overflow and `SIZE_MAX` before allocating (`R0004`).
 - Structural equality is cycle-safe and matches the interpreter's coinductive semantics.

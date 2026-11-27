@@ -756,7 +756,6 @@ impl<'a> Emitter<'a> {
     fn functions(&mut self) {
         for function in &self.program.functions {
             let params = self.function_params(&function.params);
-            let (line, column) = self.position(function.span);
             self.line(&format!(
                 "static {} {}({params}) {{",
                 self.ctype(&function.ret),
@@ -764,14 +763,18 @@ impl<'a> Emitter<'a> {
             ));
             self.indent += 1;
             let source = self.source_name_for(function.span).to_string();
-            self.line(&format!("vantyx_source_name = {};", c_string(&source)));
+            // Report the depth limit at the call site, matching the
+            // interpreter. `vantyx_call_line`/`column` are set by `call_expr`
+            // immediately before each user-function call, and the caller's
+            // file is still in `vantyx_source_name` until the check passes.
             self.line("if (vantyx_call_depth >= 256) {");
             self.indent += 1;
-            self.line(&format!(
-                "vantyx_rt_error(\"R0012\", \"call depth limit of 256 exceeded; possible infinite recursion\", {line}, {column});"
-            ));
+            self.line(
+                "vantyx_rt_error(\"R0012\", \"call depth limit of 256 exceeded; possible infinite recursion\", vantyx_call_line, vantyx_call_column);",
+            );
             self.indent -= 1;
             self.line("}");
+            self.line(&format!("vantyx_source_name = {};", c_string(&source)));
             self.line("vantyx_call_depth++;");
             self.in_function = true;
             for stmt in &function.body {
@@ -1880,13 +1883,13 @@ impl<'a> Emitter<'a> {
     }
 
     fn call_expr(&mut self, callee: &str, args: &[IrExpr], call_span: Option<Span>) -> String {
-        let call = if args.len() < 2 || !args.iter().any(has_effects) {
+        let (prelude, invocation) = if !args.iter().any(has_effects) {
             let rendered = args
                 .iter()
                 .map(|arg| self.expr(arg))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("{callee}({rendered})")
+            (String::new(), format!("{callee}({rendered})"))
         } else {
             let mut prelude = String::new();
             let mut names = Vec::with_capacity(args.len());
@@ -1896,18 +1899,25 @@ impl<'a> Emitter<'a> {
                 let _ = write!(prelude, "{} {name} = {value}; ", self.ctype(&arg.ty));
                 names.push(name);
             }
-            format!("({{ {prelude}{callee}({}); }})", names.join(", "))
+            (prelude, format!("{callee}({})", names.join(", ")))
         };
 
         // A user function sets `vantyx_source_name` on entry. Restore the call
         // site's file before continuing so later errors report the right file.
+        // The call-site coordinates are set after argument evaluation, because
+        // a nested call in an argument would otherwise leave its own
+        // coordinates behind for the outer depth-limit check.
         let Some(span) = call_span else {
-            return call;
+            if prelude.is_empty() {
+                return invocation;
+            }
+            return format!("({{ {prelude}{invocation}; }})");
         };
         let caller = self.source_name_for(span).to_string();
+        let (line, column) = self.position(span);
         let temp = self.fresh("call");
         format!(
-            "({{ __typeof__({call}) {temp} = {call}; vantyx_source_name = {}; {temp}; }})",
+            "({{ {prelude}vantyx_call_line = {line}; vantyx_call_column = {column}; __typeof__({invocation}) {temp} = {invocation}; vantyx_source_name = {}; {temp}; }})",
             c_string(&caller)
         )
     }
@@ -2660,6 +2670,8 @@ static const VantyxTypeDesc vantyx_desc_str = { VANTYX_T_STR, sizeof(vantyx_str)
 
 static const char* vantyx_source_name = "<unknown>";
 static int vantyx_call_depth = 0;
+static int vantyx_call_line = 0;
+static int vantyx_call_column = 0;
 
 _Noreturn static void vantyx_rt_error(const char* code, const char* message, int line, int column) {
     fflush(stdout);

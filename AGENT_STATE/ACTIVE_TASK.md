@@ -1,5 +1,47 @@
 # Active Task
 
+## T-104 — Native call-depth diagnostics report the call site
+
+- Status: VERIFIED locally; commit, push, and CI pending
+- Priority: P0 (correctness and interpreter/native diagnostic parity)
+- Dependencies: ADR-0008, ADR-0009
+
+### Implemented
+
+- `src/codegen_c.rs` adds `vantyx_call_line` and `vantyx_call_column`.
+  `call_expr` sets them immediately after argument evaluation and before the
+  invocation; the function entry guard reports them instead of the callee
+  declaration's position.
+- `vantyx_source_name` is assigned to the callee only after the depth guard,
+  so a cross-file failure names the caller's file, matching the interpreter.
+- Argument preludes are used whenever any argument has effects, not only when
+  there are two or more arguments. This makes the call-site coordinates
+  correct by construction even if a nested call appears in the argument list.
+
+### Evidence
+
+- 2026-11-26: direct recursion probe now prints
+  ` --> recursion.vtx:5:12` in both engines (native previously printed
+  `4:1`); a two-module probe (`main.vtx` -> `b.vtx` -> `a.vtx`) prints
+  ` --> b.vtx:5:16` in both engines.
+- `cargo test --test native native_call_depth_limit_exits_two` passed; the
+  test now compares the first two stderr lines (headline and location).
+- Full gate: `cargo fmt --check --all` and
+  `cargo clippy --all-targets -- -D warnings` clean; `cargo test` = 723
+  passed (402 library unit + 15 CLI unit + 47 AI integration + 117 e2e + 142
+  native); the full native suite also passed with `VANTYX_CC=gcc`;
+  `cargo build --release` succeeded; five examples matched; seven Python
+  self-tests OK; 100/100 differential cases on seed 1; fuzz smoke 9
+  depth/limit cases and 400 random/mutated inputs controlled; 13 skills and
+  117 links valid.
+
+### Remaining
+
+- Commit, push, record the CI run, and update the commit/CI fields.
+- Scope limits: only the depth-limit location changes; native still omits the
+  interpreter's source excerpt and stack trace, and the guard remains an
+  entry check.
+
 ## T-103 — Deterministic scalar-list sorting
 
 - Status: VERIFIED; pushed in `46b7d54`; CI run 45928466694 green

@@ -1175,10 +1175,17 @@ fn native_call_depth_limit_exits_two() {
     let native = engines.native.expect("native output");
     assert_eq!(native.status.code(), Some(2));
     assert_eq!(engines.interpreter.status.code(), Some(2));
-    assert!(
-        String::from_utf8_lossy(&native.stderr).contains("error[R0012]"),
-        "{}",
-        String::from_utf8_lossy(&native.stderr)
+    let interpreter_stderr = String::from_utf8_lossy(&engines.interpreter.stderr);
+    let native_stderr = String::from_utf8_lossy(&native.stderr);
+    assert!(native_stderr.contains("error[R0012]"), "{}", native_stderr);
+    // The depth limit is reported at the call site, not at the callee
+    // declaration. Compare the headline and location lines; the interpreter
+    // also prints a source excerpt and stack trace below them.
+    let interpreter_head: Vec<&str> = interpreter_stderr.lines().take(2).collect();
+    let native_head: Vec<&str> = native_stderr.lines().take(2).collect();
+    assert_eq!(
+        native_head, interpreter_head,
+        "depth-limit location differs\ninterpreter stderr:\n{interpreter_stderr}\nnative stderr:\n{native_stderr}"
     );
 }
 
