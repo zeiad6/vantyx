@@ -4,15 +4,26 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-109 — Module graph accepts exactly 256 files. VERIFIED locally; the loader
-  checked `self.units.len() + 1 >= MAX_MODULES`, so with the entry file loaded
-  the 256th file was rejected and the documented limit was effectively 255.
-  The check is now `self.units.len() >= MAX_MODULES`; two unit tests build an
-  exact-limit graph (entry + 255 imports, 256 flattened declarations) and an
-  over-limit graph (exactly one `E0507`, no model). The exact-limit test fails
-  against the old condition. 731-test gate; clippy/fmt clean; release build,
-  five examples, seven Python self-tests, 100/100 differential cases, fuzz
-  smoke, 13 skills, and the link checker; commit and CI pending.
+- T-110 — CI runs native sanitizers and fuzz smoke. VERIFIED locally;
+  `.github/workflows/ci.yml` adds a `sanitizers` job that installs clang and
+  runs the native suite with `VANTYX_CC` pointing at
+  `tools/clang-sanitize.sh` (ASan + UBSan, leak detection disabled because
+  v0.1 leaks native allocations intentionally), and the main `test` job now
+  runs `tools/fuzz_smoke.py`. The exact sanitizer command passed all 147
+  native tests locally; the fuzz smoke produced controlled diagnostics for 9
+  depth/limit cases and 400 random/mutated inputs. Commit and CI pending.
+
+## Completed in `bffe38f` (CI pending)
+
+- T-109 — Module graph accepts exactly 256 files. VERIFIED; committed as
+  `bffe38f`; the loader checked `self.units.len() + 1 >= MAX_MODULES`, so with
+  the entry file loaded the 256th file was rejected and the documented limit
+  was effectively 255. The check is now `self.units.len() >= MAX_MODULES`; two
+  unit tests build an exact-limit graph (entry + 255 imports, 256 flattened
+  declarations) and an over-limit graph (exactly one `E0507`, no model). The
+  exact-limit test fails against the old condition. 731-test gate; clippy/fmt
+  clean; release build, five examples, seven Python self-tests, 100/100
+  differential cases, fuzz smoke, 13 skills, and the link checker.
 
 ## Completed in `2104c55` (CI pending)
 

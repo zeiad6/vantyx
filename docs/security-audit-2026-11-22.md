@@ -199,8 +199,11 @@ Results:
 
 ## Residual risks
 
-- The fuzz harness is manual, not wired into CI. It uses a fixed seed by
-  default; vary `--seed` for broader coverage.
+- The fuzz harness was manual at audit time. Update 2026-11-27 (T-110): the
+  bounded fuzz smoke now runs in CI, and CI runs the native suite with
+  generated programs compiled under ASan/UBSan. The harness remains
+  deterministic and bounded, not coverage-guided; vary `--seed` for broader
+  coverage.
 - Native memory is not reclaimed; long-running native programs can exhaust
   memory.
 - Native maps are O(n) per operation.

@@ -49,6 +49,16 @@ python3 tools/fuzz_smoke.py --binary target/debug/vantyx
 python3 benchmarks/run.py --reps 5
 ```
 
+Native generated programs can be checked under AddressSanitizer and
+UndefinedBehaviorSanitizer with the wrapper used by CI (leak detection is
+disabled because v0.1 leaks native allocations intentionally):
+
+```sh
+ASAN_OPTIONS=detect_leaks=0:abort_on_error=1 \
+UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
+```
+
 ## Architecture map
 
 | Path | Responsibility |
@@ -99,13 +109,19 @@ python3 benchmarks/run.py --reps 5
   gate (CI pending); T-107 native `print` output-failure parity is committed
   in `9bb2353` with the 728-test gate (CI pending); T-108 native
   standard-descriptor sanitization is committed in `2104c55` with the 729-test
-  gate (CI pending); T-109 module-graph file-cap boundary is locally verified
-  with the 731-test gate (commit and CI pending)). The
+  gate (CI pending); T-109 module-graph file-cap boundary is committed in
+  `bffe38f` with the 731-test gate (CI pending); T-110 CI sanitizer and fuzz
+  smoke coverage is locally verified with the 731-test gate (commit and CI
+  pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 731 passed (404 library unit + 15 CLI unit + 47 AI integration +
   118 e2e + 147 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
+- CI runs the native differential suite with generated programs compiled under
+  AddressSanitizer and UndefinedBehaviorSanitizer via `tools/clang-sanitize.sh`
+  (leak detection disabled because v0.1 native allocations are intentionally
+  leaked) and runs the bounded fuzz smoke (T-110).
 - All five examples build and run natively with identical output.
 - Native condition and short-circuit lowering match the interpreter:
   statement-expression conditions are parenthesized and `and`/`or` skip the
@@ -130,8 +146,9 @@ python3 benchmarks/run.py --reps 5
   side-effecting success path and a failing argument. Native string `contains`
   binds both operands in source order so GCC and clang agree (T-081), and
   `Unit` equality and `Unit` interpolation still evaluate their expressions
-  (T-082/T-083); the fuzzer covers all three. CI runs the self-tests
-  and 80 iterations on seed 1.
+  (T-082/T-083); the fuzzer covers all three. CI runs the self-tests,
+  80 iterations on seed 1, the bounded fuzz smoke, and the native suite under
+  AddressSanitizer and UndefinedBehaviorSanitizer (T-110).
 - Tooling: `vantyx lint` reports `L0001` unused binding, `L0002` `var` never
   reassigned, `L0003` unreachable statement, and `L0004` unused parameter, with
   compile errors still exiting `1` and lint-only findings exiting `0` (T-073,

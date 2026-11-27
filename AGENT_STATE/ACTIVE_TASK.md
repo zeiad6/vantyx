@@ -1,8 +1,55 @@
 # Active Task
 
-## T-109 — Module graph accepts exactly 256 files
+## T-110 — CI runs native sanitizers and fuzz smoke
 
 - Status: VERIFIED locally; commit and CI pending
+- Priority: P1 (verification infrastructure for memory and undefined behavior)
+- Dependencies: ADR-0007, ADR-0008, `docs/security.md`
+
+### Implemented
+
+- `.github/workflows/ci.yml` adds a `sanitizers` job on `ubuntu-latest` that
+  installs clang and runs `cargo test --locked --test native` with
+  `VANTYX_CC` pointing at `tools/clang-sanitize.sh`,
+  `ASAN_OPTIONS=detect_leaks=0:abort_on_error=1`, and
+  `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`.
+- `tools/clang-sanitize.sh` wraps `clang` with
+  `-fsanitize=address,undefined -fno-sanitize-recover=all
+  -fno-omit-frame-pointer -g` and forwards every argument. Leak detection is
+  disabled because v0.1 native allocations are intentionally leaked.
+- The main `test` job now runs
+  `python3 tools/fuzz_smoke.py --binary target/debug/vantyx`, closing the
+  previously documented "not wired into CI" gap.
+- `AGENTS.md` and `docs/security.md` document the local sanitizer command and
+  the CI coverage.
+
+### Evidence
+
+- 2026-11-27: `sh -n tools/clang-sanitize.sh` — syntax OK; the script is
+  executable.
+- 2026-11-27: the workflow parses as YAML; jobs are `test` and `sanitizers`.
+- 2026-11-27: the exact sanitizer command with the wrapper — 147 native tests
+  passed under clang ASan/UBSan with leak detection disabled.
+- 2026-11-27: `python3 tools/fuzz_smoke.py --binary target/debug/vantyx` — 9
+  depth/limit cases and 400 random/mutated inputs produced controlled
+  diagnostics.
+- 2026-11-27 full gate: `cargo test` 731 passed (404 library unit + 15 CLI
+  unit + 47 AI integration + 118 e2e + 147 native); clippy and fmt clean;
+  release build succeeded; all five examples matched; seven Python self-tests,
+  100/100 seed-1 differential cases, fuzz smoke, the 13-skill validator, and
+  the link checker passed.
+
+### Remaining
+
+- Commit and record CI.
+- Scope limits: only generated C programs are instrumented; the Rust compiler
+  and test binary are not built with sanitizers. Leak detection is off because
+  native allocations are intentionally leaked. The job is Linux/clang-only;
+  Windows and macOS remain unverified.
+
+## T-109 — Module graph accepts exactly 256 files
+
+- Status: VERIFIED; commit `bffe38f`; CI pending
 - Priority: P1 (module-loader correctness at a documented limit)
 - Dependencies: specification §8
 
@@ -32,7 +79,7 @@
 
 ### Remaining
 
-- Commit and record CI.
+- Committed as `bffe38f`; CI pending.
 - Scope limits: only the file-count boundary changes. Import depth, per-module
   and total source caps, path confinement, cycles, and duplicate-import caching
   are unchanged. The test builds its graph in the system temporary directory

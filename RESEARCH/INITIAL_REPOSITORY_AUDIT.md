@@ -130,9 +130,10 @@ The fuzzer now has ten typed program grammars (scalars/control flow,
 collections, pattern matching, nested aliasing, typed functions, strings,
 numerics, result-enum `?` propagation, runtime-error agreement, and
 loop-heavy control flow). T-077 added bounded line-oriented shrinking,
-controlled timeout handling, and seven Python self-tests. It still has no
-sanitizer integration or coverage measurement, and the shrinker cannot split
-a line. It found two real P0 defects. An earlier expansion found a
+controlled timeout handling, and seven Python self-tests. The fuzzer itself
+still has no sanitizer integration or coverage measurement, and the shrinker
+cannot split a line; CI now runs the native differential suite with generated
+programs compiled under ASan/UBSan (T-110). It found two real P0 defects. An earlier expansion found a
 test-quality bug: the collection generator used `xs[-1]`, an invalid negative
 index, so that program stopped at its first index and never exercised the
 remaining statements. A green fuzzer run is evidence, not proof. Targeted
@@ -203,13 +204,16 @@ grounded generation. Do not claim these capabilities.
 
 `cargo-nextest`, `cargo-fuzz`, `cargo-audit`, `cargo-deny`, Miri, Valgrind, and
 `perf` are not installed. The zero-dependency policy reduces supply-chain risk,
-but it does not replace a dependency audit, Miri-style UB checking, or
-sanitizer runs in CI.
+but it does not replace a dependency audit or Miri-style UB checking. CI now
+runs generated native programs under ASan/UBSan (T-110), but the Rust compiler
+itself is not instrumented.
 
 ### G-11 — No property-based or mutation testing (P2)
 
 The suite is example-based plus one deterministic differential fuzzer. There is
-no shrinking, coverage measurement, mutation testing, or sanitizer job in CI.
+no coverage measurement, mutation testing, or property-based testing. The
+native suite runs under ASan/UBSan in CI (T-110), but the fuzzer itself does
+not.
 
 ## Missing feature inventory
 
@@ -227,8 +231,8 @@ no shrinking, coverage measurement, mutation testing, or sanitizer job in CI.
 ## Highest-priority tasks
 
 1. **P1 — Continue differential fuzzing.** The ten-shape fuzzer and bounded
-   shrinker are in place (T-077); add sanitizer integration, coverage
-   measurement, and more seeds, and fix any mismatch. This is the cheapest way
+   shrinker are in place (T-077); run the fuzzer itself under sanitizers, add
+   coverage measurement and more seeds, and fix any mismatch. This is the cheapest way
    to find another silent native divergence. The T-086 path probe confirms the
    method: a 30-path edge-case program exposed a trailing-dot fallback that
    the generated shapes did not cover, and a 2,500-random-path program now

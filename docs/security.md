@@ -22,7 +22,7 @@ Expected properties, exercised by tests:
 
 Known limits:
 
-- Fuzzing is reproducible but manual: `python3 tools/fuzz_smoke.py --binary target/debug/vantyx` is not yet wired into CI.
+- Fuzzing is reproducible: CI runs the differential fuzzer and `python3 tools/fuzz_smoke.py --binary target/debug/vantyx`. CI also compiles and runs the native suite against generated programs using `tools/clang-sanitize.sh`, which adds AddressSanitizer and UndefinedBehaviorSanitizer; leak detection is disabled because native allocations are intentionally leaked in v0.1.
 - Resource exhaustion (very large files, huge collections) is bounded by explicit limits where implemented and otherwise by available memory.
 - The native backend invokes a C compiler discovered via `PATH` or `VANTYX_CC`; that compiler is trusted.
 
@@ -44,6 +44,7 @@ For the supported subset:
 - Uninitialized global reads raise `R0009`.
 - Allocation failure terminates with a runtime error.
 - Generated C uses libc/libm only.
+- CI runs the native differential suite with generated programs compiled under AddressSanitizer and UndefinedBehaviorSanitizer (`tools/clang-sanitize.sh`); leak detection is disabled because native allocations are intentionally leaked in v0.1.
 - Native calls are limited to depth 256 (`R0012`); the diagnostic names the failing call site in both engines, including across modules (T-104).
 - List and string indexes are bounds-checked; missing map keys raise `R0008`.
 - List and map growth checks overflow and `SIZE_MAX` before allocating (`R0004`).

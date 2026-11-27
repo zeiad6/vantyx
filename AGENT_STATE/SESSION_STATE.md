@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `2104c55` (T-108); T-109 is locally verified with the commit pending. The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
+- Last commit: `bffe38f` (T-109); T-110 is locally verified with the commit pending. The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -19,8 +19,19 @@
 
 ## Current task
 
-T-109 — Module graph accepts exactly 256 files. Status: VERIFIED locally;
-commit and CI pending. The loader checked `self.units.len() + 1 >=
+T-110 — CI runs native sanitizers and fuzz smoke. Status: VERIFIED locally;
+commit and CI pending. `.github/workflows/ci.yml` adds a `sanitizers` job that
+installs clang and runs the native suite with `VANTYX_CC` pointing at
+`tools/clang-sanitize.sh`, which adds `-fsanitize=address,undefined
+-fno-sanitize-recover=all -fno-omit-frame-pointer -g`. Leak detection is
+disabled because v0.1 native allocations are intentionally leaked. The main
+`test` job now also runs `tools/fuzz_smoke.py`. Locally the exact sanitizer
+command passed all 147 native tests, and the fuzz smoke produced controlled
+diagnostics for 9 depth/limit cases and 400 random/mutated inputs. See
+`ACTIVE_TASK.md`.
+
+T-109 — Module graph accepts exactly 256 files. Status: VERIFIED; committed
+as `bffe38f`; CI pending. The loader checked `self.units.len() + 1 >=
 MAX_MODULES` before inserting a file, and the entry file is already loaded, so
 a 255-file graph rejected the 256th file and the documented 256-file limit was
 effectively 255. The check is now `self.units.len() >= MAX_MODULES`, so an

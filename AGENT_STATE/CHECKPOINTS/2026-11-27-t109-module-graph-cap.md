@@ -1,7 +1,7 @@
 # Checkpoint — T-109 module-graph file cap
 
 Date: 2026-11-27
-Status: VERIFIED locally; commit and CI pending
+Status: VERIFIED; committed as `bffe38f`; CI pending
 
 ## Objective
 
@@ -65,8 +65,6 @@ import produces one `E0507`.
 
 ## Next exact commands
 
-1. `git diff --check`; review the diff; commit the T-109 implementation and
-   status records.
-2. Record the new CI run in the next status commit.
-3. Continue P0/P1 work: add a sanitizer CI job for the native suite, then probe
+1. Committed as `bffe38f`; record the CI run after a push is authorized.
+2. Continue P0/P1 work: add a sanitizer CI job for the native suite, then probe
    other documented resource limits for boundary mismatches.

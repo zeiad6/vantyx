@@ -3,11 +3,16 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
-- T-109 — Module graph accepts exactly 256 files (2026-11-27; locally
-  verified; 731-test gate; commit and CI pending; `Loader::unit` now rejects
-  only when `self.units.len() >= MAX_MODULES`, so the entry file plus 255
-  imports loads and the 257th file produces one `E0507`; two module unit
-  tests cover the exact and over-limit boundaries).
+- T-110 — CI runs native sanitizers and fuzz smoke (2026-11-27; locally
+  verified; 731-test gate; commit and CI pending; `tools/clang-sanitize.sh`
+  adds ASan/UBSan to generated native programs, CI runs the native suite
+  through it with leak detection disabled, and the main test job now runs the
+  400-input fuzz smoke).
+- T-109 — Module graph accepts exactly 256 files (2026-11-27; committed as
+  `bffe38f`; CI pending; 731-test gate; `Loader::unit` now rejects only when
+  `self.units.len() >= MAX_MODULES`, so the entry file plus 255 imports loads
+  and the 257th file produces one `E0507`; two module unit tests cover the
+  exact and over-limit boundaries).
 - T-108 — Native standard descriptors match Rust startup behavior (2026-11-27;
   committed as `2104c55`; CI pending; 729-test gate; GCC native suite 147/147;
   release build and five examples; generated `main` replaces closed
