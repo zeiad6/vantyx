@@ -98,11 +98,12 @@ python3 benchmarks/run.py --reps 5
   `contains`/`push` inference is committed in `9e42a95` with the 726-test
   gate (CI pending); T-107 native `print` output-failure parity is committed
   in `9bb2353` with the 728-test gate (CI pending); T-108 native
-  standard-descriptor sanitization is locally verified with the 729-test gate
-  (commit and CI pending)). The
+  standard-descriptor sanitization is committed in `2104c55` with the 729-test
+  gate (CI pending); T-109 module-graph file-cap boundary is locally verified
+  with the 731-test gate (commit and CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 729 passed (402 library unit + 15 CLI unit + 47 AI integration +
+- `cargo test`: 731 passed (404 library unit + 15 CLI unit + 47 AI integration +
   118 e2e + 147 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.

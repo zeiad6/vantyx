@@ -4,18 +4,25 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-108 — Native standard descriptors match Rust startup behavior. VERIFIED
-  locally; Rust's runtime opens `/dev/null` for closed descriptors 0–2, so the
-  interpreter silently discards `print` output when stdout is closed, while
-  generated native code inherited the closed descriptor and failed with `R0013`
-  `Bad file descriptor (os error 9)`; a later file open could also reuse
-  descriptor 1. Generated `main` now calls `vantyx_sanitize_standard_fd` for
-  stdin, stdout, and stderr before SIGPIPE handling and user code, using
-  `fcntl(F_GETFD)`, `open("/dev/null", ...)`, and `dup2`. One differential
-  native test closes stdout, compares the `R0006` headline and exit code `2`,
-  and verifies a `write_file` marker; 729-test gate, GCC native suite, release
-  build, five examples, seven Python self-tests, 100/100 differential cases,
-  fuzz smoke, 13 skills, and the link checker; commit and CI pending.
+- T-109 — Module graph accepts exactly 256 files. VERIFIED locally; the loader
+  checked `self.units.len() + 1 >= MAX_MODULES`, so with the entry file loaded
+  the 256th file was rejected and the documented limit was effectively 255.
+  The check is now `self.units.len() >= MAX_MODULES`; two unit tests build an
+  exact-limit graph (entry + 255 imports, 256 flattened declarations) and an
+  over-limit graph (exactly one `E0507`, no model). The exact-limit test fails
+  against the old condition. 731-test gate; clippy/fmt clean; release build,
+  five examples, seven Python self-tests, 100/100 differential cases, fuzz
+  smoke, 13 skills, and the link checker; commit and CI pending.
+
+## Completed in `2104c55` (CI pending)
+
+- T-108 — Native standard descriptors match Rust startup behavior. VERIFIED;
+  committed as `2104c55`; generated `main` replaces closed descriptors 0–2 with
+  `/dev/null` before user code, matching Rust's startup sanitization so a closed
+  stdout silently discards `print` output and later file opens cannot reuse a
+  standard descriptor number. One differential native test; 729-test gate,
+  GCC native suite, release build, five examples, seven Python self-tests,
+  100/100 differential cases, fuzz smoke, 13 skills, and the link checker.
 
 ## Completed in `9bb2353` (CI pending)
 

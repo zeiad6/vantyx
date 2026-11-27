@@ -13,7 +13,7 @@
 
 ## Last recorded repository state (2026-11-27)
 
-- HEAD is at `9bb2353` (T-107); the remote is at `a9a6d1a` (record the T-105
+- HEAD is at `2104c55` (T-108); the remote is at `a9a6d1a` (record the T-105
   CI run), and CI run 45936329476 passed on it. `779783c` contains T-105 and passed run
   45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed
   45934367601. `8805381` recorded the T-104 CI run and passed 45934076343. `4269010` contains call-site native
@@ -27,7 +27,18 @@
   shuffling (T-101), and `33c966e` contains the native parity fixes, dataset
   tooling, and agent skills (T-078 through T-100); CI runs 45923211883 and
   45920832199 passed.
-- The T-108 working tree makes generated native `main` replace a closed
+- The T-109 working tree fixes the module-loader file-count off-by-one:
+  `Loader::unit` rejected the 256th file because it checked
+  `self.units.len() + 1 >= MAX_MODULES` while the entry file was already
+  loaded. The check is now `self.units.len() >= MAX_MODULES`; an entry plus
+  255 imports loads with 256 flattened declarations, and a 257-file graph
+  produces exactly one `E0507`. Two unit tests cover both boundaries and the
+  exact-limit test fails against the old condition. It passes 731 tests (404
+  library unit + 15 CLI unit + 47 AI integration + 118 e2e + 147 native),
+  clippy and fmt clean, the release build, five examples, seven Python
+  self-tests, 100/100 seed-1 differential cases, fuzz smoke, the 13-skill
+  validator, and the link checker. Commit and CI are pending.
+- The T-108 tree makes generated native `main` replace a closed
   standard descriptor 0, 1, or 2 with `/dev/null` before user code, matching
   Rust's startup sanitization. With stdout closed, both engines now discard
   `print` output, reach `assert(false)` with the same `R0006` headline and
@@ -36,7 +47,7 @@
   full 147-test native suite under `VANTYX_CC=gcc`, clippy and fmt clean, the
   release build, five examples, seven Python self-tests, 100/100 seed-1
   differential cases, fuzz smoke, the 13-skill validator, and the link
-  checker. Commit and CI are pending.
+  checker. Committed as `2104c55`; CI pending.
 - The T-107 tree makes native `print` flush each completed line, check
   `fputc`/`fflush`/`ferror`, and report `R0013` with `strerror` and
   `(os error N)` at the print, and makes `main` ignore SIGPIPE. Linux

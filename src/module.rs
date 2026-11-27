@@ -281,7 +281,7 @@ impl Loader {
         if let Some(unit) = self.units.get(path) {
             return Some(clone_unit(unit));
         }
-        if self.units.len() + 1 >= MAX_MODULES {
+        if self.units.len() >= MAX_MODULES {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E0507",
@@ -688,6 +688,56 @@ mod tests {
         );
         let result = load_file(&directory.0.join("main.vtx")).expect("load");
         assert!(codes(&result).contains(&"E0506"), "{}", result.render());
+    }
+
+    /// Writes `count` imported modules plus an entry file that imports each of
+    /// them. The entry file is the `(count + 1)`th file in the module graph.
+    fn write_import_graph(directory: &TempDir, count: usize) -> PathBuf {
+        let mut main = String::new();
+        for index in 0..count {
+            let name = format!("m{index:03}.vtx");
+            write(
+                directory,
+                &name,
+                &format!("fn imported_{index:03}() -> Int:\n    return {index}\n"),
+            );
+            main.push_str(&format!("import \"{name}\"\n"));
+        }
+        main.push_str("\nfn main():\n    print(0)\n");
+        write(directory, "main.vtx", &main);
+        directory.0.join("main.vtx")
+    }
+
+    #[test]
+    fn module_cap_accepts_exactly_max_modules() {
+        let directory = temp_dir("module-cap-exact");
+        let entry = write_import_graph(&directory, MAX_MODULES - 1);
+        let result = load_file(&entry).expect("load");
+        assert!(!result.has_errors(), "{}", result.render());
+        let program = result.program.expect("program");
+        assert_eq!(program.items.len(), MAX_MODULES);
+    }
+
+    #[test]
+    fn module_cap_rejects_one_module_over_max() {
+        let directory = temp_dir("module-cap-over");
+        let entry = write_import_graph(&directory, MAX_MODULES);
+        let result = load_file(&entry).expect("load");
+        let failures: Vec<_> = result
+            .diagnostics
+            .items
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "E0507")
+            .collect();
+        assert_eq!(failures.len(), 1, "{}", result.render());
+        assert!(
+            failures[0]
+                .message
+                .contains(&format!("limit of {MAX_MODULES} files")),
+            "{}",
+            result.render()
+        );
+        assert!(result.model.is_none());
     }
 
     #[test]

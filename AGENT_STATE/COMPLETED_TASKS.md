@@ -3,9 +3,14 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-109 — Module graph accepts exactly 256 files (2026-11-27; locally
+  verified; 731-test gate; commit and CI pending; `Loader::unit` now rejects
+  only when `self.units.len() >= MAX_MODULES`, so the entry file plus 255
+  imports loads and the 257th file produces one `E0507`; two module unit
+  tests cover the exact and over-limit boundaries).
 - T-108 — Native standard descriptors match Rust startup behavior (2026-11-27;
-  locally verified; 729-test gate; GCC native suite 147/147; release build and
-  five examples; commit and CI pending; generated `main` replaces closed
+  committed as `2104c55`; CI pending; 729-test gate; GCC native suite 147/147;
+  release build and five examples; generated `main` replaces closed
   descriptors 0–2 with `/dev/null` before user code, matching Rust's startup
   sanitization so a closed stdout silently discards `print` output and later
   file opens cannot reuse a standard descriptor number; one differential

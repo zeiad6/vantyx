@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `9bb2353` (T-107); T-108 is locally verified with the commit pending. The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
+- Last commit: `2104c55` (T-108); T-109 is locally verified with the commit pending. The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -19,8 +19,21 @@
 
 ## Current task
 
+T-109 — Module graph accepts exactly 256 files. Status: VERIFIED locally;
+commit and CI pending. The loader checked `self.units.len() + 1 >=
+MAX_MODULES` before inserting a file, and the entry file is already loaded, so
+a 255-file graph rejected the 256th file and the documented 256-file limit was
+effectively 255. The check is now `self.units.len() >= MAX_MODULES`, so an
+entry plus 255 imports loads and type-checks, while a 257-file graph produces
+exactly one `E0507`. `module_cap_accepts_exactly_max_modules` and
+`module_cap_rejects_one_module_over_max` cover both boundaries; the exact-limit
+test fails against the old condition. 731-test gate; clippy/fmt clean; release
+build and five examples; seven Python self-tests, 100/100 seed-1 differential
+cases, fuzz smoke, 13 skills, and the link checker passed. See
+`ACTIVE_TASK.md`.
+
 T-108 — Native standard descriptors match Rust startup behavior. Status:
-VERIFIED locally; commit and CI pending. Rust's runtime opens `/dev/null` for
+VERIFIED; committed as `2104c55`; CI pending. Rust's runtime opens `/dev/null` for
 any of descriptors 0, 1, or 2 that is closed before `main`, so the interpreter
 silently discarded `print` output when stdout was closed. Generated native code
 inherited the closed descriptor and failed with `R0013` `Bad file descriptor

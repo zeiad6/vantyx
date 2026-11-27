@@ -1,8 +1,46 @@
 # Active Task
 
-## T-108 — Native standard descriptors match Rust startup behavior
+## T-109 — Module graph accepts exactly 256 files
 
 - Status: VERIFIED locally; commit and CI pending
+- Priority: P1 (module-loader correctness at a documented limit)
+- Dependencies: specification §8
+
+### Implemented
+
+- `src/module.rs::Loader::unit` rejected a new file when
+  `self.units.len() + 1 >= MAX_MODULES`. The entry file is already in `units`,
+  so a graph with 255 loaded files rejected the 256th file and the documented
+  256-file limit was effectively 255.
+- The check is now `self.units.len() >= MAX_MODULES`, so the loader accepts
+  exactly 256 files and rejects the 257th with `E0507`. Duplicate imports
+  still return the cached unit before the cap check.
+
+### Evidence
+
+- 2026-11-27: `cargo test --lib module_cap` — 2 passed.
+  `module_cap_accepts_exactly_max_modules` builds an entry plus 255 imports,
+  asserts no errors, and asserts 256 flattened declarations;
+  `module_cap_rejects_one_module_over_max` builds a 257-file graph and asserts
+  exactly one `E0507` with the `limit of 256 files` wording and no model. The
+  exact-limit test fails against the previous condition.
+- 2026-11-27 full gate: `cargo test` 731 passed (404 library unit + 15 CLI
+  unit + 47 AI integration + 118 e2e + 147 native); clippy and fmt clean;
+  release build succeeded; all five examples matched; seven Python self-tests,
+  100/100 seed-1 differential cases, fuzz smoke, the 13-skill validator, and
+  the link checker passed.
+
+### Remaining
+
+- Commit and record CI.
+- Scope limits: only the file-count boundary changes. Import depth, per-module
+  and total source caps, path confinement, cycles, and duplicate-import caching
+  are unchanged. The test builds its graph in the system temporary directory
+  and removes it on drop.
+
+## T-108 — Native standard descriptors match Rust startup behavior
+
+- Status: VERIFIED; commit `2104c55`; CI pending
 - Priority: P0 (correctness, safety, and interpreter/native parity)
 - Dependencies: ADR-0008, ADR-0039, ADR-0051
 
@@ -39,7 +77,7 @@
 
 ### Remaining
 
-- Commit and record CI.
+- Committed as `2104c55`; CI pending.
 - Scope limits: the helper runs once at startup and only replaces closed
   descriptors. It does not close, redirect, or validate descriptors that are
   already open, and it is not a sandbox. `/dev/null` is required for the
