@@ -95,6 +95,22 @@ type, or dependency, and does not change the `E0401` boundary.
   interpreter and native stdout were byte-identical, including empty stdout on
   the failing `print` cases.
 
+## Amendment — 2026-11-27 (T-107)
+
+The original `vantyx_print_end` checked only `ferror(stdout)` after writing the
+newline. Native stdout is fully buffered when it is not a terminal, so a full
+disk was usually detected by the final `fflush` in `main` as
+`error: failed to flush output` (exit 2), without the `R0013` code or the
+print's location; a closed output pipe could terminate the process with
+SIGPIPE (exit 141). The interpreter's line-buffered stdout reports
+`R0013: failed to write output: <host error> (os error N)` at the print.
+
+`vantyx_print_end` now checks `fputc`, calls `fflush(stdout)`, and checks
+`ferror`, capturing `errno` before formatting `strerror(errno)` and
+`(os error N)`. `main` calls `signal(SIGPIPE, SIG_IGN)` to match Rust's
+default. Tests cover `/dev/full` and a closed pipe. This changes only the
+stdout failure path; successful output and evaluation order are unchanged.
+
 ## Alternatives considered
 
 1. **Adopt C `fmin`/`fmax` semantics in the interpreter (first operand on a

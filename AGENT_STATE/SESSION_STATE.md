@@ -1,10 +1,10 @@
 # Session State
 
 - Session ID: `ses_df3f90e90ffeFHPWt10GTzpwye`
-- Updated: 2026-11-26
+- Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `a9a6d1a` (record T-105 CI run 45936065460); CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
+- Last commit: `9e42a95` (T-106); T-107 is locally verified with the commit pending. The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -19,8 +19,24 @@
 
 ## Current task
 
+T-107 — Native print reports output failures at the print site. Status:
+VERIFIED locally; commit and CI pending. Native `print` used fully buffered
+stdout and checked only `ferror`, so `/dev/full` produced a generic
+`error: failed to flush output` at exit without `R0013` or the print location,
+and a closed output pipe could terminate the process with SIGPIPE (exit 141).
+`src/codegen_c.rs::vantyx_print_end` now checks `fputc`, calls
+`fflush(stdout)`, checks `ferror`, captures `errno`, and raises `R0013` with
+`strerror` and `(os error N)` at the print span; `main` ignores SIGPIPE to
+match Rust's default. Two differential native tests cover Linux `/dev/full`
+and a Unix socket pair with the read end closed, comparing the first
+`error[...]` line and exit code `2`. ADR-0039 records the amendment and
+specification §9–§11 states the behavior. 728-test gate; GCC native suite
+146/146; release build and five examples; seven Python self-tests, 100/100
+seed-1 differential cases, fuzz smoke, 13 skills, and 117 links in 179
+Markdown files passed. See `ACTIVE_TASK.md`.
+
 T-106 — Empty list literals adopt `contains`/`push` value types. Status:
-VERIFIED locally; commit and CI pending. `contains([], value)` and
+VERIFIED; commit `9e42a95`; CI pending. `contains([], value)` and
 `push([], value)` were accepted by the checker as `List[Any]`, ran in the
 interpreter, and were rejected by the native backend with `E0401`. The value
 argument supplies the missing element type, so the `contains` and `push` arms
@@ -33,8 +49,8 @@ scalars, a nested list, effectful values, and the interpreter result. Dynamic
 `Any` needles/values and still-untyped empty literals remain under the native
 `E0401` boundary. 726-test gate; GCC native suite 144/144; release build and
 five examples; seven Python self-tests, 100/100 seed-1 differential cases,
-fuzz smoke, 13 skills, and 117 links in 178 Markdown files passed. See
-`ACTIVE_TASK.md`.
+fuzz smoke, 13 skills, and 117 links in 178 Markdown files passed. Committed
+as `9e42a95`; CI pending. See `ACTIVE_TASK.md`.
 
 T-105 — Empty list literal adopts `join`'s `List[Str]` type. Status: VERIFIED;
 pushed in `779783c`; CI run 45936065460 green. `join([], separator)` was accepted by the checker as

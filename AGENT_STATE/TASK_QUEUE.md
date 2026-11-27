@@ -4,14 +4,26 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-106 — Empty list literals adopt `contains`/`push` value types. VERIFIED
-  locally; `contains([], value)` and `push([], value)` previously checked as
-  `List[Any]` and failed natively with `E0401`. The checker now checks the
-  empty literal as `List[type(value)]`; non-empty arguments keep the old
-  inference path and diagnostics. New native differential and e2e tests;
-  726-test gate, GCC native suite, release build, five examples, seven Python
-  self-tests, 100/100 differential cases, fuzz smoke, 13 skills, and 117
-  links; commit and CI pending.
+- T-107 — Native print reports output failures at the print site. VERIFIED
+  locally; native stdout was fully buffered, so a full disk was reported by
+  the final flush without `R0013` or the print location, and a closed pipe
+  could terminate the process with SIGPIPE. `vantyx_print_end` now flushes and
+  checks each completed line, reports `R0013` with `strerror` and
+  `(os error N)`, and `main` ignores SIGPIPE. Two differential native tests
+  cover `/dev/full` and a closed pipe; 728-test gate, GCC native suite,
+  release build, five examples, seven Python self-tests, 100/100 differential
+  cases, fuzz smoke, 13 skills, and 117 links; commit and CI pending.
+
+## Completed in `9e42a95` (CI pending)
+
+- T-106 — Empty list literals adopt `contains`/`push` value types. VERIFIED;
+  committed as `9e42a95`; `contains([], value)` and `push([], value)`
+  previously checked as `List[Any]` and failed natively with `E0401`. The
+  checker now checks the empty literal as `List[type(value)]`; non-empty
+  arguments keep the old inference path and diagnostics. New native
+  differential and e2e tests; 726-test gate, GCC native suite, release build,
+  five examples, seven Python self-tests, 100/100 differential cases, fuzz
+  smoke, 13 skills, and 117 links.
 
 ## Completed in `779783c` (CI run 45936065460 green)
 

@@ -4,6 +4,21 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-27 — Native `print` reports output failures per line
+
+- Flush stdout at the end of every `print`, not only in `main`, because the
+  interpreter's stdout is line-buffered and reports `R0013` at the print that
+  attempted the write. A final-only flush loses the code and location.
+- Capture `errno` immediately after the failed `fputc`/`fflush`/`ferror` check
+  and format `strerror(errno)` plus `(os error N)` to match Rust's
+  `io::Error` display.
+- Ignore SIGPIPE in native `main` to match Rust's default. A closed pipe must
+  become the same `R0013` error as the interpreter, not signal termination.
+- Keep the final flush fallback in `main`; it is now effectively redundant for
+  `print`-only output but remains a defensive check.
+- Do not change file-writing builtins or add a general signal policy in this
+  task.
+
 ## 2026-11-26 — Empty list literals take the value type in `contains`/`push`
 
 - `contains([], value)` and `push([], value)` now check the empty literal as

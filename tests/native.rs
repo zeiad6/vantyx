@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -4743,6 +4743,152 @@ fn runtime_error_headlines_match_interpreter() {
     assert_error_headlines_match(
         "error-headline-glob-descending",
         "fn main():\n    print(glob(\"[z-a]\"))\n",
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn print_write_failure_headlines_match_interpreter() {
+    if !compiler_available() {
+        eprintln!("skipping print write-failure test: no C compiler available");
+        return;
+    }
+    let directory = workspace("print-write-failure", "fn main():\n    print(\"hello\")\n");
+    let source_path = directory.join("main.vtx");
+    let executable = directory.join("program");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("build")
+        .arg(&source_path)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("run native build");
+    assert!(
+        build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let Ok(full) = fs::OpenOptions::new().write(true).open("/dev/full") else {
+        eprintln!("skipping print write-failure test: /dev/full is unavailable");
+        return;
+    };
+    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("run")
+        .arg(&source_path)
+        .stdout(Stdio::from(full.try_clone().expect("clone /dev/full")))
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run interpreter");
+    let native = Command::new(&executable)
+        .stdout(Stdio::from(full))
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run native executable");
+
+    assert_eq!(
+        interpreter.status.code(),
+        Some(2),
+        "interpreter did not fail: {}",
+        String::from_utf8_lossy(&interpreter.stderr)
+    );
+    assert_eq!(
+        native.status.code(),
+        Some(2),
+        "native did not fail: {}",
+        String::from_utf8_lossy(&native.stderr)
+    );
+    let interpreter_head = first_error_line(&interpreter);
+    let native_head = first_error_line(&native);
+    assert_eq!(
+        interpreter_head,
+        native_head,
+        "print write-failure headline differs\ninterpreter stderr:\n{}\nnative stderr:\n{}",
+        String::from_utf8_lossy(&interpreter.stderr),
+        String::from_utf8_lossy(&native.stderr)
+    );
+    assert!(
+        interpreter_head.starts_with("error[R0013]: failed to write output: "),
+        "{interpreter_head}"
+    );
+    assert!(
+        interpreter_head.contains("(os error 28)"),
+        "{interpreter_head}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn print_broken_pipe_headlines_match_interpreter() {
+    use std::os::fd::OwnedFd;
+    use std::os::unix::net::UnixStream;
+
+    if !compiler_available() {
+        eprintln!("skipping broken-pipe test: no C compiler available");
+        return;
+    }
+    let directory = workspace("print-broken-pipe", "fn main():\n    print(\"hello\")\n");
+    let source_path = directory.join("main.vtx");
+    let executable = directory.join("program");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("build")
+        .arg(&source_path)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("run native build");
+    assert!(
+        build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let closed_stdout = || {
+        let (writer, reader) = UnixStream::pair().expect("create pipe");
+        drop(reader);
+        Stdio::from(OwnedFd::from(writer))
+    };
+    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("run")
+        .arg(&source_path)
+        .stdout(closed_stdout())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run interpreter");
+    let native = Command::new(&executable)
+        .stdout(closed_stdout())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run native executable");
+
+    assert_eq!(
+        interpreter.status.code(),
+        Some(2),
+        "interpreter did not fail: {}",
+        String::from_utf8_lossy(&interpreter.stderr)
+    );
+    assert_eq!(
+        native.status.code(),
+        Some(2),
+        "native did not fail: {}",
+        String::from_utf8_lossy(&native.stderr)
+    );
+    let interpreter_head = first_error_line(&interpreter);
+    let native_head = first_error_line(&native);
+    assert_eq!(
+        interpreter_head,
+        native_head,
+        "broken-pipe headline differs\ninterpreter stderr:\n{}\nnative stderr:\n{}",
+        String::from_utf8_lossy(&interpreter.stderr),
+        String::from_utf8_lossy(&native.stderr)
+    );
+    assert!(
+        interpreter_head.starts_with("error[R0013]: failed to write output: "),
+        "{interpreter_head}"
+    );
+    assert!(
+        interpreter_head.contains("(os error 32)"),
+        "{interpreter_head}"
     );
 }
 

@@ -1,8 +1,51 @@
 # Active Task
 
-## T-106 — Empty list literals adopt `contains`/`push` value types
+## T-107 — Native print reports output failures at the print site
 
 - Status: VERIFIED locally; commit and CI pending
+- Priority: P0 (correctness and interpreter/native diagnostic parity)
+- Dependencies: ADR-0008, ADR-0039
+
+### Implemented
+
+- Native `print` wrote through fully buffered stdout and checked only
+  `ferror`, so `/dev/full` was reported by the final flush in `main` as
+  `error: failed to flush output` without `R0013` or the print location. A
+  closed pipe could terminate the process with SIGPIPE (exit 141), while the
+  interpreter reports `R0013: failed to write output: <host error>
+  (os error N)` at the print.
+- `src/codegen_c.rs::vantyx_print_end` now checks `fputc`, calls
+  `fflush(stdout)`, checks `ferror`, captures `errno`, and raises `R0013` with
+  `strerror` plus `(os error N)`. `main` calls `signal(SIGPIPE, SIG_IGN)` to
+  match Rust's default.
+- ADR-0039 records the amendment; specification §9–§11 states the behavior.
+
+### Evidence
+
+- 2026-11-27 targeted tests:
+  `cargo test --test native print_` — 3 passed
+  (`print_write_failure_headlines_match_interpreter`,
+  `print_broken_pipe_headlines_match_interpreter`, and the existing
+  `print_evaluates_arguments_before_writing`).
+- 2026-11-27 full gate: `cargo test` 728 passed (402 library unit + 15 CLI
+  unit + 47 AI integration + 118 e2e + 146 native);
+  `VANTYX_CC=gcc cargo test --test native` 146 passed;
+  `cargo build --release` succeeded; all five examples matched `vantyx run`;
+  seven Python self-tests, 100/100 seed-1 differential cases, fuzz smoke
+  (9 depth/limit + 400 random/mutated inputs), the 13-skill validator, and the
+  link checker (117 links in 180 Markdown files) passed.
+
+### Remaining
+
+- Commit and record CI.
+- Scope limits: only `print`'s stdout path changes; the final flush fallback,
+  file-writing builtins, and non-`print` output paths are unchanged. Native
+  still omits the interpreter's source excerpt and stack trace, so the tests
+  compare the first `error[...]` line and exit code.
+
+## T-106 — Empty list literals adopt `contains`/`push` value types
+
+- Status: VERIFIED; commit `9e42a95`; CI pending
 - Priority: P1 (core language typing and interpreter/native parity)
 - Dependencies: ADR-0009, ADR-0028
 
@@ -29,7 +72,7 @@
 
 ### Remaining
 
-- Complete the full gate, update records, commit, push, and record CI.
+- Committed as `9e42a95`; CI pending. Not pushed (commit-only authorization).
 - Scope limits: only a direct empty list literal in the first argument of
   `contains` or `push` is affected. `len([])`, `print([])`, `pop([])`,
   `keys({})`, `values({})`, `contains({}, key)`, and unannotated empty-list

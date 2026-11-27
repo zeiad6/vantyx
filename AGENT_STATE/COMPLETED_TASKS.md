@@ -3,9 +3,16 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-107 — Native print reports output failures at the print site (2026-11-27;
+  locally verified; 728-test gate; GCC native suite 146/146; release build and
+  five examples; commit and CI pending; native `print` now flushes each
+  completed line, checks `fputc`/`fflush`/`ferror`, and raises `R0013` with
+  `strerror` and `(os error N)` at the print, while `main` ignores SIGPIPE;
+  Linux `/dev/full` and a closed pipe match the interpreter's first error line
+  and exit code `2`; two differential native tests; ADR-0039 amendment).
 - T-106 — Empty list literals adopt `contains`/`push` value types (2026-11-26;
   locally verified; 726-test gate; GCC native suite 144/144; release build and
-  five examples; commit and CI pending; `contains([], value)` and
+  five examples; committed as `9e42a95`; CI pending; `contains([], value)` and
   `push([], value)` previously checked as `List[Any]` and failed natively with
   `E0401`; the checker now checks a direct empty list literal against
   `List[type(value)]`, while non-empty arguments keep the old inference path
