@@ -13,12 +13,12 @@
 
 ## Last recorded repository state (2026-11-26)
 
-- `origin/main` and HEAD are at `5d5655b` (record T-101 CI run 45923211883).
-  `c54c61c` contains deterministic JSONL dataset shuffling (T-101), and
-  `33c966e` contains the native parity fixes, dataset tooling, and agent skills
-  (T-078 through T-100); CI runs 45923211883 and 45920832199 passed. T-102
-  (label-stratified splits) is the current working-tree change and is verified
-  locally; commit and CI are pending at this record.
+- `origin/main` and HEAD are at `a331f2d` (label-stratified JSONL dataset
+  splits; T-102). `5d5655b` recorded the T-101 CI run, and run 45923860569
+  passed on it. `c54c61c` contains deterministic JSONL dataset shuffling
+  (T-101), and `33c966e` contains the native parity fixes, dataset tooling, and
+  agent skills (T-078 through T-100); CI runs 45923211883 and 45920832199
+  passed. T-102 is pushed and CI run 45925745650 passed on `a331f2d`.
 - Earlier commits: `1aba7ba` contains T-077 differential-fuzzer control-flow
   coverage and bounded shrinking (run 45507195701 green), `de0bac7` contains
   the rustfmt baseline and CI formatting gate (run 45504177763 green),

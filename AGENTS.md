@@ -85,9 +85,9 @@ python3 benchmarks/run.py --reps 5
   45503321172 passed on `66b4efc` with T-075, run 45504177763 passed on
   `de0bac7` with the rustfmt gate, run 45507195701 passed on `1aba7ba`
   with T-077, and run 45920832199 passed on `33c966e` with T-078–T-100 and the
-  skill validator, run 45923211883 passed on `c54c61c` with T-101, and T-102
-  label-stratified splits are verified locally with the 718-test gate; CI for
-  T-102 is pending). The
+  skill validator, run 45923211883 passed on `c54c61c` with T-101, run
+  45923860569 passed on `5d5655b`, and T-102 label-stratified splits are pushed
+  in `a331f2d` with the 718-test gate and CI run 45925745650 green). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 718 passed (402 library unit + 15 CLI unit + 47 AI integration +

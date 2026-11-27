@@ -1,7 +1,7 @@
 # Checkpoint — T-102 label-stratified JSONL dataset splits
 
 Date: 2026-11-26
-Status: VERIFIED locally; commit and CI pending at this checkpoint
+Status: VERIFIED; pushed in `a331f2d`; CI run 45925745650 green
 
 ## What changed
 
@@ -61,5 +61,6 @@ Status: VERIFIED locally; commit and CI pending at this checkpoint
 
 ## Next
 
-Commit and push T-102, then record the CI run. Also record CI for `5d5655b`.
-Continue with tokenizer-aware dataset counts or another queued P1/P2 task.
+T-102 is committed as `a331f2d`, pushed, and CI run 45925745650 passed; the
+T-101 status commit `5d5655b` also passed CI run 45923860569. Continue with
+tokenizer-aware dataset counts or another queued P1/P2 task.

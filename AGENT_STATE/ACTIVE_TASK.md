@@ -2,7 +2,7 @@
 
 ## T-102 — Label-stratified JSONL dataset splits
 
-- Status: VERIFIED locally; commit and CI pending
+- Status: VERIFIED; pushed in `a331f2d`; CI run 45925745650 green
 - Priority: P3 (AI host tooling)
 - Dependencies: T-092, T-094, T-098, T-100, T-101, ADR-0043, ADR-0044,
   ADR-0046, ADR-0047, ADR-0048

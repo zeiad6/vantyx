@@ -9,7 +9,7 @@ See `TASKS.md` for full acceptance criteria and evidence.
   multi-record label in both splits, sends singletons to the majority split,
   preserves input order, reports sorted per-label counts, and bounds memory at
   64 MiB/1,000,000 records/1,000 labels; three unit tests and two CLI tests;
-  commit and CI pending at record time).
+  commit `a331f2d`; CI run 45925745650 green).
 - T-101 — Deterministic JSONL dataset shuffle (2026-11-26; 713-test gate;
   `vantyx ai shuffle` validates first, orders records by a domain-separated
   SHA-256 of the seed and exact record bytes with a byte tie-breaker, refuses

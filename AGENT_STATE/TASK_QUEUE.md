@@ -2,7 +2,7 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
-## Completed in the current change (T-102; commit and CI pending)
+## Completed in `a331f2d` (CI run 45925745650 green)
 
 - T-102 — Label-stratified JSONL dataset splits. VERIFIED locally;
   `vantyx ai split --stratify <field>` groups records by the compact JSON

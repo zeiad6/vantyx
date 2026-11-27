@@ -991,7 +991,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-102 — Label-stratified JSONL dataset splits
 - Priority: P3 (AI host tooling)
-- Status: VERIFIED locally (AI host tooling)
+- Status: VERIFIED (AI host tooling); commit `a331f2d`; CI run 45925745650 green
 - Description: `vantyx ai split` assigned records independently by a seeded hash, so a small or imbalanced label could land mostly or entirely in one split, making evaluation noisy or impossible for that label. A split must preserve per-label proportions while staying deterministic, validated, non-overwriting, and bounded.
 - Acceptance: `vantyx ai split <file> --out-dir <dir> --stratify <field> [--train-ratio] [--seed] [--schema] [--json]` groups records by the compact JSON spelling of a top-level string, number, boolean, or null field; assigns `floor(n * ratio)` per label, clamped to `1..n-1` for `n >= 2`; sends singleton labels to the majority split; moves one extreme-hash record only when a split would be empty and warns; preserves input order; rejects missing, non-scalar, over-1,024-byte, and over-1,000-distinct labels; holds the dataset in memory under 64 MiB and 1,000,000 records; refuses overwrite; removes partial outputs; reports `stratify` and a label-sorted `strata` array in JSON and text; exits 0 for success, 1 for data/I/O failure, and 64 for usage errors.
 - Dependencies: T-092, T-094, T-098, T-100, T-101, ADR-0043, ADR-0044, ADR-0046, ADR-0047, ADR-0048.
@@ -1011,6 +1011,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
   Markdown files OK. Targeted tests:
   `cargo test --lib stratified` = 3 passed and
   `cargo test --test ai dataset_split` = 4 passed. Independent QA review was
-  not available (subagent provider free-usage limit), so the change is marked
-  VERIFIED locally rather than independently reviewed.
+  not available (subagent provider free-usage limit), so the change is locally
+  verified without independent review. CI run 45925745650 passed on
+  `a331f2d`.
 - Scope limits: one stratification field only, no label weights or multi-field keys; no tokenizer-aware balancing; no output shuffle (input order is preserved) and no deduplication (run `vantyx ai shuffle` or `vantyx ai dedup` first); the global achieved ratio can differ from the requested ratio because each label rounds down and multi-record labels are clamped; integral floats and integers share a compact label spelling (`1.0` labels as `1`) while the string `"1"` is distinct; labels are not Unicode-normalized; the whole dataset is held in memory, so the cap is 64 MiB rather than the streaming 256 MiB inspection cap; no external-memory grouping; the pair is not atomic across a crash.
