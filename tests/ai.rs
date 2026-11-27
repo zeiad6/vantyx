@@ -700,6 +700,14 @@ fn dataset_split_is_deterministic_and_reports_provenance() {
     );
     assert_eq!(value.get("records").and_then(|v| v.as_u64()), Some(30));
     assert_eq!(value.get("seed").and_then(|v| v.as_u64()), Some(9));
+    assert!(value.get("stratify").expect("stratify key").is_null());
+    assert_eq!(
+        value
+            .get("strata")
+            .and_then(|v| v.as_array())
+            .map(|v| v.len()),
+        Some(0)
+    );
     let train = value.get("train").expect("train part");
     let held_out = value.get("held_out").expect("held-out part");
     let train_records = train.get("records").and_then(|v| v.as_u64()).unwrap();
@@ -936,6 +944,292 @@ fn dataset_split_rejects_usage_invalid_data_and_overwrite() {
         fs::read_to_string(out.join("data.train.jsonl")).unwrap(),
         before
     );
+
+    let _ = fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn dataset_split_stratify_reports_strata_and_is_deterministic() {
+    let directory = temp_path("dataset-stratify");
+    fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("corpus.jsonl");
+    let mut text = String::new();
+    for index in 0..12 {
+        let label = if index < 6 { "\"a\"" } else { "\"b\"" };
+        text.push_str(&format!("{{\"id\":{index},\"label\":{label}}}\n"));
+    }
+    fs::write(&input, &text).unwrap();
+
+    let out_one = directory.join("one");
+    let first = vantyx(
+        &[
+            "ai",
+            "split",
+            input.to_str().unwrap(),
+            "--out-dir",
+            out_one.to_str().unwrap(),
+            "--train-ratio",
+            "0.5",
+            "--seed",
+            "7",
+            "--stratify",
+            "label",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(first.status, 0, "{}", first.stderr);
+    let value = vantyx::ai::parse(first.stdout.trim()).expect("split JSON");
+    assert_eq!(
+        value.get("format").and_then(|v| v.as_str()),
+        Some("jsonl-split")
+    );
+    assert_eq!(
+        value.get("stratify").and_then(|v| v.as_str()),
+        Some("label")
+    );
+    let strata = value
+        .get("strata")
+        .and_then(|v| v.as_array())
+        .expect("strata array");
+    assert_eq!(strata.len(), 2);
+    assert_eq!(
+        strata[0].get("label").and_then(|v| v.as_str()),
+        Some("\"a\"")
+    );
+    assert_eq!(strata[0].get("records").and_then(|v| v.as_u64()), Some(6));
+    assert_eq!(strata[0].get("train").and_then(|v| v.as_u64()), Some(3));
+    assert_eq!(strata[0].get("held_out").and_then(|v| v.as_u64()), Some(3));
+    assert_eq!(
+        strata[1].get("label").and_then(|v| v.as_str()),
+        Some("\"b\"")
+    );
+    assert_eq!(strata[1].get("records").and_then(|v| v.as_u64()), Some(6));
+    let train_records = value
+        .get("train")
+        .and_then(|part| part.get("records"))
+        .and_then(|v| v.as_u64())
+        .unwrap();
+    let held_out_records = value
+        .get("held_out")
+        .and_then(|part| part.get("records"))
+        .and_then(|v| v.as_u64())
+        .unwrap();
+    assert_eq!(train_records, 6);
+    assert_eq!(held_out_records, 6);
+
+    let out_two = directory.join("two");
+    let second = vantyx(
+        &[
+            "ai",
+            "split",
+            input.to_str().unwrap(),
+            "--out-dir",
+            out_two.to_str().unwrap(),
+            "--train-ratio",
+            "0.5",
+            "--seed",
+            "7",
+            "--stratify",
+            "label",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(second.status, 0, "{}", second.stderr);
+    let value_two = vantyx::ai::parse(second.stdout.trim()).expect("second split JSON");
+    for part in ["train", "held_out"] {
+        assert_eq!(
+            value.get(part).unwrap().get("sha256"),
+            value_two.get(part).unwrap().get("sha256")
+        );
+    }
+
+    let out_three = directory.join("three");
+    let third = vantyx(
+        &[
+            "ai",
+            "split",
+            input.to_str().unwrap(),
+            "--out-dir",
+            out_three.to_str().unwrap(),
+            "--train-ratio",
+            "0.5",
+            "--seed",
+            "8",
+            "--stratify",
+            "label",
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(third.status, 0, "{}", third.stderr);
+    let value_three = vantyx::ai::parse(third.stdout.trim()).expect("third split JSON");
+    assert_ne!(
+        value.get("train").unwrap().get("sha256"),
+        value_three.get("train").unwrap().get("sha256")
+    );
+
+    let out_text = directory.join("text");
+    let text_run = vantyx(
+        &[
+            "ai",
+            "split",
+            input.to_str().unwrap(),
+            "--out-dir",
+            out_text.to_str().unwrap(),
+            "--train-ratio",
+            "0.5",
+            "--seed",
+            "7",
+            "--stratify",
+            "label",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(text_run.status, 0, "{}", text_run.stderr);
+    assert!(text_run.stdout.contains("stratify: label"));
+    assert!(text_run.stdout.contains("strata:"));
+    assert!(
+        text_run
+            .stdout
+            .contains("\"a\": 6 records (3 train, 3 held-out)"),
+        "{}",
+        text_run.stdout
+    );
+
+    let schema = directory.join("schema.json");
+    fs::write(&schema, r#"{"type":"object","required":["id","label"]}"#).unwrap();
+    let out_schema = directory.join("schema");
+    let with_schema = vantyx(
+        &[
+            "ai",
+            "split",
+            input.to_str().unwrap(),
+            "--out-dir",
+            out_schema.to_str().unwrap(),
+            "--train-ratio",
+            "0.5",
+            "--seed",
+            "7",
+            "--stratify",
+            "label",
+            "--schema",
+            schema.to_str().unwrap(),
+            "--json",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(with_schema.status, 0, "{}", with_schema.stderr);
+    let schema_value = vantyx::ai::parse(with_schema.stdout.trim()).expect("schema split JSON");
+    assert_eq!(
+        schema_value.get("stratify").and_then(|v| v.as_str()),
+        Some("label")
+    );
+    assert_eq!(
+        schema_value
+            .get("strata")
+            .and_then(|v| v.as_array())
+            .map(|v| v.len()),
+        Some(2)
+    );
+
+    let _ = fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn dataset_split_stratify_rejects_usage_and_bad_labels() {
+    let directory = temp_path("dataset-stratify-errors");
+    fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("data.jsonl");
+    fs::write(&input, "{\"label\":\"a\"}\n{\"label\":\"b\"}\n").unwrap();
+    let out = directory.join("out");
+
+    let missing = vantyx(
+        &[
+            "ai",
+            "split",
+            input.to_str().unwrap(),
+            "--out-dir",
+            out.to_str().unwrap(),
+            "--stratify",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(missing.status, 64);
+    assert!(missing.stderr.contains("--stratify"), "{}", missing.stderr);
+
+    let empty = vantyx(
+        &[
+            "ai",
+            "split",
+            input.to_str().unwrap(),
+            "--out-dir",
+            out.to_str().unwrap(),
+            "--stratify",
+            "",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(empty.status, 64);
+    assert!(empty.stderr.contains("non-empty"), "{}", empty.stderr);
+
+    let duplicate = vantyx(
+        &[
+            "ai",
+            "split",
+            input.to_str().unwrap(),
+            "--out-dir",
+            out.to_str().unwrap(),
+            "--stratify",
+            "label",
+            "--stratify",
+            "other",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(duplicate.status, 64);
+    assert!(
+        duplicate.stderr.contains("only once"),
+        "{}",
+        duplicate.stderr
+    );
+
+    let invalid = directory.join("invalid.jsonl");
+    fs::write(&invalid, "{\"other\":1}\n{\"other\":2}\n").unwrap();
+    let bad = vantyx(
+        &[
+            "ai",
+            "split",
+            invalid.to_str().unwrap(),
+            "--out-dir",
+            out.to_str().unwrap(),
+            "--stratify",
+            "label",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(bad.status, 1);
+    assert!(
+        bad.stderr.contains("missing stratification field"),
+        "{}",
+        bad.stderr
+    );
+    assert!(
+        bad.stderr.contains("dataset commands accept JSONL"),
+        "{}",
+        bad.stderr
+    );
+    assert!(!out.exists() || fs::read_dir(&out).unwrap().count() == 0);
 
     let _ = fs::remove_dir_all(&directory);
 }

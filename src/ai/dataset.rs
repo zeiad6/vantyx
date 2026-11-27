@@ -14,7 +14,7 @@ use super::schema;
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Maximum dataset size accepted by one inspection.
 pub const MAX_DATASET_BYTES: u64 = 256 * 1024 * 1024;
@@ -38,6 +38,15 @@ pub const MAX_DEDUP_UNIQUE_RECORDS: usize = 1_000_000;
 pub const MAX_SHUFFLE_BYTES: u64 = 64 * 1024 * 1024;
 /// Maximum records accepted by one deterministic shuffle.
 pub const MAX_SHUFFLE_RECORDS: usize = 1_000_000;
+/// Maximum dataset size accepted by one stratified split. Records are held in
+/// memory to group them by label, so this bound is lower than inspection's.
+pub const MAX_STRATIFIED_BYTES: u64 = 64 * 1024 * 1024;
+/// Maximum records accepted by one stratified split.
+pub const MAX_STRATIFIED_RECORDS: usize = 1_000_000;
+/// Maximum distinct label values accepted by one stratified split.
+pub const MAX_STRATIFIED_LABELS: usize = 1_000;
+/// Maximum compact JSON size of one stratification label.
+pub const MAX_STRATIFIED_LABEL_BYTES: usize = 1_024;
 /// Domain separator for deterministic per-record split assignment.
 const SPLIT_HASH_DOMAIN: &[u8] = b"vantyx-dataset-split-v1\0";
 /// Domain separator for exact-record deduplication digests.
@@ -231,6 +240,15 @@ pub struct SplitPart {
     pub sha256: String,
 }
 
+/// Per-label counts in a stratified dataset split.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StratumSummary {
+    pub label: String,
+    pub records: u64,
+    pub train: u64,
+    pub held_out: u64,
+}
+
 /// A validated, deterministic train/held-out split of a JSONL dataset.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SplitSummary {
@@ -242,6 +260,11 @@ pub struct SplitSummary {
     pub train_ratio: f64,
     pub train: SplitPart,
     pub held_out: SplitPart,
+    /// Top-level field used for stratification, or `None` for an unstratified
+    /// split.
+    pub stratify: Option<String>,
+    /// Per-label counts, sorted by label; empty for an unstratified split.
+    pub strata: Vec<StratumSummary>,
     pub warnings: Vec<String>,
 }
 
@@ -272,6 +295,29 @@ impl SplitSummary {
             ),
             ("train", part(&self.train)),
             ("held_out", part(&self.held_out)),
+            (
+                "stratify",
+                match &self.stratify {
+                    Some(field) => Json::String(field.clone()),
+                    None => Json::Null,
+                },
+            ),
+            (
+                "strata",
+                Json::Array(
+                    self.strata
+                        .iter()
+                        .map(|stratum| {
+                            Json::object([
+                                ("label", Json::String(stratum.label.clone())),
+                                ("records", Json::Number(JsonNumber::UInt(stratum.records))),
+                                ("train", Json::Number(JsonNumber::UInt(stratum.train))),
+                                ("held_out", Json::Number(JsonNumber::UInt(stratum.held_out))),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
             (
                 "warnings",
                 Json::Array(
@@ -443,6 +489,60 @@ pub fn split_with_schema(
         train_ratio,
         seed,
         Some((schema_path, &schema)),
+    )
+}
+
+/// Splits a validated UTF-8 JSONL dataset while preserving label proportions.
+///
+/// `stratify` names a top-level field whose value must be a JSON string,
+/// number, boolean, or null. Records are grouped by the compact JSON spelling
+/// of that value, ordered within each group by a seeded SHA-256 of the record
+/// bytes, and assigned exact per-label counts. Every label with at least two
+/// records contributes at least one record to each split; singleton labels go
+/// to the majority split. If the global fallback is needed to keep both splits
+/// non-empty, one record is moved deterministically and a warning is reported.
+///
+/// The dataset is held in memory under `MAX_STRATIFIED_BYTES`,
+/// `MAX_STRATIFIED_RECORDS`, `MAX_STRATIFIED_LABELS`, and
+/// `MAX_STRATIFIED_LABEL_BYTES`. Outputs are created with `create_new`, never
+/// overwritten, and removed again if writing fails.
+pub fn split_stratified(
+    path: &Path,
+    out_dir: &Path,
+    train_ratio: f64,
+    seed: u64,
+    stratify: &str,
+) -> Result<SplitSummary, AiError> {
+    stratified_split_inner(
+        path,
+        out_dir,
+        train_ratio,
+        seed,
+        stratify,
+        None,
+        STRATIFIED_LIMITS,
+    )
+}
+
+/// Splits a UTF-8 JSONL dataset while preserving label proportions, after
+/// validating every record against a JSON Schema file.
+pub fn split_stratified_with_schema(
+    path: &Path,
+    out_dir: &Path,
+    train_ratio: f64,
+    seed: u64,
+    stratify: &str,
+    schema_path: &Path,
+) -> Result<SplitSummary, AiError> {
+    let schema = load_schema(schema_path)?;
+    stratified_split_inner(
+        path,
+        out_dir,
+        train_ratio,
+        seed,
+        stratify,
+        Some((schema_path, &schema)),
+        STRATIFIED_LIMITS,
     )
 }
 
@@ -1018,23 +1118,19 @@ fn shuffle_record_digest(seed: u64, record: &[u8]) -> [u8; 32] {
     hasher.finalize()
 }
 
-fn split_inner(
-    path: &Path,
-    out_dir: &Path,
-    train_ratio: f64,
-    seed: u64,
-    schema: Option<(&Path, &Json)>,
-) -> Result<SplitSummary, AiError> {
+fn validate_train_ratio(train_ratio: f64) -> Result<u64, AiError> {
     if !train_ratio.is_finite() || train_ratio <= 0.0 || train_ratio >= 1.0 {
         return Err(AiError::new(
             AI_E_INVALID_REQUEST,
             format!("train ratio must be greater than 0 and less than 1, got {train_ratio}"),
         ));
     }
-    let cutoff = (train_ratio * (u32::MAX as f64 + 1.0))
+    Ok((train_ratio * (u32::MAX as f64 + 1.0))
         .floor()
-        .min(u32::MAX as f64 + 1.0) as u64;
+        .min(u32::MAX as f64 + 1.0) as u64)
+}
 
+fn prepare_split_paths(path: &Path, out_dir: &Path) -> Result<(PathBuf, PathBuf), AiError> {
     std::fs::create_dir_all(out_dir).map_err(|error| {
         AiError::new(
             AI_E_IO,
@@ -1074,6 +1170,417 @@ fn split_inner(
     if train_path.exists() || held_out_path.exists() {
         return Err(overwrite_error(&train_path, &held_out_path));
     }
+    Ok((train_path, held_out_path))
+}
+
+fn create_split_files(train_path: &Path, held_out_path: &Path) -> Result<(File, File), AiError> {
+    let train_file = create_output(train_path)?;
+    let held_out_file = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(held_out_path)
+    {
+        Ok(file) => file,
+        Err(error) => {
+            let _ = std::fs::remove_file(train_path);
+            return Err(output_error(held_out_path, error));
+        }
+    };
+    Ok((train_file, held_out_file))
+}
+
+fn framing_warnings(blank_lines: u64, crlf_lines: u64, bom: bool) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if blank_lines > 0 {
+        warnings.push(format!("{blank_lines} blank line(s) were not copied"));
+    }
+    if crlf_lines > 0 {
+        warnings.push(format!(
+            "{crlf_lines} CRLF line ending(s) were normalized to LF"
+        ));
+    }
+    if bom {
+        warnings.push("the UTF-8 byte-order mark was removed".to_string());
+    }
+    warnings
+}
+
+#[derive(Clone, Copy)]
+struct StratifiedLimits {
+    max_bytes: u64,
+    max_records: usize,
+    max_labels: usize,
+}
+
+const STRATIFIED_LIMITS: StratifiedLimits = StratifiedLimits {
+    max_bytes: MAX_STRATIFIED_BYTES,
+    max_records: MAX_STRATIFIED_RECORDS,
+    max_labels: MAX_STRATIFIED_LABELS,
+};
+
+fn stratified_split_inner(
+    path: &Path,
+    out_dir: &Path,
+    train_ratio: f64,
+    seed: u64,
+    stratify: &str,
+    schema: Option<(&Path, &Json)>,
+    limits: StratifiedLimits,
+) -> Result<SplitSummary, AiError> {
+    validate_train_ratio(train_ratio)?;
+    if stratify.is_empty() {
+        return Err(AiError::new(
+            AI_E_INVALID_REQUEST,
+            "stratification field name must not be empty",
+        ));
+    }
+    let (train_path, held_out_path) = prepare_split_paths(path, out_dir)?;
+    let scan = read_stratified_records(path, stratify, schema.map(|(_, value)| value), limits)?;
+    if scan.records.len() < 2 {
+        return Err(AiError::new(
+            AI_E_INVALID_REQUEST,
+            format!(
+                "dataset has {} record(s); at least 2 are required to create a train/held-out split",
+                scan.records.len()
+            ),
+        ));
+    }
+
+    let (assignments, strata, assignment_warnings) = assign_strata(seed, train_ratio, &scan);
+    let (train_file, held_out_file) = create_split_files(&train_path, &held_out_path)?;
+    let result = write_stratified(
+        &scan.records,
+        &assignments,
+        train_file,
+        held_out_file,
+        &train_path,
+        &held_out_path,
+    );
+    match result {
+        Ok((train, held_out)) => {
+            let expected_train = assignments.iter().filter(|value| **value).count() as u64;
+            let expected_held_out = scan.records.len() as u64 - expected_train;
+            if train.records != expected_train || held_out.records != expected_held_out {
+                let _ = std::fs::remove_file(&train_path);
+                let _ = std::fs::remove_file(&held_out_path);
+                return Err(AiError::new(
+                    AI_E_IO,
+                    "dataset changed while it was being split; no output was kept",
+                ));
+            }
+            let mut warnings = framing_warnings(scan.blank_lines, scan.crlf_lines, scan.bom);
+            warnings.extend(assignment_warnings);
+            Ok(SplitSummary {
+                input_path: path.display().to_string(),
+                input_sha256: scan.sha256,
+                input_bytes: scan.file_bytes,
+                record_count: scan.records.len() as u64,
+                seed,
+                train_ratio,
+                train,
+                held_out,
+                stratify: Some(stratify.to_string()),
+                strata,
+                warnings,
+            })
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(&train_path);
+            let _ = std::fs::remove_file(&held_out_path);
+            Err(error)
+        }
+    }
+}
+
+struct StratifiedScan {
+    file_bytes: u64,
+    sha256: String,
+    blank_lines: u64,
+    crlf_lines: u64,
+    bom: bool,
+    records: Vec<Vec<u8>>,
+    label_ids: Vec<u32>,
+    labels: Vec<String>,
+}
+
+fn read_stratified_records(
+    path: &Path,
+    stratify: &str,
+    schema: Option<&Json>,
+    limits: StratifiedLimits,
+) -> Result<StratifiedScan, AiError> {
+    let file = File::open(path).map_err(|error| {
+        AiError::new(
+            AI_E_IO,
+            format!("cannot open dataset `{}`: {error}", path.display()),
+        )
+    })?;
+    let metadata = file.metadata().map_err(|error| {
+        AiError::new(
+            AI_E_IO,
+            format!("cannot stat dataset `{}`: {error}", path.display()),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(AiError::new(
+            AI_E_IO,
+            format!("cannot split `{}`: not a regular file", path.display()),
+        ));
+    }
+    if metadata.len() > limits.max_bytes {
+        return Err(format_error(format!(
+            "JSONL dataset is {} bytes, above the {} byte stratified split limit",
+            metadata.len(),
+            limits.max_bytes
+        )));
+    }
+
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = Vec::new();
+    let mut line_number = 0_u64;
+    let mut hashed_bytes = 0_u64;
+    let mut records: Vec<Vec<u8>> = Vec::new();
+    let mut label_ids: Vec<u32> = Vec::new();
+    let mut labels: Vec<String> = Vec::new();
+    let mut label_index: BTreeMap<String, u32> = BTreeMap::new();
+    let mut blank_lines = 0_u64;
+    let mut crlf_lines = 0_u64;
+    let mut bom = false;
+
+    loop {
+        let outcome = read_line_capped(
+            &mut reader,
+            &mut buffer,
+            MAX_DATASET_LINE_BYTES,
+            &mut hasher,
+        )
+        .map_err(io_failure)?;
+        let (bytes, too_long) = match outcome {
+            LineOutcome::Eof => break,
+            LineOutcome::Line { bytes, too_long } => (bytes, too_long),
+        };
+        line_number += 1;
+        hashed_bytes = hashed_bytes.saturating_add(bytes as u64);
+        if too_long {
+            return Err(format_error(format!(
+                "line {line_number} is longer than {MAX_DATASET_LINE_BYTES} bytes"
+            )));
+        }
+        if line_number == 1 && buffer.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            bom = true;
+        }
+        if buffer.ends_with(b"\r\n") {
+            crlf_lines += 1;
+        }
+        let Some(record) = record_bytes(&buffer, line_number == 1) else {
+            blank_lines += 1;
+            continue;
+        };
+        let value = parse_split_record(record, line_number)?;
+        if let Some(schema_value) = schema
+            && let Err(error) = schema::validate(schema_value, &value)
+        {
+            return Err(format_error(format!(
+                "line {line_number} does not satisfy the schema at {}: {}",
+                error.path, error.message
+            )));
+        }
+        let label_value = value.get(stratify).ok_or_else(|| {
+            format_error(format!(
+                "line {line_number}: missing stratification field `{stratify}`"
+            ))
+        })?;
+        let label = match label_value {
+            Json::String(_) | Json::Number(_) | Json::Bool(_) | Json::Null => {
+                label_value.to_compact_string()
+            }
+            other => {
+                return Err(format_error(format!(
+                    "line {line_number}: stratification field `{stratify}` is a JSON {}; labels must be strings, numbers, booleans, or null",
+                    json_type_name(other)
+                )));
+            }
+        };
+        if label.len() > MAX_STRATIFIED_LABEL_BYTES {
+            return Err(format_error(format!(
+                "line {line_number}: stratification label is {} bytes, above the {MAX_STRATIFIED_LABEL_BYTES} byte label limit",
+                label.len()
+            )));
+        }
+        if records.len() >= limits.max_records {
+            return Err(format_error(format!(
+                "dataset has more than {} records; the stratified split limit was reached",
+                limits.max_records
+            )));
+        }
+        let label_id = match label_index.get(&label) {
+            Some(&id) => id,
+            None => {
+                if labels.len() >= limits.max_labels {
+                    return Err(format_error(format!(
+                        "dataset has more than {} distinct label(s) in field `{stratify}`; the stratified split limit was reached",
+                        limits.max_labels
+                    )));
+                }
+                let id = labels.len() as u32;
+                labels.push(label.clone());
+                label_index.insert(label, id);
+                id
+            }
+        };
+        records.push(record.to_vec());
+        label_ids.push(label_id);
+    }
+    if hashed_bytes != metadata.len() {
+        return Err(format_error(format!(
+            "dataset size changed while it was being read: expected {} bytes, read {hashed_bytes}",
+            metadata.len()
+        )));
+    }
+    Ok(StratifiedScan {
+        file_bytes: metadata.len(),
+        sha256: hasher.finalize_hex(),
+        blank_lines,
+        crlf_lines,
+        bom,
+        records,
+        label_ids,
+        labels,
+    })
+}
+
+fn assign_strata(
+    seed: u64,
+    train_ratio: f64,
+    scan: &StratifiedScan,
+) -> (Vec<bool>, Vec<StratumSummary>, Vec<String>) {
+    let hashes: Vec<u64> = scan
+        .records
+        .iter()
+        .map(|record| split_record_hash(seed, record))
+        .collect();
+    let mut groups: Vec<Vec<usize>> = vec![Vec::new(); scan.labels.len()];
+    for (ordinal, &label_id) in scan.label_ids.iter().enumerate() {
+        groups[label_id as usize].push(ordinal);
+    }
+
+    let mut is_train = vec![false; scan.records.len()];
+    for group in &mut groups {
+        group.sort_by(|&left, &right| {
+            hashes[left]
+                .cmp(&hashes[right])
+                .then_with(|| scan.records[left].cmp(&scan.records[right]))
+        });
+        let count = group.len();
+        let mut train_count = ((count as f64) * train_ratio).floor() as usize;
+        if count >= 2 {
+            train_count = train_count.clamp(1, count - 1);
+        } else if train_ratio >= 0.5 {
+            train_count = 1;
+        }
+        for &ordinal in &group[..train_count] {
+            is_train[ordinal] = true;
+        }
+    }
+
+    let mut warnings = Vec::new();
+    let train_total = is_train.iter().filter(|value| **value).count();
+    if train_total == 0 {
+        let ordinal = extreme_split_ordinal(&hashes, scan, true);
+        is_train[ordinal] = true;
+        warnings.push(
+            "one record was moved to the train split to keep both splits non-empty".to_string(),
+        );
+    } else if train_total == scan.records.len() {
+        let ordinal = extreme_split_ordinal(&hashes, scan, false);
+        is_train[ordinal] = false;
+        warnings.push(
+            "one record was moved to the held-out split to keep both splits non-empty".to_string(),
+        );
+    }
+
+    let mut counts = vec![(0_u64, 0_u64); scan.labels.len()];
+    for (ordinal, &label_id) in scan.label_ids.iter().enumerate() {
+        let entry = &mut counts[label_id as usize];
+        entry.0 += 1;
+        if is_train[ordinal] {
+            entry.1 += 1;
+        }
+    }
+    let mut strata: Vec<StratumSummary> = scan
+        .labels
+        .iter()
+        .enumerate()
+        .map(|(label_id, label)| StratumSummary {
+            label: label.clone(),
+            records: counts[label_id].0,
+            train: counts[label_id].1,
+            held_out: counts[label_id].0 - counts[label_id].1,
+        })
+        .collect();
+    strata.sort_by(|left, right| left.label.cmp(&right.label));
+    (is_train, strata, warnings)
+}
+
+fn extreme_split_ordinal(hashes: &[u64], scan: &StratifiedScan, smallest: bool) -> usize {
+    let mut best = 0_usize;
+    for ordinal in 1..scan.records.len() {
+        let ordering = hashes[ordinal]
+            .cmp(&hashes[best])
+            .then_with(|| scan.records[ordinal].cmp(&scan.records[best]));
+        if (smallest && ordering.is_lt()) || (!smallest && ordering.is_gt()) {
+            best = ordinal;
+        }
+    }
+    best
+}
+
+fn write_stratified(
+    records: &[Vec<u8>],
+    is_train: &[bool],
+    train_file: File,
+    held_out_file: File,
+    train_path: &Path,
+    held_out_path: &Path,
+) -> Result<(SplitPart, SplitPart), AiError> {
+    if records.len() != is_train.len() {
+        return Err(AiError::new(
+            AI_E_INVALID_REQUEST,
+            "internal stratified split assignment mismatch",
+        ));
+    }
+    let mut train = RecordWriter {
+        file: train_file,
+        hasher: Sha256::new(),
+        bytes: 0,
+        records: 0,
+    };
+    let mut held_out = RecordWriter {
+        file: held_out_file,
+        hasher: Sha256::new(),
+        bytes: 0,
+        records: 0,
+    };
+    for (record, &to_train) in records.iter().zip(is_train) {
+        if to_train {
+            train.write_record(record, train_path)?;
+        } else {
+            held_out.write_record(record, held_out_path)?;
+        }
+    }
+    Ok((train.finish(train_path), held_out.finish(held_out_path)))
+}
+
+fn split_inner(
+    path: &Path,
+    out_dir: &Path,
+    train_ratio: f64,
+    seed: u64,
+    schema: Option<(&Path, &Json)>,
+) -> Result<SplitSummary, AiError> {
+    let cutoff = validate_train_ratio(train_ratio)?;
+    let (train_path, held_out_path) = prepare_split_paths(path, out_dir)?;
 
     let scan = scan_split_input(path, seed, cutoff, schema.map(|(_, value)| value))?;
     if scan.records < 2 {
@@ -1093,18 +1600,7 @@ fn split_inner(
         None
     };
 
-    let train_file = create_output(&train_path)?;
-    let held_out_file = match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&held_out_path)
-    {
-        Ok(file) => file,
-        Err(error) => {
-            let _ = std::fs::remove_file(&train_path);
-            return Err(output_error(&held_out_path, error));
-        }
-    };
+    let (train_file, held_out_file) = create_split_files(&train_path, &held_out_path)?;
 
     let result = write_split(
         path,
@@ -1169,6 +1665,8 @@ fn split_inner(
                 train_ratio,
                 train,
                 held_out,
+                stratify: None,
+                strata: Vec::new(),
                 warnings,
             })
         }
@@ -2234,6 +2732,8 @@ mod tests {
         assert_eq!(first.train.sha256, second.train.sha256);
         assert_eq!(first.held_out.sha256, second.held_out.sha256);
         assert_eq!(first.train.records, second.train.records);
+        assert_eq!(first.stratify, None);
+        assert!(first.strata.is_empty());
 
         let mut actual = Vec::new();
         for part in [&first.train, &first.held_out] {
@@ -2367,6 +2867,355 @@ mod tests {
         assert!(low.train.records > 0);
         assert!(low.held_out.records > 0);
         assert!(low.warnings.iter().any(|w| w.contains("moved to the")));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn stratified_split_preserves_proportions_and_order() {
+        let directory = temp_dir("stratified-basic");
+        let input = directory.join("corpus.jsonl");
+        let mut text = String::new();
+        let mut records = Vec::new();
+        {
+            let mut add = |label: &str, count: usize| {
+                for _ in 0..count {
+                    let id = records.len();
+                    let line = format!("{{\"id\":{id},\"label\":{label}}}");
+                    text.push_str(&line);
+                    text.push('\n');
+                    records.push(line);
+                }
+            };
+            add("\"cat\"", 10);
+            add("\"dog\"", 5);
+            add("\"eel\"", 1);
+            add("7", 4);
+            add("true", 2);
+            add("null", 2);
+        }
+        std::fs::write(&input, &text).expect("write dataset");
+
+        let first =
+            split_stratified(&input, &directory.join("first"), 0.5, 11, "label").expect("split");
+        assert_eq!(first.record_count, 24);
+        assert_eq!(first.stratify.as_deref(), Some("label"));
+        assert_eq!(first.train.records, 12);
+        assert_eq!(first.held_out.records, 12);
+        assert_eq!(
+            first.strata,
+            vec![
+                StratumSummary {
+                    label: "\"cat\"".to_string(),
+                    records: 10,
+                    train: 5,
+                    held_out: 5,
+                },
+                StratumSummary {
+                    label: "\"dog\"".to_string(),
+                    records: 5,
+                    train: 2,
+                    held_out: 3,
+                },
+                StratumSummary {
+                    label: "\"eel\"".to_string(),
+                    records: 1,
+                    train: 1,
+                    held_out: 0,
+                },
+                StratumSummary {
+                    label: "7".to_string(),
+                    records: 4,
+                    train: 2,
+                    held_out: 2,
+                },
+                StratumSummary {
+                    label: "null".to_string(),
+                    records: 2,
+                    train: 1,
+                    held_out: 1,
+                },
+                StratumSummary {
+                    label: "true".to_string(),
+                    records: 2,
+                    train: 1,
+                    held_out: 1,
+                },
+            ]
+        );
+
+        let json = first.to_json();
+        assert_eq!(json.get("stratify").and_then(Json::as_str), Some("label"));
+        let strata = json
+            .get("strata")
+            .and_then(Json::as_array)
+            .expect("strata array");
+        assert_eq!(strata.len(), 6);
+        assert_eq!(
+            strata[0].get("label").and_then(Json::as_str),
+            Some("\"cat\"")
+        );
+        assert_eq!(strata[0].get("records").and_then(Json::as_u64), Some(10));
+        assert_eq!(strata[0].get("train").and_then(Json::as_u64), Some(5));
+        assert_eq!(strata[0].get("held_out").and_then(Json::as_u64), Some(5));
+        assert_eq!(
+            strata
+                .iter()
+                .map(|stratum| stratum.get("train").and_then(Json::as_u64).unwrap())
+                .sum::<u64>(),
+            12
+        );
+
+        let train_body = std::fs::read_to_string(&first.train.path).expect("read train");
+        let held_out_body = std::fs::read_to_string(&first.held_out.path).expect("read held-out");
+        assert!(!train_body.contains('\r') && !held_out_body.contains('\r'));
+        let train_lines: Vec<&str> = train_body.lines().collect();
+        let held_out_lines: Vec<&str> = held_out_body.lines().collect();
+        let train_set: std::collections::HashSet<&str> = train_lines.iter().copied().collect();
+        let held_out_set: std::collections::HashSet<&str> =
+            held_out_lines.iter().copied().collect();
+        assert!(train_set.is_disjoint(&held_out_set));
+        let expected_train: Vec<&str> = records
+            .iter()
+            .map(String::as_str)
+            .filter(|line| train_set.contains(line))
+            .collect();
+        let expected_held_out: Vec<&str> = records
+            .iter()
+            .map(String::as_str)
+            .filter(|line| held_out_set.contains(line))
+            .collect();
+        assert_eq!(train_lines, expected_train, "train preserves input order");
+        assert_eq!(
+            held_out_lines, expected_held_out,
+            "held-out preserves input order"
+        );
+
+        let second = split_stratified(&input, &directory.join("second"), 0.5, 11, "label")
+            .expect("second split");
+        assert_eq!(first.train.sha256, second.train.sha256);
+        assert_eq!(first.held_out.sha256, second.held_out.sha256);
+        assert_eq!(first.strata, second.strata);
+
+        let third = split_stratified(&input, &directory.join("third"), 0.5, 12, "label")
+            .expect("different seed");
+        assert_ne!(first.train.sha256, third.train.sha256);
+
+        assert_eq!(
+            std::fs::read_to_string(&input).expect("reread input"),
+            text,
+            "the input dataset must not be modified"
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn stratified_split_distinguishes_label_spellings_and_singletons() {
+        let directory = temp_dir("stratified-labels");
+        let input = directory.join("types.jsonl");
+        let text = "\
+{\"id\":0,\"label\":\"1\"}
+{\"id\":1,\"label\":\"1\"}
+{\"id\":2,\"label\":\"1\"}
+{\"id\":3,\"label\":\"1\"}
+{\"id\":4,\"label\":1}
+{\"id\":5,\"label\":1}
+{\"id\":6,\"label\":1}
+{\"id\":7,\"label\":1}
+";
+        std::fs::write(&input, text).expect("write typed labels");
+        let split = split_stratified(&input, &directory.join("types-out"), 0.5, 3, "label")
+            .expect("split typed labels");
+        assert_eq!(
+            split
+                .strata
+                .iter()
+                .map(|stratum| stratum.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["\"1\"", "1"]
+        );
+        assert!(
+            split
+                .strata
+                .iter()
+                .all(|stratum| stratum.records == 4 && stratum.train == 2 && stratum.held_out == 2)
+        );
+
+        let singles = directory.join("singles.jsonl");
+        std::fs::write(&singles, "{\"label\":\"a\"}\n{\"label\":\"b\"}\n")
+            .expect("write singletons");
+        let high = split_stratified(&singles, &directory.join("high"), 0.9, 5, "label")
+            .expect("singleton high ratio");
+        assert_eq!((high.train.records, high.held_out.records), (1, 1));
+        assert!(
+            high.warnings
+                .iter()
+                .any(|warning| warning.contains("held-out")),
+            "{:?}",
+            high.warnings
+        );
+        let low = split_stratified(&singles, &directory.join("low"), 0.1, 5, "label")
+            .expect("singleton low ratio");
+        assert_eq!((low.train.records, low.held_out.records), (1, 1));
+        assert!(
+            low.warnings.iter().any(|warning| warning.contains("train")),
+            "{:?}",
+            low.warnings
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn stratified_split_rejects_bad_labels_limits_and_schema() {
+        let directory = temp_dir("stratified-errors");
+        let input = directory.join("data.jsonl");
+
+        std::fs::write(&input, "{\"label\":\"a\"}\n{\"label\":\"b\"}\n").expect("write dataset");
+        let error = split_stratified(&input, &directory.join("empty"), 0.5, 0, "")
+            .expect_err("empty field must fail");
+        assert_eq!(error.code, AI_E_INVALID_REQUEST);
+        assert!(
+            error.message.contains("must not be empty"),
+            "{}",
+            error.message
+        );
+
+        std::fs::write(&input, "{\"other\":1}\n{\"other\":2}\n").expect("write missing field");
+        let error = split_stratified(&input, &directory.join("missing"), 0.5, 0, "label")
+            .expect_err("missing field must fail");
+        assert_eq!(error.code, AI_E_FORMAT);
+        assert!(
+            error.message.contains("missing stratification field"),
+            "{}",
+            error.message
+        );
+
+        std::fs::write(&input, "{\"label\":[1]}\n{\"label\":{\"a\":1}}\n")
+            .expect("write non-scalar labels");
+        let error = split_stratified(&input, &directory.join("nonscalar"), 0.5, 0, "label")
+            .expect_err("non-scalar label must fail");
+        assert_eq!(error.code, AI_E_FORMAT);
+        assert!(
+            error
+                .message
+                .contains("labels must be strings, numbers, booleans, or null"),
+            "{}",
+            error.message
+        );
+
+        std::fs::write(&input, "{\"label\":\"a\"}\n{\"label\":\"b\"}\n").expect("write dataset");
+        for ratio in [0.0, 1.0, -0.5, f64::NAN, f64::INFINITY] {
+            let error = split_stratified(&input, &directory.join("bad-ratio"), ratio, 0, "label")
+                .expect_err("invalid ratio must fail");
+            assert_eq!(error.code, AI_E_INVALID_REQUEST);
+        }
+        std::fs::write(&input, "{\"label\":\"a\"}\n").expect("write one record");
+        let error = split_stratified(&input, &directory.join("one"), 0.5, 0, "label")
+            .expect_err("one record must fail");
+        assert_eq!(error.code, AI_E_INVALID_REQUEST);
+        assert!(error.message.contains("at least 2"), "{}", error.message);
+
+        std::fs::write(
+            &input,
+            "{\"label\":\"a\"}\n{\"label\":\"b\"}\n{\"label\":\"a\"}\n",
+        )
+        .expect("write cap dataset");
+        let error = stratified_split_inner(
+            &input,
+            &directory.join("records"),
+            0.5,
+            0,
+            "label",
+            None,
+            StratifiedLimits {
+                max_bytes: MAX_STRATIFIED_BYTES,
+                max_records: 2,
+                max_labels: MAX_STRATIFIED_LABELS,
+            },
+        )
+        .expect_err("record cap must fail");
+        assert_eq!(error.code, AI_E_FORMAT);
+        assert!(
+            error.message.contains("more than 2 records"),
+            "{}",
+            error.message
+        );
+        let error = stratified_split_inner(
+            &input,
+            &directory.join("labels"),
+            0.5,
+            0,
+            "label",
+            None,
+            StratifiedLimits {
+                max_bytes: MAX_STRATIFIED_BYTES,
+                max_records: MAX_STRATIFIED_RECORDS,
+                max_labels: 1,
+            },
+        )
+        .expect_err("label cap must fail");
+        assert!(
+            error.message.contains("more than 1 distinct label"),
+            "{}",
+            error.message
+        );
+        let error = stratified_split_inner(
+            &input,
+            &directory.join("bytes"),
+            0.5,
+            0,
+            "label",
+            None,
+            StratifiedLimits {
+                max_bytes: 4,
+                max_records: MAX_STRATIFIED_RECORDS,
+                max_labels: MAX_STRATIFIED_LABELS,
+            },
+        )
+        .expect_err("byte cap must fail");
+        assert!(
+            error.message.contains("above the 4 byte"),
+            "{}",
+            error.message
+        );
+
+        let long = format!(
+            "{{\"label\":\"{}\"}}\n",
+            "a".repeat(MAX_STRATIFIED_LABEL_BYTES)
+        );
+        std::fs::write(&input, format!("{long}{long}")).expect("write long label");
+        let error = split_stratified(&input, &directory.join("long-label"), 0.5, 0, "label")
+            .expect_err("long label must fail");
+        assert!(error.message.contains("label limit"), "{}", error.message);
+
+        std::fs::write(&input, "{\"label\":\"a\"}\n{\"label\":\"b\"}\n").expect("write dataset");
+        let schema = directory.join("schema.json");
+        std::fs::write(&schema, r#"{"type":"object","required":["text"]}"#).expect("write schema");
+        let error = split_stratified_with_schema(
+            &input,
+            &directory.join("schema-out"),
+            0.5,
+            0,
+            "label",
+            &schema,
+        )
+        .expect_err("schema violation must fail");
+        assert_eq!(error.code, AI_E_FORMAT);
+        assert!(
+            error.message.contains("does not satisfy the schema"),
+            "{}",
+            error.message
+        );
+
+        let out = directory.join("overwrite");
+        split_stratified(&input, &out, 0.5, 0, "label").expect("first stratified split");
+        let error =
+            split_stratified(&input, &out, 0.5, 0, "label").expect_err("overwrite must fail");
+        assert_eq!(error.code, AI_E_IO);
+        assert!(
+            error.message.contains("refusing to overwrite"),
+            "{}",
+            error.message
+        );
         let _ = std::fs::remove_dir_all(directory);
     }
 

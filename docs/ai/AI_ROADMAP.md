@@ -96,6 +96,12 @@ run end-to-end; security tests cover denied capabilities and redaction.
 - [x] Deterministic train/held-out splits: `vantyx ai split` assigns records
       by a seeded content hash, validates first, never overwrites, and reports
       actual counts and output digests.
+- [x] Label-stratified splits: `vantyx ai split --stratify <field>` groups
+      records by a top-level scalar label, assigns exact per-label counts under
+      a 64 MiB/1,000,000-record/1,000-label/1,024-byte cap, preserves input
+      order, reports per-label counts, and retains the deterministic non-empty
+      fallback. Multiple fields, weights, and token-aware balancing remain
+      future work.
 - [x] Exact duplicate-record removal: `vantyx ai dedup` validates first, keeps
       the first occurrence in input order, uses a domain-separated SHA-256
       digest, never overwrites, caps the in-memory digest set at 1,000,000

@@ -4,11 +4,24 @@
 - Updated: 2026-11-26
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `c54c61c` (deterministic JSONL dataset shuffling; T-101)
-- Remote: `origin/main` at `c54c61c`; CI run 45923211883 green
+- Last commit: `5d5655b` (record T-101 CI run 45923211883); T-102 is in the
+  working tree
+- Remote: `origin/main` at `5d5655b`; CI run 45923211883 green on `c54c61c`
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
+
+T-102 — Label-stratified JSONL dataset splits. Status: VERIFIED locally; commit
+and CI pending. `vantyx ai split <file> --out-dir <dir> --stratify <field>` runs
+the dataset validation gate first, groups records by the compact JSON spelling
+of a top-level string, number, boolean, or null field, and assigns
+`floor(n * ratio)` per label (clamped to `1..n-1` for `n >= 2`). Singleton
+labels go to the majority split; one extreme-hash record moves only if a global
+split would be empty. Outputs preserve input order. Bounds: 64 MiB input,
+1,000,000 records, 1,000 labels, 1,024-byte label. Three unit tests and two CLI
+tests; 718-test gate. See `ACTIVE_TASK.md`,
+`docs/ai/DATASET_STRATIFICATION.md`, and
+`docs/decisions/ADR-0049-label-stratified-dataset-splits.md`.
 
 T-101 — Deterministic JSONL dataset shuffle. Status: VERIFIED; pushed in
 `c54c61c`; CI run 45923211883 green. `vantyx ai shuffle <file> --out <file> [--seed <n>]` runs the

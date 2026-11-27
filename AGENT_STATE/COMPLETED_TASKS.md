@@ -3,6 +3,13 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-102 — Label-stratified JSONL dataset splits (2026-11-26; 718-test gate;
+  `vantyx ai split --stratify <field>` groups records by the compact JSON
+  spelling of a top-level scalar, assigns exact per-label counts, keeps every
+  multi-record label in both splits, sends singletons to the majority split,
+  preserves input order, reports sorted per-label counts, and bounds memory at
+  64 MiB/1,000,000 records/1,000 labels; three unit tests and two CLI tests;
+  commit and CI pending at record time).
 - T-101 — Deterministic JSONL dataset shuffle (2026-11-26; 713-test gate;
   `vantyx ai shuffle` validates first, orders records by a domain-separated
   SHA-256 of the seed and exact record bytes with a byte tie-breaker, refuses

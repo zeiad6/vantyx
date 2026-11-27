@@ -384,6 +384,10 @@ executes a model, and remote HTTPS requires explicit opt-in.
 # Deterministic train/held-out split (never overwrites existing files)
 ./target/release/vantyx ai split examples/ai/train.jsonl \
   --out-dir /tmp/vtx-splits --train-ratio 0.9 --seed 7 --json
+# Preserve per-label proportions (top-level scalar field)
+./target/release/vantyx ai split examples/ai/train.jsonl \
+  --out-dir /tmp/vtx-stratified --train-ratio 0.9 --seed 7 \
+  --stratify label --json
 # Remove exact duplicate records, keeping the first occurrence
 ./target/release/vantyx ai dedup examples/ai/train.jsonl \
   --out /tmp/vtx-train.unique.jsonl --json

@@ -4,6 +4,26 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-26 — Label stratification assigns exact per-label counts
+
+- Group records by the compact JSON spelling of one top-level scalar field
+  (string, number, boolean, null). Spellings are compared exactly, so string
+  `"1"` and number `1` are different labels; integral floats and integers share
+  a spelling (`1.0` labels as `1`), and labels are not Unicode-normalized.
+- Assign `floor(n * ratio)` train records per label, clamped to `[1, n-1]` when
+  `n >= 2`, so every multi-record label appears in both splits. Singleton
+  labels go to the majority split; only when a global split would be empty does
+  one extreme-hash record move, with a warning. This makes the per-label
+  guarantee explicit at the cost of a global ratio that can differ from the
+  request.
+- Order each group by the first 64 bits of the existing seeded split hash with
+  record bytes as a tie-breaker, and keep input order in the outputs. This
+  reuses T-098's domain separation, makes assignment independent of line order,
+  and leaves shuffling to the separate `ai shuffle` step.
+- Hold the dataset in memory and cap it at 64 MiB, 1,000,000 records, 1,000
+  labels, and a 1,024-byte compact label; no tokenizer-aware balancing or
+  external-memory grouping until those contracts and tests exist.
+
 ## 2026-11-26 — Dataset shuffle orders by a seeded content hash
 
 - Define the permutation as a sort by

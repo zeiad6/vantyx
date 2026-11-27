@@ -16,7 +16,7 @@
 - Native memory reclamation design review — Deferred; a prior
   `compiler-architect` subagent run failed with “Free usage limit reached”.
   Retry when subagent capacity is available.
-- Independent `qa-verifier` verification of T-062–T-066 and T-072–T-098 —
+- Independent `qa-verifier` verification of T-062–T-066 and T-072–T-102 —
   Blocked by the subagent provider's free usage limit. The primary session's
   tests and sanitizer runs remain the recorded evidence; retry independent
   verification when capacity returns.

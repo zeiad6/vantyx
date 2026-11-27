@@ -1,6 +1,6 @@
 # AI Architecture
 
-Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented and the cloud path verified live on 2026-11-24 (local-model verification still blocked); AI-3 structured output and streamed text chat complete (streaming tool calls and cancellation pending); AI-4 host-side embeddings and retrieval complete (a cloud embedding model was exercised on 2026-11-24; local embedding models pending); offline GGUF/Safetensors inspection and Safetensors shard-index aggregation with SHA-256 provenance implemented (no weight loading); bounded JSONL dataset validation with optional schema validation, field/type summaries, and streamed SHA-256 implemented; deterministic train/held-out dataset splitting and exact duplicate-record removal implemented
+Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented and the cloud path verified live on 2026-11-24 (local-model verification still blocked); AI-3 structured output and streamed text chat complete (streaming tool calls and cancellation pending); AI-4 host-side embeddings and retrieval complete (a cloud embedding model was exercised on 2026-11-24; local embedding models pending); offline GGUF/Safetensors inspection and Safetensors shard-index aggregation with SHA-256 provenance implemented (no weight loading); bounded JSONL dataset validation with optional schema validation, field/type summaries, and streamed SHA-256 implemented; deterministic train/held-out dataset splitting, label-stratified splitting, and exact duplicate-record removal implemented
 Date: 2026-11-26
 Related: `AI_RESEARCH.md`, `AI_SECURITY.md`, `AI_ROADMAP.md`, ADR-0007,
 ADR-0014, ADR-0015, ADR-0017, ADR-0018, ADR-0024, ADR-0025
@@ -66,7 +66,7 @@ Rust API while language-level integration remains blocked.
 | `ai/sse.rs` | Incremental server-sent-events parser | Buffer without bound |
 | `ai/tokens.rs` | Labelled token estimate and budget checks | Claim exact model tokenization |
 | `ai/model.rs` | Bounded GGUF/Safetensors header inspection, Safetensors shard-index aggregation, tensor-range validation, streaming SHA-256 | Load weights, execute model code, or download anything |
-| `ai/dataset.rs` | Bounded JSONL validation, optional schema validation, top-level field/type summaries, numbered invalid lines, streaming SHA-256, deterministic train/held-out splits, exact duplicate-record removal, deterministic seeded shuffling | Tokenize, canonicalize, or modify datasets |
+| `ai/dataset.rs` | Bounded JSONL validation, optional schema validation, top-level field/type summaries, numbered invalid lines, streaming SHA-256, deterministic train/held-out splits, label-stratified splits, exact duplicate-record removal, deterministic seeded shuffling | Tokenize, canonicalize, or modify datasets |
 | `ai/extract.rs` | Strict JSON extraction, schema validation, bounded repair, usage accounting | Return unvalidated model output or exceed the repair limit |
 | `ai/embedding.rs` | Vector math, normalization, in-memory index | Hide O(n) search cost |
 | `ai/bm25.rs` | Deterministic lexical retrieval | Claim semantic retrieval |
@@ -245,6 +245,31 @@ a split, but duplicates are not removed. A dataset with at least two records
 always produces two non-empty files; one record is moved deterministically and
 the report says so. See [DATASET_SPLITTING.md](DATASET_SPLITTING.md) and
 [ADR-0046](../decisions/ADR-0046-deterministic-dataset-splits.md).
+
+## Stratified splitting path
+
+`vantyx ai split <file> --out-dir <dir> --stratify <field>` keeps the same
+validation and overwrite rules but assigns by label:
+
+```text
+inspect the input and, when supplied, the schema
+  → reject invalid lines or schema-invalid records before creating outputs
+  → read, validate, and hash every record into a bounded in-memory list
+  → group records by the compact spelling of a top-level scalar label
+  → order each group by the first 64 bits of SHA-256(domain || seed || record)
+  → assign floor(n * ratio) per label, clamped to 1..n-1 for n >= 2
+  → send singleton labels to the majority split
+  → move one extreme-hash record only if the global split would be empty
+  → create both outputs with create_new (never overwrite)
+  → write records in input order and remove both files on any failure
+  → text or --json report with per-label counts and output SHA-256 values
+```
+
+The whole dataset is held in memory under a 64 MiB input cap, 1,000,000
+records, 1,000 labels, and 1,024 bytes per compact label. The unstratified path
+remains streaming under its 256 MiB cap. See
+[DATASET_STRATIFICATION.md](DATASET_STRATIFICATION.md) and
+[ADR-0049](../decisions/ADR-0049-label-stratified-dataset-splits.md).
 
 ## Dataset deduplication path
 

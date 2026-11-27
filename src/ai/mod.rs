@@ -41,11 +41,13 @@ pub use budget::Budget;
 pub use config::AiConfig;
 pub use dataset::{
     DEFAULT_TRAIN_RATIO, DatasetSummary, DedupSummary, FieldSummary, InvalidLine, SchemaSummary,
-    SchemaViolation, ShuffleSummary, SplitPart, SplitSummary, TypeCount,
+    SchemaViolation, ShuffleSummary, SplitPart, SplitSummary, StratumSummary, TypeCount,
     deduplicate as deduplicate_dataset, deduplicate_with_schema as deduplicate_dataset_with_schema,
     inspect as inspect_dataset, inspect_with_schema as inspect_dataset_with_schema,
     shuffle as shuffle_dataset, shuffle_with_schema as shuffle_dataset_with_schema,
-    split as split_dataset, split_with_schema as split_dataset_with_schema,
+    split as split_dataset, split_stratified as split_dataset_stratified,
+    split_stratified_with_schema as split_dataset_stratified_with_schema,
+    split_with_schema as split_dataset_with_schema,
 };
 pub use embedding::{SearchHit, Vector, VectorEntry, VectorIndex};
 pub use embedding_provider::{

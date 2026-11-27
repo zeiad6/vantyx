@@ -46,7 +46,9 @@ Usage:
   vantyx ai split <file> --out-dir <dir> [options]
                                    Split a validated JSONL dataset into
                                    deterministic train and held-out files
-                                   without overwriting existing files
+                                   without overwriting existing files;
+                                   `--stratify <field>` preserves per-label
+                                   proportions for a top-level scalar field
   vantyx ai dedup <file> --out <file> [options]
                                    Remove exact duplicate JSONL records,
                                    keeping the first occurrence, without
@@ -75,6 +77,8 @@ Options:
   --out-dir <dir>         Output directory for `split` (required)
   --train-ratio <n>       Train fraction for `split`, greater than 0 and
                           less than 1 (default 0.9)
+  --stratify <field>      Preserve per-label proportions in `split` using a
+                          top-level string, number, boolean, or null field
   --seed <n>              Deterministic split or shuffle seed (default 0)
   --repair-attempts <n>   Repair attempts after invalid output (0-3; default 1)
   --response <text>       Offline mock response for `extract`; may be repeated
@@ -1879,6 +1883,7 @@ fn dataset_split(args: &[String]) -> i32 {
     let mut path: Option<&str> = None;
     let mut out_dir: Option<&str> = None;
     let mut schema_path: Option<&str> = None;
+    let mut stratify: Option<&str> = None;
     let mut train_ratio = ai::DEFAULT_TRAIN_RATIO;
     let mut seed = 0_u64;
     let mut ratio_given = false;
@@ -1958,6 +1963,22 @@ fn dataset_split(args: &[String]) -> i32 {
                 }
                 schema_path = Some(value);
             }
+            "--stratify" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    eprintln!("error: `--stratify` requires a top-level field name");
+                    return 64;
+                };
+                if value.is_empty() {
+                    eprintln!("error: `--stratify` requires a non-empty field name");
+                    return 64;
+                }
+                if stratify.is_some() {
+                    eprintln!("error: `--stratify` may be given only once");
+                    return 64;
+                }
+                stratify = Some(value);
+            }
             other if other.starts_with('-') => {
                 eprintln!("error: unknown option `{other}` for `vantyx ai split`");
                 return 64;
@@ -1997,15 +2018,30 @@ fn dataset_split(args: &[String]) -> i32 {
         return 1;
     }
 
-    let split = match schema_path {
-        Some(schema_path) => ai::split_dataset_with_schema(
+    let split = match (stratify, schema_path) {
+        (Some(field), Some(schema_path)) => ai::split_dataset_stratified_with_schema(
+            Path::new(path),
+            Path::new(out_dir),
+            train_ratio,
+            seed,
+            field,
+            Path::new(schema_path),
+        ),
+        (Some(field), None) => ai::split_dataset_stratified(
+            Path::new(path),
+            Path::new(out_dir),
+            train_ratio,
+            seed,
+            field,
+        ),
+        (None, Some(schema_path)) => ai::split_dataset_with_schema(
             Path::new(path),
             Path::new(out_dir),
             train_ratio,
             seed,
             Path::new(schema_path),
         ),
-        None => ai::split_dataset(Path::new(path), Path::new(out_dir), train_ratio, seed),
+        (None, None) => ai::split_dataset(Path::new(path), Path::new(out_dir), train_ratio, seed),
     };
     let split = match split {
         Ok(summary) => summary,
@@ -2021,6 +2057,16 @@ fn dataset_split(args: &[String]) -> i32 {
         println!("records: {}", split.record_count);
         println!("seed: {}", split.seed);
         println!("train ratio: {}", split.train_ratio);
+        if let Some(field) = &split.stratify {
+            println!("stratify: {field}");
+            println!("strata:");
+            for stratum in &split.strata {
+                println!(
+                    "  {}: {} records ({} train, {} held-out)",
+                    stratum.label, stratum.records, stratum.train, stratum.held_out
+                );
+            }
+        }
         println!(
             "train: {} ({} records, {} bytes)",
             split.train.path, split.train.records, split.train.bytes
@@ -2424,7 +2470,7 @@ fn report_error(error: &ai::AiError) -> i32 {
     }
     if error.code == ai::provider::AI_E_FORMAT {
         eprintln!(
-            "help: supported inputs are GGUF versions 2/3, Safetensors, and Safetensors shard indexes; the file was not modified"
+            "help: check the input format for the command; `inspect` accepts GGUF v2/v3, Safetensors, and Safetensors shard indexes, while dataset commands accept JSONL; the file was not modified"
         );
     }
     1

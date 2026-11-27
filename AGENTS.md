@@ -85,10 +85,12 @@ python3 benchmarks/run.py --reps 5
   45503321172 passed on `66b4efc` with T-075, run 45504177763 passed on
   `de0bac7` with the rustfmt gate, run 45507195701 passed on `1aba7ba`
   with T-077, and run 45920832199 passed on `33c966e` with T-078–T-100 and the
-  skill validator, and run 45923211883 passed on `c54c61c` with T-101). The
+  skill validator, run 45923211883 passed on `c54c61c` with T-101, and T-102
+  label-stratified splits are verified locally with the 718-test gate; CI for
+  T-102 is pending). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 713 passed (399 library unit + 15 CLI unit + 45 AI integration +
+- `cargo test`: 718 passed (402 library unit + 15 CLI unit + 47 AI integration +
   113 e2e + 141 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
@@ -170,7 +172,10 @@ python3 benchmarks/run.py --reps 5
   deterministic seeded shuffling that orders records by a domain-separated
   SHA-256 of the seed and record bytes under 64 MiB/1,000,000-record in-memory
   caps, with validation gates, overwrite refusal, and input/output provenance
-  (T-101, ADR-0048), and `vantyx ai`. A live cloud OpenAI-compatible run on 2026-11-24 covered
+  (T-101, ADR-0048), label-stratified splits that group by a top-level scalar
+  label and assign exact per-label counts under 64 MiB/1,000,000-record/
+  1,000-label/1,024-byte caps with a deterministic non-empty fallback (T-102,
+  ADR-0049), and `vantyx ai`. A live cloud OpenAI-compatible run on 2026-11-24 covered
   model discovery, chat, streaming, validated extraction, 768-dimension
   embeddings, semantic RAG/search, and retrieval evaluation; the 401/429/
   timeout paths are covered by a loopback harness. A later retry was rejected
@@ -204,8 +209,11 @@ python3 benchmarks/run.py --reps 5
   guaranteed), no
   streaming tool calls or interactive cancellation, no constrained
   decoding/model manager/keyring, no PDF/HTML/Office ingestion, or grounded
-  generation, dataset inspection is JSONL-only and does not tokenize, stratify
-  by label, or implement full JSON Schema; deduplication is exact-byte only (no
+  generation, dataset inspection is JSONL-only and does not tokenize or
+  implement full JSON Schema; label-stratified splits use one top-level scalar
+  field, one label per record, and in-memory grouping under 64 MiB/1,000,000
+  records/1,000 labels (no weights, token-aware balancing, or external-memory
+  grouping); deduplication is exact-byte only (no
   JSON canonicalization or near-duplicate detection), splits are deterministic
   but not shuffled, and shuffling holds the dataset in memory under 64 MiB and
   1,000,000 records (no external-memory sort), no language-level AI

@@ -14,8 +14,14 @@ contacts a provider. It does not modify the input file.
 vantyx ai split train.jsonl --out-dir splits
 vantyx ai split train.jsonl --out-dir splits --train-ratio 0.8 --seed 7
 vantyx ai split train.jsonl --out-dir splits --schema record.schema.json
+vantyx ai split train.jsonl --out-dir splits --stratify label
 vantyx ai split train.jsonl --out-dir splits --json
 ```
+
+`--stratify <field>` preserves per-label proportions using a top-level scalar
+field. It is documented separately in
+[DATASET_STRATIFICATION.md](DATASET_STRATIFICATION.md); without it, the
+streaming hash-threshold behavior described here is unchanged.
 
 For an input named `train.jsonl`, the outputs are:
 
@@ -50,8 +56,10 @@ warnings:
 
 `--json` prints one compact object with stable keys: `format`, `input`,
 `input_sha256`, `input_bytes`, `records`, `seed`, `train_ratio`, `train`,
-`held_out`, and `warnings`. Each part contains `path`, `records`, `bytes`, and
-`sha256`.
+`held_out`, `stratify`, `strata`, and `warnings`. Each part contains `path`,
+`records`, `bytes`, and `sha256`. For an unstratified split, `stratify` is
+`null` and `strata` is empty; a stratified split populates them as described in
+[DATASET_STRATIFICATION.md](DATASET_STRATIFICATION.md).
 
 ## Determinism
 
@@ -124,7 +132,7 @@ usable for training and evaluation without introducing randomness.
 
 | Limit | Value |
 | --- | --- |
-| Dataset file size | 256 MiB |
+| Dataset file size | 256 MiB (64 MiB with `--stratify`) |
 | Bytes per line | 16 MiB |
 | Schema file size | 16 MiB |
 | Minimum records | 2 |
@@ -137,8 +145,10 @@ so the gate and the split cannot disagree about validity.
 ## What it does not do
 
 - It does not shuffle either output; records keep their relative input order.
-- It does not deduplicate records, count tokens, or stratify by label. Use
-  `vantyx ai dedup` for exact byte-identical duplicate removal.
+- It does not deduplicate records or count tokens. Use `vantyx ai dedup` for
+  exact byte-identical duplicate removal.
+- It does not stratify by label unless `--stratify` is given; see
+  [DATASET_STRATIFICATION.md](DATASET_STRATIFICATION.md).
 - It does not create a validation or test split beyond the single held-out set.
 - It does not append to or overwrite existing files.
 - It does not make the pair atomic across a crash; a failed run removes the
@@ -149,7 +159,9 @@ so the gate and the split cannot disagree about validity.
 - `vantyx ai dataset` — bounded JSONL inspection and schema validation.
 - `vantyx ai dedup` — exact duplicate-record removal before splitting.
 - `docs/ai/DATASET_INSPECTION.md` — the inspection format and limits.
+- `docs/ai/DATASET_STRATIFICATION.md` — label-stratified splits.
 - `docs/ai/DATASET_DEDUPLICATION.md` — exact record identity and limits.
 - ADR-0043 — bounded JSONL dataset inspection.
 - ADR-0046 — deterministic train/held-out splitting.
 - ADR-0047 — exact dataset deduplication.
+- ADR-0049 — label-stratified dataset splits.

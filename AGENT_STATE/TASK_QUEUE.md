@@ -2,6 +2,16 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
+## Completed in the current change (T-102; commit and CI pending)
+
+- T-102 — Label-stratified JSONL dataset splits. VERIFIED locally;
+  `vantyx ai split --stratify <field>` groups records by the compact JSON
+  spelling of a top-level scalar, assigns exact per-label counts, keeps every
+  multi-record label in both splits, sends singletons to the majority split,
+  preserves input order, and reports per-label counts. Bounds: 64 MiB input,
+  1,000,000 records, 1,000 labels, 1,024-byte label. Three unit tests and two
+  CLI tests.
+
 ## Completed in `c54c61c` (CI run 45923211883 green)
 
 - T-101 — Deterministic JSONL dataset shuffle. VERIFIED; `vantyx ai shuffle`
@@ -72,10 +82,10 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## Ready
 
-- Dataset tooling follow-ups — tokenizer-aware counts and label stratification.
-  Schema validation, splits, exact deduplication, and deterministic shuffle
-  shipped in T-094/T-098/T-100/T-101; each follow-up needs its own bounded
-  contract and tests.
+- Dataset tooling follow-ups — tokenizer-aware counts. Schema validation,
+  splits, label-stratified splits, exact deduplication, and deterministic
+  shuffle shipped in T-094/T-098/T-100/T-101/T-102; token-aware counts need
+  their own bounded contract and tests.
 - Skill maintenance — keep `docs/AGENT_SKILLS.md` synchronized and extend the
   CI validator when a skill is added or changed; frontmatter, required
   sections, size, and unique IDs are already checked.

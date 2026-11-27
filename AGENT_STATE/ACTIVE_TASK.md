@@ -1,5 +1,58 @@
 # Active Task
 
+## T-102 — Label-stratified JSONL dataset splits
+
+- Status: VERIFIED locally; commit and CI pending
+- Priority: P3 (AI host tooling)
+- Dependencies: T-092, T-094, T-098, T-100, T-101, ADR-0043, ADR-0044,
+  ADR-0046, ADR-0047, ADR-0048
+
+### Implemented
+
+- `src/ai/dataset.rs` adds `StratumSummary`, the `MAX_STRATIFIED_*` constants,
+  `split_stratified`, `split_stratified_with_schema`, `stratified_split_inner`,
+  `read_stratified_records`, `assign_strata`, `extreme_split_ordinal`,
+  `write_stratified`, and `StratifiedLimits`. Labels are the compact JSON
+  spelling of a top-level string, number, boolean, or null field.
+- Each label group is ordered by the first 64 bits of
+  `SHA-256("vantyx-dataset-split-v1\0" || seed_le64 || record_bytes)` with
+  record bytes as a tie-breaker. Hashes are precomputed once; strata are counted
+  in one pass. Train count is `floor(n * ratio)`, clamped to `[1, n-1]` for
+  `n >= 2`; singleton labels go to the majority split; one extreme-hash record
+  moves only if a global split would be empty, with a warning.
+- `SplitSummary` gains `stratify` and `strata`; the JSON report always emits
+  both (`null` and `[]` for the unstratified path). Outputs preserve input
+  order.
+- Bounds: 64 MiB input, 1,000,000 records, 1,000 labels, 1,024-byte compact
+  label, and the existing 16 MiB line cap.
+- `src/ai_cli.rs` adds `--stratify <field>` with duplicate/empty checks, text
+  and JSON strata output, usage text, and a corrected `AI_E_FORMAT` help line
+  for JSONL commands.
+- `docs/ai/DATASET_STRATIFICATION.md`, ADR-0049,
+  `docs/ai/DATASET_SPLITTING.md`, `docs/ai/AI_ARCHITECTURE.md`,
+  `docs/ai/AI_ROADMAP.md`, and the README document the behavior and limits.
+
+### Evidence
+
+- 2026-11-26: `cargo fmt --check --all` and
+  `cargo clippy --all-targets -- -D warnings` clean; `cargo test` = 718
+  passed (402 library unit + 15 CLI unit + 47 AI integration + 113 e2e + 141
+  native, 0 failed); `cargo build --release` succeeded; all five examples
+  built natively and matched `vantyx run` with `cmp`; seven Python self-tests
+  OK; `differential_fuzz.py --iterations 100 --seed 1` = 100/100 agree; a
+  supplemental 500-iteration seed-11 audit = 500/500 agree; the 13-skill
+  validator and the link checker passed.
+- Independent QA review was unavailable (subagent provider free-usage limit);
+  the change is VERIFIED locally, not independently reviewed.
+
+### Remaining
+
+- Commit, push, and record the CI run.
+- Scope limits: one field only, no weights or token-aware balancing, no output
+  shuffle or deduplication, no external-memory grouping, and the global ratio
+  can differ from the requested ratio. `1.0` and `1` share a label spelling;
+  `"1"` is distinct.
+
 ## T-101 — Deterministic JSONL dataset shuffle
 
 - Status: VERIFIED; pushed in `c54c61c`; CI run 45923211883 green
