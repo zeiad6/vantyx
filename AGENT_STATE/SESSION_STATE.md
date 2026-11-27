@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `9e42a95` (T-106); T-107 is locally verified with the commit pending. The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
+- Last commit: `9bb2353` (T-107); T-108 is locally verified with the commit pending. The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -19,8 +19,26 @@
 
 ## Current task
 
+T-108 — Native standard descriptors match Rust startup behavior. Status:
+VERIFIED locally; commit and CI pending. Rust's runtime opens `/dev/null` for
+any of descriptors 0, 1, or 2 that is closed before `main`, so the interpreter
+silently discarded `print` output when stdout was closed. Generated native code
+inherited the closed descriptor and failed with `R0013` `Bad file descriptor
+(os error 9)`, and a later `open` could reuse descriptor 1 while the C
+`stdout` object still cached that number. Generated `main` now calls
+`vantyx_sanitize_standard_fd` for stdin (`O_RDONLY`), stdout, and stderr
+(`O_WRONLY`) before ignoring SIGPIPE and running user code; the helper checks
+`fcntl(F_GETFD)`, opens `/dev/null` on `EBADF`, and uses `dup2` plus `close`
+when needed. `tests/native.rs::closed_stdout_matches_interpreter_and_does_not_reuse_descriptors`
+runs both engines with stdout closed, compares the `R0006` headline and exit
+code `2`, and verifies a `write_file` marker. ADR-0051 and specification
+§10–§11 document the behavior. 729-test gate; GCC native suite 147/147;
+release build and five examples; seven Python self-tests, 100/100 seed-1
+differential cases, fuzz smoke, 13 skills, and the link checker passed. See
+`ACTIVE_TASK.md`.
+
 T-107 — Native print reports output failures at the print site. Status:
-VERIFIED locally; commit and CI pending. Native `print` used fully buffered
+VERIFIED; committed as `9bb2353`; CI pending. Native `print` used fully buffered
 stdout and checked only `ferror`, so `/dev/full` produced a generic
 `error: failed to flush output` at exit without `R0013` or the print location,
 and a closed output pipe could terminate the process with SIGPIPE (exit 141).

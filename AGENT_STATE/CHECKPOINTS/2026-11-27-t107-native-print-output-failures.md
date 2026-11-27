@@ -1,7 +1,7 @@
 # Checkpoint — T-107 native print output failures
 
 Date: 2026-11-27
-Status: VERIFIED locally; commit and CI pending
+Status: VERIFIED; committed as `9bb2353`; CI pending
 
 ## Objective
 

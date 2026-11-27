@@ -1,8 +1,54 @@
 # Active Task
 
-## T-107 — Native print reports output failures at the print site
+## T-108 — Native standard descriptors match Rust startup behavior
 
 - Status: VERIFIED locally; commit and CI pending
+- Priority: P0 (correctness, safety, and interpreter/native parity)
+- Dependencies: ADR-0008, ADR-0039, ADR-0051
+
+### Implemented
+
+- Rust's runtime opens `/dev/null` for any of descriptors 0, 1, or 2 that is
+  closed before `main`. The interpreter therefore discarded `print` output and
+  exited normally with stdout closed. The generated native program inherited
+  the closed descriptor and failed with
+  `R0013: failed to write output: Bad file descriptor (os error 9)`.
+- A later native `open` could receive descriptor 1 while the C `stdout` object
+  still cached that number, so a file operation and a print or diagnostic could
+  interact with the wrong descriptor.
+- Generated `main` now calls `vantyx_sanitize_standard_fd` for stdin
+  (`O_RDONLY`), stdout, and stderr (`O_WRONLY`) before ignoring SIGPIPE and
+  running user code. The helper checks `fcntl(F_GETFD)`, opens `/dev/null` on
+  `EBADF`, and uses `dup2` plus `close` when the kernel does not return the same
+  number. `<fcntl.h>` is included.
+- ADR-0051 records the decision; specification §10–§11 states the behavior.
+
+### Evidence
+
+- 2026-11-27:
+  `cargo test --test native closed_stdout` — 1 passed. Before the fix the
+  native engine failed at the first `print` with `R0013` and did not create the
+  marker; after the fix both engines reached `assert(false)` with the same
+  `R0006` headline and exit code `2`, and the `write_file` marker survived.
+- 2026-11-27 full gate: `cargo test` 729 passed (402 library unit + 15 CLI
+  unit + 47 AI integration + 118 e2e + 147 native);
+  `VANTYX_CC=gcc cargo test --test native` 147 passed;
+  `cargo build --release` succeeded; clippy and fmt clean; all five examples
+  matched `vantyx run`; seven Python self-tests, 100/100 seed-1 differential
+  cases, fuzz smoke, the 13-skill validator, and the link checker passed.
+
+### Remaining
+
+- Commit and record CI.
+- Scope limits: the helper runs once at startup and only replaces closed
+  descriptors. It does not close, redirect, or validate descriptors that are
+  already open, and it is not a sandbox. `/dev/null` is required for the
+  fallback; if it cannot be opened, the previous behavior remains. The backend
+  still requires POSIX headers and makes no Windows or WASM portability claim.
+
+## T-107 — Native print reports output failures at the print site
+
+- Status: VERIFIED; commit `9bb2353`; CI pending
 - Priority: P0 (correctness and interpreter/native diagnostic parity)
 - Dependencies: ADR-0008, ADR-0039
 
@@ -37,7 +83,7 @@
 
 ### Remaining
 
-- Commit and record CI.
+- Committed as `9bb2353`; CI pending.
 - Scope limits: only `print`'s stdout path changes; the final flush fallback,
   file-writing builtins, and non-`print` output paths are unchanged. Native
   still omits the interpreter's source excerpt and stack trace, so the tests

@@ -4,15 +4,30 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-107 — Native print reports output failures at the print site. VERIFIED
-  locally; native stdout was fully buffered, so a full disk was reported by
-  the final flush without `R0013` or the print location, and a closed pipe
-  could terminate the process with SIGPIPE. `vantyx_print_end` now flushes and
-  checks each completed line, reports `R0013` with `strerror` and
+- T-108 — Native standard descriptors match Rust startup behavior. VERIFIED
+  locally; Rust's runtime opens `/dev/null` for closed descriptors 0–2, so the
+  interpreter silently discards `print` output when stdout is closed, while
+  generated native code inherited the closed descriptor and failed with `R0013`
+  `Bad file descriptor (os error 9)`; a later file open could also reuse
+  descriptor 1. Generated `main` now calls `vantyx_sanitize_standard_fd` for
+  stdin, stdout, and stderr before SIGPIPE handling and user code, using
+  `fcntl(F_GETFD)`, `open("/dev/null", ...)`, and `dup2`. One differential
+  native test closes stdout, compares the `R0006` headline and exit code `2`,
+  and verifies a `write_file` marker; 729-test gate, GCC native suite, release
+  build, five examples, seven Python self-tests, 100/100 differential cases,
+  fuzz smoke, 13 skills, and the link checker; commit and CI pending.
+
+## Completed in `9bb2353` (CI pending)
+
+- T-107 — Native print reports output failures at the print site. VERIFIED;
+  committed as `9bb2353`; native stdout was fully buffered, so a full disk was
+  reported by the final flush without `R0013` or the print location, and a
+  closed pipe could terminate the process with SIGPIPE. `vantyx_print_end` now
+  flushes and checks each completed line, reports `R0013` with `strerror` and
   `(os error N)`, and `main` ignores SIGPIPE. Two differential native tests
   cover `/dev/full` and a closed pipe; 728-test gate, GCC native suite,
   release build, five examples, seven Python self-tests, 100/100 differential
-  cases, fuzz smoke, 13 skills, and 117 links; commit and CI pending.
+  cases, fuzz smoke, 13 skills, and 117 links.
 
 ## Completed in `9e42a95` (CI pending)
 

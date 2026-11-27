@@ -96,12 +96,14 @@ python3 benchmarks/run.py --reps 5
   pushed in `779783c` with the 724-test gate and CI run 45936065460 green;
   the status sync `a9a6d1a` passed run 45936329476; T-106 empty-list
   `contains`/`push` inference is committed in `9e42a95` with the 726-test
-  gate (CI pending); T-107 native `print` output-failure parity is locally
-  verified with the 728-test gate (commit and CI pending)). The
+  gate (CI pending); T-107 native `print` output-failure parity is committed
+  in `9bb2353` with the 728-test gate (CI pending); T-108 native
+  standard-descriptor sanitization is locally verified with the 729-test gate
+  (commit and CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 728 passed (402 library unit + 15 CLI unit + 47 AI integration +
-  118 e2e + 146 native); the full native suite also passes with `VANTYX_CC=gcc`.
+- `cargo test`: 729 passed (402 library unit + 15 CLI unit + 47 AI integration +
+  118 e2e + 147 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - All five examples build and run natively with identical output.
 - Native condition and short-circuit lowering match the interpreter:
@@ -149,7 +151,10 @@ python3 benchmarks/run.py --reps 5
   `range` limits, and file/directory failures, including Rust's `(os error N)`
   filesystem suffix and the shared glob parser wording (T-096, T-097),
   call-site `R0012` depth-limit locations that match the interpreter across
-  modules (T-104), imported
+  modules (T-104), per-line `print` flushing with `R0013` output-failure parity
+  and SIGPIPE ignored (T-107), startup replacement of closed standard
+  descriptors 0–2 with `/dev/null` so closed-stdout behavior and descriptor
+  numbering match Rust (T-108, ADR-0051), imported
   modules, basic
   UTF-8 file I/O, file metadata probes, single-level directory operations,
   recursive directory creation and symlink-safe removal, lexical glob

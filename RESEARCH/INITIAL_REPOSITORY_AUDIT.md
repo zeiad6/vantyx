@@ -28,7 +28,7 @@ second `research/` tree with duplicate content.
 | Toolchain | `rustc 1.100.0`, `cargo 1.100.0`, `clang 21.1.8` |
 | Dependencies | Zero third-party Rust dependencies; native builds invoke the system C compiler and link libc/libm |
 | Source size | About 26,283 lines in top-level `src/*.rs` and about 37,820 lines including `src/ai/*.rs` |
-| Tests | **728 passed**: 402 library unit, 15 CLI unit, 47 AI integration, 118 end-to-end, 146 native (after T-107/T-106/T-105/T-104/T-103/T-102/T-101/T-100/T-099/T-098/T-094/T-092/T-091/T-090/T-089); the full 146-test native suite also passed with `VANTYX_CC=gcc` |
+| Tests | **729 passed**: 402 library unit, 15 CLI unit, 47 AI integration, 118 end-to-end, 147 native (after T-108/T-107/T-106/T-105/T-104/T-103/T-102/T-101/T-100/T-099/T-098/T-094/T-092/T-091/T-090/T-089); the full 147-test native suite also passed with `VANTYX_CC=gcc` |
 | Builds | `cargo build` and `cargo build --release` succeed |
 | Lints | `cargo clippy --all-targets -- -D warnings` clean |
 | Formatting | `cargo fmt --check --all` clean after the T-076 mechanical baseline; CI enforces it |

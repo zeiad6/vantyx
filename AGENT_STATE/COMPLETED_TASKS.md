@@ -3,9 +3,16 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-108 — Native standard descriptors match Rust startup behavior (2026-11-27;
+  locally verified; 729-test gate; GCC native suite 147/147; release build and
+  five examples; commit and CI pending; generated `main` replaces closed
+  descriptors 0–2 with `/dev/null` before user code, matching Rust's startup
+  sanitization so a closed stdout silently discards `print` output and later
+  file opens cannot reuse a standard descriptor number; one differential
+  native test; ADR-0051).
 - T-107 — Native print reports output failures at the print site (2026-11-27;
-  locally verified; 728-test gate; GCC native suite 146/146; release build and
-  five examples; commit and CI pending; native `print` now flushes each
+  committed as `9bb2353`; CI pending; 728-test gate; GCC native suite 146/146;
+  release build and five examples; native `print` now flushes each
   completed line, checks `fputc`/`fflush`/`ferror`, and raises `R0013` with
   `strerror` and `(os error N)` at the print, while `main` ignores SIGPIPE;
   Linux `/dev/full` and a closed pipe match the interpreter's first error line

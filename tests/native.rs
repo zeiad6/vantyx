@@ -4893,6 +4893,86 @@ fn print_broken_pipe_headlines_match_interpreter() {
 }
 
 #[cfg(unix)]
+fn output_with_closed_stdout(program: &Path, args: &[&str], directory: &Path) -> Output {
+    Command::new("sh")
+        .arg("-c")
+        .arg("exec 1>&-; exec \"$0\" \"$@\"")
+        .arg(program)
+        .args(args)
+        .current_dir(directory)
+        .output()
+        .expect("run with closed stdout")
+}
+
+#[cfg(unix)]
+#[test]
+fn closed_stdout_matches_interpreter_and_does_not_reuse_descriptors() {
+    if !compiler_available() {
+        eprintln!("skipping closed-stdout test: no C compiler available");
+        return;
+    }
+    let directory = workspace(
+        "closed-stdout",
+        "fn main():\n\
+         \x20   print(\"discarded\")\n\
+         \x20   write_file(\"marker.txt\", \"kept\")\n\
+         \x20   print(\"also discarded\")\n\
+         \x20   assert(false)\n",
+    );
+    let source_path = directory.join("main.vtx");
+    let executable = directory.join("program");
+    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        .arg("build")
+        .arg(&source_path)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("run native build");
+    assert!(
+        build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let interpreter = output_with_closed_stdout(
+        Path::new(env!("CARGO_BIN_EXE_vantyx")),
+        &["run", source_path.to_str().expect("utf-8 source path")],
+        &directory,
+    );
+    let native = output_with_closed_stdout(&executable, &[], &directory);
+
+    assert_eq!(
+        interpreter.status.code(),
+        Some(2),
+        "interpreter did not reach assert: {}",
+        String::from_utf8_lossy(&interpreter.stderr)
+    );
+    assert_eq!(
+        native.status.code(),
+        Some(2),
+        "native did not reach assert: {}",
+        String::from_utf8_lossy(&native.stderr)
+    );
+    assert_eq!(
+        first_error_line(&interpreter),
+        first_error_line(&native),
+        "closed-stdout headline differs\ninterpreter stderr:\n{}\nnative stderr:\n{}",
+        String::from_utf8_lossy(&interpreter.stderr),
+        String::from_utf8_lossy(&native.stderr)
+    );
+    assert_eq!(
+        first_error_line(&interpreter),
+        "error[R0006]: assertion failed"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("marker.txt")).expect("read marker"),
+        "kept"
+    );
+    assert!(interpreter.stdout.is_empty());
+    assert!(native.stdout.is_empty());
+}
+
+#[cfg(unix)]
 #[test]
 fn file_error_headlines_match_interpreter() {
     use std::ffi::OsStr;
