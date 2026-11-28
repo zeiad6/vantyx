@@ -778,7 +778,9 @@ See [ADR-0013](decisions/ADR-0013-repl-line-editing.md).
 
 - `L0001`: a local or top-level binding is never read.
 - `L0002`: a `var` binding is read but never written after its declaration.
-- `L0003`: a statement follows a direct `return`, `break`, or `continue` in the same block.
+- `L0003`: a statement follows a direct `return`, `break`, or `continue`; an
+  `if` with an `else` where every branch terminates; or a `match` statement
+  whose every arm body terminates.
 - `L0004`: a function parameter is never read.
 
-Names starting with `_` are treated as intentionally unused. Loop variables and `match` payload bindings are not reported in this first pass. An unused parameter is reported as `L0004`, distinct from the `L0001` used for locals. `L0003` is deliberately local: it does not report code after an all-terminating `if`/`match` and does not perform interprocedural analysis. A program with only lint findings exits `0`; compilation errors exit `1`. See [linting.md](linting.md) and [ADR-0037](decisions/ADR-0037-static-lints.md).
+Names starting with `_` are treated as intentionally unused. Loop variables and `match` payload bindings are not reported in this first pass. An unused parameter is reported as `L0004`, distinct from the `L0001` used for locals. `L0003` is deliberately local and conservative: it recognizes all-terminating `if`/`elif`/`else` and `match` statements, but it does not analyze `while`/`for` conditions or perform interprocedural analysis. An `if` without an `else`, one falling branch, or one falling `match` arm keeps the following statement reachable, and a `match` with no arms is not proven terminating. A program with only lint findings exits `0`; compilation errors exit `1`. See [linting.md](linting.md) and [ADR-0037](decisions/ADR-0037-static-lints.md).

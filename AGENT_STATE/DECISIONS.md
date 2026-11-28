@@ -4,6 +4,33 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-27 — Native reclamation is staged, ownership-first
+
+- ADR-0056 accepts a five-stage native memory reclamation plan: ownership facts
+  in typed IR, fresh-temporary reclamation, conservative escape analysis with
+  stack/arena allocation for non-escaping locals, a deferred measured choice
+  between reference counting plus cycle collection and a precise tracing
+  collector for escaping values, and a separate interpreter cycle-collector
+  decision.
+- No reclamation stage is implemented by the ADR. The current intentional-leak
+  behavior, including the ADR-0054 display-temporary frees, remains in force.
+- The decision rejects reference counting and tracing GC for the current stage
+  because both need precise roots and cycle handling, and a wrong free is a
+  silent use-after-free. Escape analysis plus arenas is the smaller, verifiable
+  first step; uncertain cases leak.
+
+## 2026-11-27 — Subagent delegation blocked; primary session continues
+
+- Launched six specialized subagents for T-118 (linter reachability), T-119
+  (sanitized differential fuzz in CI), independent T-117 QA, documentation
+  drift, security review of `reverse`, and targeted divergence hunting.
+- Every child session failed immediately with the provider message
+  `Free usage limit reached`. No child produced a report, command result, or
+  file change. Do not claim independent review or delegated verification.
+- Record the blocker, keep the task specifications, and execute the safe
+  implementation work in the primary session instead of retrying an unavailable
+  provider repeatedly. The empty worktrees are removed; no work is lost.
+
 ## 2026-11-27 — `reverse` returns a new shallow-copied list
 
 - Add `reverse(list: List[T]) -> List[T]` as a standard-library transformation

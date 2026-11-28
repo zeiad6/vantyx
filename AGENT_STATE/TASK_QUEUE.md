@@ -4,6 +4,36 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
+- T-118 — `L0003` recognizes all-terminating `if`/`match`. VERIFIED locally on
+  2026-11-27; commit pending; 768-test gate (413 library unit + 15 CLI unit +
+  47 AI integration + 132 e2e + 161 native), GCC and sanitized native at 161
+  each, 100/100 ordinary differential fuzz on seed 1, sanitized fuzz 20/20,
+  examples, 13 skills, and 130 links in 200 Markdown files. The pass treats a
+  statement as unreachable after an `if`/`elif`/`else` whose every branch
+  terminates, or a `match` statement whose every arm body terminates; an `if`
+  without `else`, any falling branch or arm, loops, and calls remain
+  conservative non-terminators. Nine new unit tests; `docs/linting.md`, the
+  language specification §14, ADR-0037, and the project baseline document the
+  rule.
+
+- T-119 — Sanitized differential fuzz in CI. VERIFIED locally on 2026-11-27;
+  commit pending; the `sanitizers` job runs
+  `tools/differential_fuzz.py --iterations 20 --seed 1` through
+  `tools/clang-sanitize.sh` with ASan/UBSan and leak detection disabled; the
+  exact local command agreed 20/20; workflow YAML parses; the full 768-test
+  gate and sanitized native suite passed.
+
+- T-120 — Native memory reclamation design. DESIGN ACCEPTED on 2026-11-27;
+  docs-only; 130 links in 200 Markdown files resolve. ADR-0056 stages ownership
+  facts in typed IR, fresh-temporary reclamation, conservative escape analysis
+  with stack/arena allocation for non-escaping locals, a separately measured
+  choice between reference counting plus cycle collection and a precise tracing
+  collector for escaping values, and a separate interpreter cycle decision. No
+  runtime behavior changed and no reclamation stage from the ADR is
+  implemented.
+
+## Verified locally, commit pending CI
+
 - T-117 — List reversal. VERIFIED locally on 2026-11-27; commit `4108974`;
   CI pending; 759-test gate (404 library unit + 15 CLI unit + 47 AI integration
   + 132 e2e + 161 native), GCC native 161, sanitized native 161, 100/100 fuzz
@@ -15,8 +45,6 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
   two native tests cover all element types, aliasing, evaluation order, empty
   and one-element lists, diagnostics, and dynamic values; the collection fuzz
   shape prints `reverse` results for `List[Int]`, `List[Str]`, and `List[Item]`.
-
-## Verified locally, commit pending CI
 
 - T-115 — Map key removal. VERIFIED locally on 2026-11-27; commit `b6f3f11`;
   CI pending. `remove(map, key)` deletes the first structurally equal entry,

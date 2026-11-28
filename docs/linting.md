@@ -52,19 +52,27 @@ nested block count, including compound assignments.
 
 ### `L0003` — unreachable statement
 
-A statement follows a direct `return`, `break`, or `continue` in the same
-block.
+A statement follows a path that cannot reach it: a direct `return`, `break`, or
+`continue`; an `if` with an `else` where every branch terminates; or a `match`
+statement whose every arm body terminates.
 
 ```vtx
-fn f() -> Int:
-    return 1
+fn f(n: Int) -> Int:
+    if n > 0:
+        return 1
+    else:
+        return 2
     print("dead")       # L0003
 ```
 
 Only the first unreachable statement in a block is reported, and dead code is
-not linted further. A statement after an `if` or `match` whose branches all
-terminate is not reported; the pass deliberately avoids full control-flow
-analysis.
+not linted further. An `if` without an `else` never proves termination, and a
+single branch that falls through is enough to keep the following statement
+reachable. A `match` is considered terminating only when every arm body
+terminates; a failed guard either reaches a later terminating arm or raises the
+runtime no-match error, so the following statement still cannot fall through.
+`while` and `for` loops are not analyzed, and neither are calls to functions
+that never return.
 
 ### `L0004` — unused parameter
 
@@ -89,8 +97,10 @@ parameters are immutable, `L0002` never applies to them.
   linted and findings render against the imported file.
 - There are no suppression attributes, configuration files, severity levels,
   machine-readable output, or automatic fixes yet.
-- `L0003` does not perform interprocedural analysis and does not report
-  unreachable code after an all-terminating `if`/`match`.
+- `L0003` performs only local, conservative reachability analysis. It does not
+  analyze `while`/`for` conditions, interprocedural behavior, or whether a
+  called function returns; an all-terminating `if`/`match` is recognized, but a
+  loop that never exits is not.
 - `L0004` is purely lexical: any read suppresses it, including passing the
   parameter to another call. There is no interface or trait system yet, so no
   conformance reason to keep an unread name is recognized.

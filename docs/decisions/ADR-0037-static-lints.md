@@ -49,6 +49,19 @@ program does.
 - Do not implement a formatter, suppression attributes, configuration, JSON
   output, severity levels, or automatic fixes in this change.
 
+## Amendment (T-118, 2026-11-27)
+
+The original decision kept `L0003` to direct terminators. T-118 extends the same
+conservative local analysis: a statement is also unreachable after an `if` with
+an `else` where the then block, every `elif` block, and the else block
+terminate, or after a `match` statement with at least one arm whose every arm
+body terminates. An `if` without an `else`, any falling branch, any falling
+`match` arm, `while`/`for` loops, and function calls still do not prove
+termination. Match-expression arms are single expressions and cannot contain a
+terminating statement, so they are treated as falling through. The original
+bullet saying `L0003` does not report after an all-terminating `if`/`match` is
+superseded; the rest of the original decision stands.
+
 ## Consequences
 
 - `vantyx check` and `vantyx run` now accept a value-returning function with

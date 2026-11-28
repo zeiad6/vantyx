@@ -4,10 +4,10 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `dadfcfe` (T-116 status sync). The remote
+- Last commit: `92f8e19` (T-117 status sync). The remote
   remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in
-  `779783c` and passed run 45936065460. T-114 is committed as `3617fe3` with
-  CI pending.
+  `779783c` and passed run 45936065460. T-117 is committed as `4108974` with
+  CI pending; T-118, T-119, and T-120 are verified locally and uncommitted.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -21,6 +21,35 @@
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
+
+T-118 — `L0003` all-terminating `if`/`match`. Status: VERIFIED locally on
+2026-11-27; commit pending. `src/lint.rs` adds a `Termination` kind and a
+conservative local `block_terminates` analysis; an `if` with `else` is
+terminating only when every branch terminates, and a `match` statement only
+when every arm body terminates. An `if` without `else`, a falling branch or
+arm, loops, and calls remain conservative non-terminators. Nine new unit tests
+cover positive and negative cases; `docs/linting.md`, specification §14,
+ADR-0037, and the project baseline document the rule. The full 768-test gate
+passed (413 library unit + 15 CLI unit + 47 AI integration + 132 e2e + 161
+native), GCC and sanitized native at 161 each, 100/100 ordinary differential
+fuzz on seed 1, sanitized fuzz 20/20, examples, 13 skills, and 130 links in
+200 Markdown files.
+
+T-119 — Sanitized differential fuzz in CI. Status: VERIFIED locally on
+2026-11-27; commit pending. The CI `sanitizers` job now builds
+`target/debug/vantyx` and runs `tools/differential_fuzz.py --iterations 20
+--seed 1` through `tools/clang-sanitize.sh` with
+`ASAN_OPTIONS=detect_leaks=0:abort_on_error=1` and
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`. The exact local command
+agreed 20/20, and the workflow YAML parses.
+
+T-120 — Native memory reclamation design. Status: DESIGN ACCEPTED on
+2026-11-27; docs-only. ADR-0056 stages ownership facts in typed IR,
+fresh-temporary reclamation, conservative escape analysis with stack/arena
+allocation for non-escaping locals, a deferred measured choice between
+reference counting plus cycle collection and a precise tracing collector for
+escaping values, and a separate interpreter cycle decision. No runtime
+behavior changed and no reclamation stage from the ADR is implemented.
 
 T-117 — List reversal. Status: VERIFIED locally on 2026-11-27; commit
 `4108974`; CI pending. `reverse(list: List[T]) -> List[T]` returns a new

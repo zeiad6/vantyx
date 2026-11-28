@@ -2,23 +2,25 @@
 
 The orchestrator owns integration, shared architecture documents, and the
 final gate. Specialized subagents are advisory or scoped to non-overlapping
-files. Only one subagent runs at a time until it finishes.
+files. Parallel delegation was attempted on 2026-11-27 but every child session
+failed with `Free usage limit reached`; the primary session executes the
+selected tasks directly and does not claim independent review.
 
 | Role | Agent | Current assignment | Status |
 | --- | --- | --- | --- |
-| Orchestrator / chief engineer | primary session | T-117 list reversal verified locally pending the full gate, alongside T-116 atomic whole-file replacement, T-115 map key removal, and T-114 nested display-temporary reclamation; T-114 through T-117 commit and CI pending | In progress |
-| Compiler architecture review | `compiler-architect` | Native memory reclamation design (read-only) | Blocked on subagent capacity |
+| Orchestrator / chief engineer | primary session | T-118 linter reachability, T-119 sanitized differential fuzz in CI, and T-120 native reclamation design after T-117 list reversal; T-114 through T-120 commit and CI pending | In progress |
+| Compiler architecture review | `compiler-architect` | T-120 native memory reclamation design written by the primary session; independent review when capacity returns | Blocked on subagent capacity |
 | Backend implementation | `backend-engineer` | No active assignment; T-070/T-071 are committed | Idle |
 | Language implementation | `language-implementer` | T-075 `?` propagation implemented by the primary session; independent review when capacity returns | Idle |
 | Runtime/memory | `runtime-engineer` / `memory-model-engineer` | No active assignment | Idle |
 | Type system | `type-system-engineer` | No active assignment | Idle |
-| QA verification | `qa-verifier` | Independent T-062–T-066 and T-072–T-116 verification when capacity returns | Blocked: subagent provider usage limit |
-| Spec sync | `spec-sync-auditor` | Post-T-078 through T-098 documentation drift audit | Queued |
-| Security | `security-auditor` | Recursive-removal boundary review when requested | Idle |
-| Tooling | `tooling-engineer` | `vantyx lint` delivered; formatter remains blocked on comment preservation; the fuzzer shrinker shipped, sanitizers and coverage measurement remain follow-ups | Idle |
+| QA verification | `qa-verifier` | Independent T-062–T-066 and T-072–T-117 verification when capacity returns | Blocked: subagent provider usage limit |
+| Spec sync | `spec-sync-auditor` | Post-T-117 documentation drift audit | Blocked: subagent provider usage limit |
+| Security | `security-auditor` | T-117 `reverse` and native list audit | Blocked: subagent provider usage limit |
+| Tooling | `tooling-engineer` | T-118 `L0003` all-terminating `if`/`match`; delegated child failed, primary session executing | In progress |
 | Benchmarks | `benchmark-engineer` | No performance claim; no benchmark required | Idle |
 | Docs | `docs-writer` | No active assignment; fuzzer, lint, and audit docs written by the primary session | Idle |
-| Release | `release-engineer` | CI pending for the T-078–T-093 commit; runs 45507195701, 45504177763, 45503321172, 45499019615, 45496041422, 45493833079, and 45488725812 are green | Waiting |
+| Release | `release-engineer` | T-119 sanitized differential fuzz in CI; delegated child failed, primary session executing | In progress |
 
 File ownership for T-095: the primary session owns `src/ai/schema.rs`,
 `src/ai/json.rs`, `src/ai/extract.rs`, `src/ai/tools.rs`, `tests/ai.rs`,

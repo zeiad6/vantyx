@@ -1,5 +1,89 @@
 # Active Task
 
+## T-118 — `L0003` recognizes all-terminating `if` and `match`
+
+- Status: VERIFIED locally on 2026-11-27; commit pending
+- Priority: P2 (tooling: lint reachability)
+- Dependencies: T-073, T-085, ADR-0037
+
+### Implemented
+
+- `src/lint.rs` adds a `Termination` kind with direct, `if`, and `match` cases.
+- `block_terminates` scans for the first terminating statement.
+- `statement_terminates` proves an `if`/`elif`/`else` terminates only when every
+  branch does, and a `match` statement only when every arm body does.
+- Match-expression arms are single expressions and cannot contain a terminating
+  statement, so they are treated as falling through.
+- `docs/linting.md`, `docs/language_specification.md` §14, ADR-0037, and
+  `docs/PROJECT_BASELINE.md` document the rule and its limits.
+
+### Evidence
+
+- `cargo test --lib lint` passed 33 tests on 2026-11-27.
+- Nine new tests cover all-terminating `if`/`else`, `elif` chains, `match`
+  statements, nested branches, guarded arms, all branches leaving a loop, and
+  the negative cases.
+- Full 768-test gate passed (413 library unit + 15 CLI unit + 47 AI integration
+  + 132 e2e + 161 native), GCC and sanitized native at 161 each, 100/100
+  ordinary differential fuzz on seed 1, sanitized fuzz 20/20, examples, 13
+  skills, and 130 links in 200 Markdown files.
+
+### Remaining
+
+- Record the commit hash and CI result.
+
+## T-119 — Sanitized differential fuzz in CI
+
+- Status: VERIFIED locally on 2026-11-27; commit pending
+- Priority: P2 (CI: sanitizer coverage)
+- Dependencies: T-072, T-110, T-113
+
+### Implemented
+
+- `.github/workflows/ci.yml` adds a `Sanitized differential fuzz` step to the
+  `sanitizers` job.
+- The step builds `target/debug/vantyx` and runs
+  `python3 tools/differential_fuzz.py --iterations 20 --seed 1` with
+  `VANTYX_CC` pointing at `tools/clang-sanitize.sh`,
+  `ASAN_OPTIONS=detect_leaks=0:abort_on_error=1`, and
+  `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`.
+- The existing native sanitizer test step remains.
+
+### Evidence
+
+- Exact local command agreed 20/20 differential cases on 2026-11-27.
+- YAML parsed successfully with Ruby's YAML loader.
+- Full 768-test gate passed, including sanitized native at 161 tests.
+
+### Remaining
+
+- Record the commit hash and CI result.
+
+## T-120 — Native memory reclamation design
+
+- Status: ADR accepted; docs-only; no runtime behavior changed
+- Priority: P1 (memory management)
+- Dependencies: ADR-0005, ADR-0008, ADR-0009, ADR-0010, ADR-0054
+
+### Implemented
+
+- `docs/decisions/ADR-0056-native-memory-reclamation-strategy.md` defines five
+  stages: ownership facts in typed IR, fresh-temporary reclamation,
+  conservative escape analysis with stack/arena allocation, a deferred
+  measured choice for escaping values, and a separate interpreter cycle
+  decision.
+- `docs/memory_model.md` links the staged plan and keeps the current
+  intentional-leak behavior in force.
+
+### Evidence
+
+- Documentation review; 130 relative links in 200 Markdown files resolve; no
+  implementation claim.
+
+### Remaining
+
+- Stage 1 ownership facts are future work with their own tests and status.
+
 ## T-117 — List reversal
 
 - Status: VERIFIED locally on 2026-11-27; commit `4108974`; CI pending

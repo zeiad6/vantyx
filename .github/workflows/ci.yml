@@ -106,3 +106,14 @@ jobs:
           set -euo pipefail
           test -x "$VANTYX_CC"
           cargo test --locked --test native
+
+      - name: Sanitized differential fuzz
+        env:
+          VANTYX_CC: ${{ github.workspace }}/tools/clang-sanitize.sh
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          test -x "$VANTYX_CC"
+          cargo build --locked
+          python3 tools/differential_fuzz.py --iterations 20 --seed 1

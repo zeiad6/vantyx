@@ -209,19 +209,19 @@ impl Linter {
 
     fn block(&mut self, block: &Block) {
         self.push_scope();
-        let mut terminated: Option<&'static str> = None;
+        let mut terminated: Option<Termination> = None;
         for statement in &block.stmts {
             if let Some(kind) = terminated {
                 self.diagnostics.push(
                     Diagnostic::warning("L0003", "unreachable statement", statement.span)
-                        .with_note(format!("this statement follows a `{kind}`")),
+                        .with_note(format!("this statement follows {}", kind.description())),
                 );
                 // Report only the first unreachable statement in the block and
                 // do not lint dead code, which would produce cascading noise.
                 break;
             }
             self.stmt(statement);
-            terminated = direct_terminator(statement);
+            terminated = statement_terminates(statement);
         }
         self.pop_scope();
     }
@@ -401,12 +401,85 @@ impl Linter {
     }
 }
 
-fn direct_terminator(statement: &Stmt) -> Option<&'static str> {
+/// How a statement or block prevents the next statement in the same block from
+/// running. Branch terminators are conservative: they are recognized only when
+/// every path through the construct terminates.
+#[derive(Clone, Copy)]
+enum Termination {
+    Return,
+    Break,
+    Continue,
+    If,
+    Match,
+}
+
+impl Termination {
+    fn description(self) -> &'static str {
+        match self {
+            Termination::Return => "a `return`",
+            Termination::Break => "a `break`",
+            Termination::Continue => "a `continue`",
+            Termination::If => "an `if` whose branches all terminate",
+            Termination::Match => "a `match` whose arms all terminate",
+        }
+    }
+}
+
+fn direct_terminator(statement: &Stmt) -> Option<Termination> {
     match &statement.kind {
-        StmtKind::Return(_) => Some("return"),
-        StmtKind::Break => Some("break"),
-        StmtKind::Continue => Some("continue"),
+        StmtKind::Return(_) => Some(Termination::Return),
+        StmtKind::Break => Some(Termination::Break),
+        StmtKind::Continue => Some(Termination::Continue),
         _ => None,
+    }
+}
+
+/// Returns the first statement that terminates the block, if any. A statement
+/// after a terminator is already unreachable, so scanning stops there.
+fn block_terminates(block: &Block) -> Option<Termination> {
+    block.stmts.iter().find_map(statement_terminates)
+}
+
+fn statement_terminates(statement: &Stmt) -> Option<Termination> {
+    if let Some(termination) = direct_terminator(statement) {
+        return Some(termination);
+    }
+    match &statement.kind {
+        StmtKind::If {
+            then_block,
+            elifs,
+            else_block,
+            ..
+        } => {
+            // Without an `else`, the false path falls through.
+            let else_block = else_block.as_ref()?;
+            block_terminates(then_block)?;
+            for (_, block) in elifs {
+                block_terminates(block)?;
+            }
+            block_terminates(else_block)?;
+            Some(Termination::If)
+        }
+        StmtKind::Match { arms, .. } => {
+            // A match with no arms cannot be proven to terminate. With arms,
+            // every body must terminate; a failed guard either reaches a later
+            // terminating arm or raises the runtime no-match error, so the
+            // statement still cannot fall through.
+            if arms.is_empty() || !arms.iter().all(match_arm_terminates) {
+                return None;
+            }
+            Some(Termination::Match)
+        }
+        _ => None,
+    }
+}
+
+fn match_arm_terminates(arm: &MatchArm) -> bool {
+    match &arm.body {
+        MatchArmBody::Block(block) => block_terminates(block).is_some(),
+        // Match-expression arms are single expressions and cannot contain a
+        // `return`, `break`, or `continue` statement.
+        MatchArmBody::Expr(_) => false,
     }
 }
 
@@ -510,6 +583,90 @@ mod tests {
             "fn f(n: Int) -> Int:\n    if n > 0:\n        return 1\n    return 2\n\nfn main():\n    print(f(1))\n"
         )
         .is_empty());
+    }
+
+    #[test]
+    fn unreachable_after_all_terminating_if_else_is_reported() {
+        assert_eq!(
+            lint_codes(
+                "fn f(n: Int) -> Int:\n    if n > 0:\n        return 1\n    else:\n        return 2\n    print(\"dead\")\n\nfn main():\n    print(f(1))\n"
+            ),
+            vec!["L0003"]
+        );
+    }
+
+    #[test]
+    fn unreachable_after_all_terminating_elif_chain_is_reported() {
+        assert_eq!(
+            lint_codes(
+                "fn f(n: Int) -> Int:\n    if n > 0:\n        return 1\n    elif n == 0:\n        return 2\n    else:\n        return 3\n    print(\"dead\")\n\nfn main():\n    print(f(1))\n"
+            ),
+            vec!["L0003"]
+        );
+    }
+
+    #[test]
+    fn if_without_else_is_not_proven_to_terminate() {
+        assert!(lint_codes(
+            "fn f(n: Int) -> Int:\n    if n > 0:\n        return 1\n    print(\"reachable\")\n    return 0\n\nfn main():\n    print(f(1))\n"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn if_with_one_falling_branch_is_not_proven_to_terminate() {
+        assert!(lint_codes(
+            "fn f(n: Int) -> Int:\n    if n > 0:\n        return 1\n    else:\n        print(\"falls through\")\n    return 2\n\nfn main():\n    print(f(1))\n"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn unreachable_after_all_terminating_match_is_reported() {
+        assert_eq!(
+            lint_codes(
+                "enum Item:\n    Value(n: Int)\n    Empty\n\nfn f(item: Item) -> Int:\n    match item:\n        Value(n):\n            return n\n        Empty():\n            return 0\n    print(\"dead\")\n\nfn main():\n    print(f(Value(1)))\n"
+            ),
+            vec!["L0003"]
+        );
+    }
+
+    #[test]
+    fn match_with_one_falling_arm_is_not_proven_to_terminate() {
+        assert!(lint_codes(
+            "enum Item:\n    Value(n: Int)\n    Empty\n\nfn f(item: Item) -> Int:\n    match item:\n        Value(n):\n            return n\n        Empty():\n            print(\"falls through\")\n    return 0\n\nfn main():\n    print(f(Value(1)))\n"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn nested_terminating_branches_are_reported() {
+        assert_eq!(
+            lint_codes(
+                "fn f(a: Bool, b: Bool) -> Int:\n    if a:\n        if b:\n            return 1\n        else:\n            return 2\n    else:\n        return 3\n    print(\"dead\")\n\nfn main():\n    print(f(true, false))\n"
+            ),
+            vec!["L0003"]
+        );
+    }
+
+    #[test]
+    fn guarded_terminating_match_arms_are_reported() {
+        assert_eq!(
+            lint_codes(
+                "enum Item:\n    Value(n: Int)\n    Empty\n\nfn f(item: Item) -> Int:\n    match item:\n        Value(n) if n > 0:\n            return n\n        Value(n):\n            return -n\n        Empty():\n            return 0\n    print(\"dead\")\n\nfn main():\n    print(f(Value(1)))\n"
+            ),
+            vec!["L0003"]
+        );
+    }
+
+    #[test]
+    fn all_branches_leaving_the_loop_make_following_code_unreachable() {
+        assert_eq!(
+            lint_codes(
+                "fn main():\n    var i = 0\n    while i < 3:\n        i += 1\n        if i == 1:\n            continue\n        else:\n            break\n        print(\"dead\")\n"
+            ),
+            vec!["L0003"]
+        );
     }
 
     #[test]

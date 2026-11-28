@@ -24,7 +24,8 @@ Repository codename: RustZ.
 7. **No destructive Git operations.** Do not force push, rewrite history, or
    commit unless explicitly authorized.
 8. **Document limits honestly.** Native allocations are intentionally leaked in
-   v0.1; there is no cycle collector and no sandbox.
+   v0.1; there is no cycle collector and no sandbox. ADR-0056 stages native
+   reclamation but no stage from it is implemented.
 
 ## Verification commands
 
@@ -122,16 +123,20 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   with the 743-test gate (CI pending); T-116 atomic whole-file replacement adds
   `write_file_atomic` with the 754-test gate; commit `3e22628`; CI pending;
   T-117 list reversal adds `reverse` with the 759-test gate; commit `4108974`;
-  CI pending). The
+  CI pending; T-118 extends `L0003` to all-terminating `if`/`match` with the
+  768-test gate; T-119 adds a bounded sanitized differential-fuzz step to CI;
+  T-120 accepts ADR-0056, a staged native memory reclamation design with no
+  runtime change; T-118/T-119/T-120 commit pending). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 759 passed (404 library unit + 15 CLI unit + 47 AI integration +
+- `cargo test`: 768 passed (413 library unit + 15 CLI unit + 47 AI integration +
   132 e2e + 161 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - CI runs the native differential suite with generated programs compiled under
   AddressSanitizer and UndefinedBehaviorSanitizer via `tools/clang-sanitize.sh`
   (leak detection disabled because v0.1 native allocations are intentionally
-  leaked) and runs the bounded fuzz smoke (T-110).
+  leaked), runs the bounded fuzz smoke (T-110), and runs a bounded 20-iteration
+  sanitized differential fuzz on seed 1 (T-119).
 - All five examples build and run natively with identical output.
 - Native condition and short-circuit lowering match the interpreter:
   statement-expression conditions are parenthesized and `and`/`or` skip the
@@ -163,9 +168,10 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   80 iterations on seed 1, the bounded fuzz smoke, and the native suite under
   AddressSanitizer and UndefinedBehaviorSanitizer (T-110).
 - Tooling: `vantyx lint` reports `L0001` unused binding, `L0002` `var` never
-  reassigned, `L0003` unreachable statement, and `L0004` unused parameter, with
-  compile errors still exiting `1` and lint-only findings exiting `0` (T-073,
-  T-085, ADR-0037). The checker no longer reports a false `E0309` for dead code
+  reassigned, `L0003` unreachable statement after direct terminators and
+  all-terminating `if`/`match`, and `L0004` unused parameter, with compile
+  errors still exiting `1` and lint-only findings exiting `0` (T-073, T-085,
+  T-118, ADR-0037). The checker no longer reports a false `E0309` for dead code
   after a reachable `return` (T-074, ADR-0037).
 - Native support: scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key
   hash index and `remove(map, key)` with insertion-order-preserving
@@ -236,7 +242,8 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   20:59Z using `MY_API_KEY` passed all 21 live checks after one transient 503,
   so cloud access can change and is not guaranteed. Evidence:
   `docs/ai/LIVE_VERIFICATION.md`.
-- Known gaps: no reclamation, O(n) structural-key native maps, a fixed hash
+- Known gaps: no general native reclamation (ADR-0056 stages ownership analysis
+  and arenas, but no stage is implemented), O(n) structural-key native maps, a fixed hash
   seed for scalar keys, and O(n) scalar-key map-removal index rebuilds, no
   generics/closures/async/FFI, no formatter or LSP,
   the linter has only four conservative rules with no suppression or fixes,

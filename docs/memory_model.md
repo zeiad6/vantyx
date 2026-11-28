@@ -47,10 +47,26 @@
 
 ## Planned evolution
 
-1. **Escape analysis** to keep non-escaping values on the stack/unboxed.
-2. **Optional ownership/borrow annotations** for zero-cost, deterministic memory management in performance-critical code.
-3. **Value-semantics collections** with copy-on-write for predictable aliasing.
-4. **Cycle collector** or weak references for reference types.
-5. **Arena/region APIs** for scientific and systems workloads.
+ADR-0056 defines the staged native reclamation plan. The order is deliberate:
 
-Ordinary Vantyx code must never be forced to write lifetime annotations. Advanced memory control is opt-in.
+1. **Ownership facts in typed IR.** Classify expressions and locals as fresh,
+   borrowed, aliased, or escaping; no generated-C change.
+2. **Fresh temporaries.** Free compiler-generated strings and other values at
+   their last use when no alias can observe them.
+3. **Escape analysis and arenas.** Keep non-escaping locals on the stack or in
+   a function/loop arena, with conservative promotion of anything that may
+   escape.
+4. **Escaping values.** A separately measured ADR amendment chooses between
+   reference counting plus cycle collection and a precise tracing collector.
+   Neither is implemented yet.
+5. **Interpreter cycles.** A separate decision if long-running interpreter use
+   becomes a target.
+
+Optional ownership/borrow annotations, value-semantics collections with
+copy-on-write, and arena/region APIs for scientific and systems workloads
+remain long-term language-design questions, not part of the staged backend
+plan. Ordinary Vantyx code must never be forced to write lifetime annotations.
+Advanced memory control is opt-in.
+
+Until a stage lands and is verified, the current intentional-leak behavior
+stands, including the native display-temporary frees from ADR-0054.
