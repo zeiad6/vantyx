@@ -45,6 +45,10 @@
 - Native calls are limited to depth 256 (`R0012`), preventing runaway recursion from exhausting the C stack. Both engines report the failing call site, including across module boundaries (T-104).
 - Future reclamation must preserve reference semantics and document its allocation policy in an ADR before implementation. The scalar-key map index (ADR-0016) adds roughly 16 bytes per entry at its 50% load factor; structural-key hashing remains a documented follow-up, not an implemented feature.
 
+## ADR-0056 Stage 1 — conservative ownership facts (T-122)
+
+`src/ownership.rs` classifies typed IR expressions as `Fresh`/`Borrowed`/`Aliased`/`MayEscape` with a conservative pure `ownership()` and a `verify_reclamation()` that would reject a reclamation site unless `Fresh`. **No generated C changes; nothing is reclaimed by this analysis; unknown=>`MayEscape`; `str(Str)`/`trim` are not `Fresh`.** `Fresh` means not aliased at construction, not last-use. This is Stage 1 only; nothing from Stage 2+ beyond T-121 is wired.
+
 ## Planned evolution
 
 ADR-0056 defines the staged native reclamation plan. The order is deliberate:

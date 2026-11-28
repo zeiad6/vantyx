@@ -26,8 +26,8 @@ Repository codename: RustZ.
 8. **Document limits honestly.** Most native allocations are intentionally leaked
    in v0.1, except nested display temporaries (ADR-0054) and top-level `print`
    renderings for statically owned types (T-121); there is no general
-   reclamation, cycle collector, or sandbox. ADR-0056 stages native reclamation
-   Stage 2 is partially implemented by T-121; no other stage is implemented.
+   reclamation, cycle collector, or sandbox. ADR-0056 stages native reclamation;
+   Stage 1 is implemented by T-122 (ownership facts, no codegen change) and Stage 2 is partially implemented by T-121; no escape-analysis/arena/refcount/GC stage is implemented.
 
 ## Verification commands
 
@@ -134,7 +134,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   commit `75fcc34`, status sync `69d5f00`). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 770 passed (413 library unit + 15 CLI unit + 47 AI integration +
+- `cargo test`: 776 passed (419 library unit + 15 CLI unit + 47 AI integration +
   132 e2e + 163 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - CI runs the native differential suite with generated programs compiled under
@@ -249,8 +249,10 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   `docs/ai/LIVE_VERIFICATION.md`.
 - Known gaps: no general native reclamation (ADR-0056 stages ownership analysis
   and arenas; Stage 2 is partially implemented by T-121 for top-level `print`
-  renderings of statically owned types, no other stage is implemented, and
-  ADR-0054 frees nested display temporaries), O(n) structural-key native maps, a fixed hash
+  renderings of statically owned types; Stage 1 is implemented by T-122 for
+  conservative ownership facts with no codegen change; no escape-analysis,
+  arena, refcount, or GC stage is implemented, and ADR-0054 frees nested
+  display temporaries), O(n) structural-key native maps, a fixed hash
   seed for scalar keys, and O(n) scalar-key map-removal index rebuilds, no
   generics/closures/async/FFI, no formatter or LSP,
   the linter has only four conservative rules with no suppression or fixes,

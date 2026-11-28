@@ -1,9 +1,11 @@
 # ADR-0056: Native memory reclamation strategy
 
-- Status: Accepted for the staged design. Stage 2 is partially implemented by
-  T-121 for statically owned `print` renderings; no ownership-fact IR, escape
-  analysis, arena, reference counting, or tracing collector is implemented.
-  The local nested display-temporary frees from ADR-0054 already exist.
+- Status: Accepted for the staged design. Stage 1 is implemented by T-122 as
+  conservative ownership facts over typed IR (`src/ownership.rs`) with no
+  codegen change; Stage 2 is partially implemented by T-121 for statically
+  owned `print` renderings. No escape analysis, arena, reference counting, or
+  tracing collector is implemented. The local nested display-temporary frees
+  from ADR-0054 already exist.
 - Date: 2026-11-27
 - Related: T-120, ADR-0005, ADR-0008, ADR-0009, ADR-0010, ADR-0054
 
@@ -71,7 +73,9 @@ Add an internal ownership classification to IR expressions and locals:
 The classification is conservative: unknown constructs become `MayEscape`.
 Add a verifier that rejects a reclamation site unless its value is `Fresh` or a
 local proven non-escaping. Stage 1 does not change generated C; it only adds
-facts and tests. This keeps the stage independently revertable and gives later
+facts and tests. **Implemented (T-122):** `src/ownership.rs` adds `Ownership`,
+`ownership(expr)`, and `verify_reclamation`, conservative with unknown=>`MayEscape`,
+`str(Str)`/`trim` not `Fresh`, nothing wired to codegen. This keeps the stage independently revertable and gives later
 stages a checkable precondition instead of ad hoc `free` calls.
 
 ### Stage 2 — Fresh temporaries

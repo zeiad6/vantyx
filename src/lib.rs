@@ -22,6 +22,7 @@ pub mod ir;
 pub mod lexer;
 pub mod lint;
 pub mod module;
+pub mod ownership;
 pub mod parser;
 pub mod span;
 pub mod token;
