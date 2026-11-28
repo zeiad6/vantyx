@@ -4,7 +4,7 @@ Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
 - T-114 — Free nested native display temporaries (2026-11-27; verified
-  locally; commit pending; CI pending; 736-test gate; list, map, struct, and
+  locally; commit `3617fe3`; CI pending; 736-test gate; list, map, struct, and
   enum display bind each rendered element, key, value, and field, append it,
   and free it through `vantyx_display_free`; nested Bool/Unit use owned helpers
   so every nested result is heap-owned, while top-level `print`/interpolation

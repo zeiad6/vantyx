@@ -2,7 +2,7 @@
 
 ## T-114 — Free nested native display temporaries
 
-- Status: VERIFIED locally; commit pending; CI pending
+- Status: VERIFIED locally; commit `3617fe3`; CI pending
 - Priority: P1 (native memory efficiency)
 - Dependencies: ADR-0052, ADR-0053, ADR-0054
 
@@ -36,7 +36,7 @@
 
 ### Remaining
 
-- Commit T-114 and record the hash; CI pending.
+- CI pending.
 - Independent review remains unavailable (subagent free-usage limit).
 
 ### Scope limits

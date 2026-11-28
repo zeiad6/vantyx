@@ -13,7 +13,7 @@
 
 ## Last recorded repository state (2026-11-27)
 
-- T-114 is implemented and verified locally with commit pending and CI pending.
+- T-114 is committed as `3617fe3` and verified locally; CI pending.
   `src/codegen_c.rs` adds `vantyx_str_from_bool_owned`,
   `vantyx_str_from_unit_owned`, and `vantyx_display_free`; list, map, struct,
   and enum display bind each rendered element, key, value, and field, append
@@ -63,8 +63,7 @@
   smoke, the 13-skill validator, and the link checker (122 links in 188
   Markdown files). Committed as `45c438b`; CI pending. Focused median
   59.893 ms → 34.414 ms and peak RSS 33,396 KiB → 17,564 KiB.
-- HEAD is at `fc453cf` (T-113 status sync); T-114 changes are in the working
-  tree with commit pending. The remote is at `a9a6d1a` (record the T-105 CI run), and CI
+- HEAD is at `3617fe3` (T-114). The remote is at `a9a6d1a` (record the T-105 CI run), and CI
   run 45936329476 passed on it. T-112 is committed with CI pending. `779783c`
   contains T-105 and passed run 45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed
   45934367601. `8805381` recorded the T-104 CI run and passed 45934076343. `4269010` contains call-site native

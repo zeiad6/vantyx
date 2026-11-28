@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `d8a476d` (T-113); the T-113 status sync is `fc453cf`; the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-114 is implemented and verified locally with commit pending and CI pending.
+- Last commit: `3617fe3` (T-114); the T-113 status sync is `fc453cf`; the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-114 is committed with CI pending.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -20,7 +20,7 @@
 ## Current task
 
 T-114 — Free nested native display temporaries. Status: VERIFIED locally;
-commit pending; CI pending. `src/codegen_c.rs` adds owned Bool/Unit display
+commit `3617fe3`; CI pending. `src/codegen_c.rs` adds owned Bool/Unit display
 helpers and `vantyx_display_free`; list, map, struct, and enum display bind
 each rendered element, key, value, and field, append it, and free it; top-level
 `print`/interpolation keep the static helpers and final display results stay

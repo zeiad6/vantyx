@@ -5,7 +5,7 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 ## In progress
 
 - T-114 — Free nested native display temporaries. VERIFIED locally; commit
-  pending; CI pending. List, map, struct, and enum display now bind each
+  `3617fe3`; CI pending. List, map, struct, and enum display now bind each
   rendered element, key, value, and field, append it, and free it through
   `vantyx_display_free`; nested Bool/Unit use owned helpers so every nested
   result is heap-owned. Two new native tests; ADR-0054; 736-test gate;

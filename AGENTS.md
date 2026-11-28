@@ -117,8 +117,8 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   collection and nominal display is committed in `8911235` with the
   734-test gate (CI pending); T-113 display-focused differential fuzz is
   committed in `d8a476d` with the 734-test gate (CI pending); T-114 nested
-  native display-temporary reclamation is implemented with the 736-test gate
-  (commit pending; CI pending)). The
+  native display-temporary reclamation is committed in `3617fe3` with the
+  736-test gate (CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 736 passed (404 library unit + 15 CLI unit + 47 AI integration +

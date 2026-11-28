@@ -1,6 +1,6 @@
 # Checkpoint — T-114 free nested native display temporaries
 
-Status: VERIFIED locally; commit pending; CI pending
+Status: VERIFIED locally; commit `3617fe3`; CI pending
 Date: 2026-11-27
 
 ## Objective
@@ -65,7 +65,7 @@ frees them.
 
 ## Remaining
 
-- Commit T-114 and record the hash; CI pending.
+- CI pending.
 - Independent review remains unavailable (subagent free-usage limit).
 
 ## Scope limits
