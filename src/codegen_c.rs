@@ -563,8 +563,8 @@ impl<'a> Emitter<'a> {
             IrType::Str => format!("vantyx_str_quote({value})"),
             IrType::Int => format!("vantyx_str_from_int({value})"),
             IrType::Float => format!("vantyx_str_from_float({value})"),
-            IrType::Bool => format!("vantyx_str_from_bool({value})"),
-            IrType::Unit => "vantyx_str_from_unit()".to_string(),
+            IrType::Bool => format!("vantyx_str_from_bool_owned({value})"),
+            IrType::Unit => "vantyx_str_from_unit_owned()".to_string(),
             IrType::List(_) => format!("vantyx_list_display({value}, {depth})"),
             IrType::Map(_, _) => format!("vantyx_map_display({value}, {depth})"),
             IrType::Struct(inner) => format!("{}({value}, {depth})", self.display_name(inner)),
@@ -602,7 +602,10 @@ impl<'a> Emitter<'a> {
                 ));
                 let value = format!("value->{}", self.field(&field.name));
                 let rendered = self.display_field(&field.ty, &value, "depth + 1");
-                self.line(&format!("vantyx_sb_append_str(&builder, {rendered});"));
+                let temporary = self.fresh("field");
+                self.line(&format!("vantyx_str {temporary} = {rendered};"));
+                self.line(&format!("vantyx_sb_append_str(&builder, {temporary});"));
+                self.line(&format!("vantyx_display_free({temporary});"));
             }
             self.line("vantyx_sb_append_str(&builder, \")\");");
             self.line("vantyx_leave_struct();");
@@ -649,7 +652,10 @@ impl<'a> Emitter<'a> {
                             self.field(&field.name)
                         );
                         let rendered = self.display_field(&field.ty, &value, "depth + 1");
-                        self.line(&format!("vantyx_sb_append_str(&builder, {rendered});"));
+                        let temporary = self.fresh("field");
+                        self.line(&format!("vantyx_str {temporary} = {rendered};"));
+                        self.line(&format!("vantyx_sb_append_str(&builder, {temporary});"));
+                        self.line(&format!("vantyx_display_free({temporary});"));
                     }
                     self.line("vantyx_sb_append_str(&builder, \")\");");
                     self.line("return vantyx_sb_finish(&builder);");
@@ -3217,6 +3223,16 @@ static vantyx_str vantyx_str_from_float(double value) { return vantyx_float_str(
 static vantyx_str vantyx_str_from_bool(bool value) { return value ? "true" : "false"; }
 static vantyx_str vantyx_str_from_unit(void) { return "()"; }
 
+/* Display contexts append a nested rendering into a builder and then free it.
+   Bool and Unit are the only renderings that would otherwise be static
+   literals, so they need heap-owned variants there. Final display results are
+   returned to the caller and are not freed here. */
+static vantyx_str vantyx_str_from_bool_owned(bool value) {
+    return vantyx_strdup(value ? "true" : "false");
+}
+static vantyx_str vantyx_str_from_unit_owned(void) { return vantyx_strdup("()"); }
+static void vantyx_display_free(vantyx_str value) { free((void*)value); }
+
 /* Single-buffer string construction for interpolation and `+` chains. The
    builder appends parts in source order and transfers its buffer to the
    caller once, so a k-part interpolation allocates once instead of k times.
@@ -5344,7 +5360,9 @@ static vantyx_str vantyx_list_display(VantyxList* list, int depth) {
     for (int64_t index = 0; index < list->len; index++) {
         if (index > 0) vantyx_sb_append_str(&builder, ", ");
         const void* item = (const char*)list->items + index * list->elem_size;
-        vantyx_sb_append_str(&builder, vantyx_value_display(item, list->elem_desc, depth + 1));
+        vantyx_str rendered = vantyx_value_display(item, list->elem_desc, depth + 1);
+        vantyx_sb_append_str(&builder, rendered);
+        vantyx_display_free(rendered);
     }
     vantyx_sb_append_str(&builder, "]");
     seen_len--;
@@ -5600,9 +5618,13 @@ static vantyx_str vantyx_map_display(VantyxMap* map, int depth) {
         if (index > 0) vantyx_sb_append_str(&builder, ", ");
         const void* key = (const char*)map->keys + index * map->key_size;
         const void* value = (const char*)map->values + index * map->value_size;
-        vantyx_sb_append_str(&builder, vantyx_value_display(key, map->key_desc, depth + 1));
+        vantyx_str rendered_key = vantyx_value_display(key, map->key_desc, depth + 1);
+        vantyx_sb_append_str(&builder, rendered_key);
+        vantyx_display_free(rendered_key);
         vantyx_sb_append_str(&builder, ": ");
-        vantyx_sb_append_str(&builder, vantyx_value_display(value, map->value_desc, depth + 1));
+        vantyx_str rendered_value = vantyx_value_display(value, map->value_desc, depth + 1);
+        vantyx_sb_append_str(&builder, rendered_value);
+        vantyx_display_free(rendered_value);
     }
     vantyx_sb_append_str(&builder, "}");
     seen_len--;
@@ -5615,10 +5637,10 @@ static vantyx_str vantyx_map_to_str(VantyxMap* map) {
 
 static vantyx_str vantyx_value_display(const void* value, const VantyxTypeDesc* desc, int depth) {
     switch (desc->kind) {
-        case VANTYX_T_UNIT: return vantyx_str_from_unit();
+        case VANTYX_T_UNIT: return vantyx_str_from_unit_owned();
         case VANTYX_T_INT: return vantyx_str_from_int(*(const int64_t*)value);
         case VANTYX_T_FLOAT: return vantyx_str_from_float(*(const double*)value);
-        case VANTYX_T_BOOL: return vantyx_str_from_bool(*(const bool*)value);
+        case VANTYX_T_BOOL: return vantyx_str_from_bool_owned(*(const bool*)value);
         case VANTYX_T_STR: return vantyx_str_quote(*(const vantyx_str*)value);
         case VANTYX_T_LIST: return vantyx_list_display(*(VantyxList* const*)value, depth);
         case VANTYX_T_MAP: return vantyx_map_display(*(VantyxMap* const*)value, depth);

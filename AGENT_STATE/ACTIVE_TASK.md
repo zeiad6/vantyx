@@ -1,48 +1,67 @@
 # Active Task
 
-## T-113 — Display-focused differential fuzz shape
+## T-114 — Free nested native display temporaries
+
+- Status: VERIFIED locally; commit pending; CI pending
+- Priority: P1 (native memory efficiency)
+- Dependencies: ADR-0052, ADR-0053, ADR-0054
+
+### Implemented
+
+- `src/codegen_c.rs` adds `vantyx_str_from_bool_owned` and
+  `vantyx_str_from_unit_owned` for nested display, plus
+  `vantyx_display_free` as the single free point.
+- `vantyx_list_display` and `vantyx_map_display` bind each rendered element,
+  key, and value to a temporary, append it, and free it.
+- Generated struct and enum display functions do the same for every field.
+- `display_field` and `vantyx_value_display` use the owned Bool/Unit helpers;
+  top-level `print` and interpolation keep the static helpers.
+- Final display results and top-level `Str` values remain caller-owned and
+  intentionally unreclaimed.
+- ADR-0054, `docs/memory_model.md`, `TASKS.md`, `PROJECT_STATUS.md`,
+  `AGENTS.md`, `docs/PROJECT_BASELINE.md`, `docs/benchmarks.md`, and
+  `benchmarks/results/2026-11-27-display-temporaries.md` are updated.
+
+### Evidence
+
+- `cargo test --test native bool_and_unit_nested_display_match` — passed.
+- `cargo test --test native nested_display_temporaries_are_freed_in_generated_c`
+  — passed.
+- Full gate: fmt/clippy clean; `cargo test` 736 passed (404 library unit + 15
+  CLI unit + 47 AI integration + 118 e2e + 152 native); GCC native 152;
+  sanitized native 152; examples matched; 9 fuzz self-tests; 100/100 seed-1
+  differential cases; fuzz smoke; 13 skills; link checker.
+- Focused nine-run measurement: 100k Int display median peak RSS
+  6,552 → 3,616 KiB; 50k Pair(Bool, Bool) display 9,368 → 5,580 KiB.
+
+### Remaining
+
+- Commit T-114 and record the hash; CI pending.
+- Independent review remains unavailable (subagent free-usage limit).
+
+### Scope limits
+
+- Not general reclamation: final display strings, user strings, collection
+  storage, and other native allocations still leak in v0.1.
+- One allocation per rendered element or field remains; typed display
+  appenders that remove it are deferred.
+- Nested Bool/Unit display now allocates an owned copy that is immediately
+  freed, trading a small allocation for a uniform ownership rule.
+
+## T-113 — Display-focused differential fuzz shape (completed)
 
 - Status: VERIFIED locally; commit `d8a476d`; CI pending
 - Priority: P1 (differential verification for native display)
 - Dependencies: T-072, T-112, ADR-0053
-
-### Implemented
-
 - `tools/differential_fuzz.py::display_program` generates a three-node
   `Node` cycle, a self-referential node, a recursive `Chain` enum of depth
   0–60, `Map[Key, Int]` with struct keys, `Map[List[Int], Str]`,
   `Map[Shape, Int]`, nested empty typed collections, quoted UTF-8 strings,
   and a list of cyclic nodes.
-- `GENERATORS` registers the shape after `nested_program`; the module
-  docstring now describes twelve shapes.
-- `tools/test_differential_fuzz.py` adds deterministic/well-formed checks for
-  the new generator and a determinism check over every registered generator;
-  the suite now has 9 tests.
-
-### Evidence
-
-- `python3 tools/test_differential_fuzz.py` — 9 tests OK.
-- Seven generated programs from seeds 1, 2, 3, 4, 5, 7, and 11 matched
-  interpreter and native stdout and exit codes.
-- `python3 tools/differential_fuzz.py --iterations 100 --seed {1,2,3,500}` —
-  100/100 on every seed.
-- Full gate: fmt/clippy clean; `cargo test` 734 passed; GCC native 150;
-  sanitized native 150; examples matched; fuzz smoke 9 depth/limit cases and
-  400 inputs; 13 skills; 125 links in 192 Markdown files.
-
-### Remaining
-
-- Commit T-113 and record the hash; CI pending.
-- Independent review remains unavailable (subagent free-usage limit).
-- T-114 is queued to free nested display temporaries after append.
-
-### Scope limits
-
+- `tools/test_differential_fuzz.py` adds determinism/well-formedness checks
+  and now passes 9 tests; 100/100 cases agreed on seeds 1, 2, 3, and 500;
+  seven generated programs built and matched manually.
 - Generator-only work: no Rust, language, or native behavior changed.
-- Collections stay small and enum depth stays at or below 60; cycles that
-  would require `Any` are not generated.
-- Randomized agreement expands coverage but does not prove absence of display
-  defects.
 
 ## T-112 — Single-buffer native collection and nominal display
 

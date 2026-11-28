@@ -515,11 +515,11 @@ python3 tools/differential_fuzz.py --iterations 160 --seed 1
 python3 tools/fuzz_smoke.py --binary target/debug/vantyx
 ```
 
-Current local result (2026-11-27): **734 tests passed** (404 library unit +
-15 CLI unit + 47 AI integration + 118 end-to-end + 150 differential native),
+Current local result (2026-11-27): **736 tests passed** (404 library unit +
+15 CLI unit + 47 AI integration + 118 end-to-end + 152 differential native),
 Clippy clean, debug and release builds succeed, all five examples match between
 the interpreter and native binaries, and fuzz smoke reports controlled
-diagnostics. The full 150-test native suite also passes under
+diagnostics. The full 152-test native suite also passes under
 `-fsanitize=address,undefined` with leak detection disabled because v0.1
 allocations are intentionally leaked; CI runs that suite in a dedicated
 sanitizer job and runs the bounded fuzz smoke. CI status

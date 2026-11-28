@@ -4,7 +4,13 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- None. T-114 is the next queued implementation task.
+- T-114 — Free nested native display temporaries. VERIFIED locally; commit
+  pending; CI pending. List, map, struct, and enum display now bind each
+  rendered element, key, value, and field, append it, and free it through
+  `vantyx_display_free`; nested Bool/Unit use owned helpers so every nested
+  result is heap-owned. Two new native tests; ADR-0054; 736-test gate;
+  focused measurement 100k Int peak RSS 6,552 → 3,616 KiB and 50k
+  Pair(Bool, Bool) 9,368 → 5,580 KiB.
 
 ## Verified locally, commit pending CI
 
@@ -21,13 +27,7 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## Queued
 
-- T-114 — Free nested native display temporaries. QUEUED; ADR-0054 is proposed.
-  T-112 removed quadratic prefix copying, but each nested element or field is
-  still rendered into a fresh string that v0.1 never frees. The display
-  helpers return fresh heap strings for every type except `Bool`/`Unit`, so
-  owned variants for those two plus a single free point can release each
-  temporary after the builder copies it. This is not general reclamation; final
-  display strings and other native allocations remain intentionally unreclaimed.
+- None. The next task will be selected after T-114 lands.
 
 ## Completed in `8911235` (CI pending)
 

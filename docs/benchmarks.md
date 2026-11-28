@@ -7,7 +7,9 @@ A reproducible baseline was measured on **2026-11-22**, re-measured on
 re-measured on **2026-11-27** with the new `string_interp` workload after
 single-buffer native string construction (T-111, ADR-0052) and the new
 `display_ops` workload after single-buffer native collection display (T-112,
-ADR-0053). Raw results are stored as generated, not hand-edited:
+ADR-0053), with a focused follow-up measurement after nested display
+temporaries became reclaimable (T-114, ADR-0054). Raw results are stored as
+generated, not hand-edited:
 
 - [`benchmarks/results/2026-11-22.json`](../benchmarks/results/2026-11-22.json) — initial full data
 - [`benchmarks/results/2026-11-22.md`](../benchmarks/results/2026-11-22.md) — initial generated summary
@@ -17,6 +19,7 @@ ADR-0053). Raw results are stored as generated, not hand-edited:
 - [`benchmarks/results/2026-11-27.md`](../benchmarks/results/2026-11-27.md) — generated summary for that run
 - [`benchmarks/results/2026-11-27-string-buffer.md`](../benchmarks/results/2026-11-27-string-buffer.md) — focused before/after comparison for ADR-0052
 - [`benchmarks/results/2026-11-27-display-buffer.md`](../benchmarks/results/2026-11-27-display-buffer.md) — focused before/after comparison for ADR-0053
+- [`benchmarks/results/2026-11-27-display-temporaries.md`](../benchmarks/results/2026-11-27-display-temporaries.md) — focused before/after comparison for ADR-0054
 
 These are single-machine baseline numbers, not a competitive claim. They exist
 to guide optimization and to make regressions visible. The 2026-11-27 full runs
@@ -149,7 +152,11 @@ median wall time 59.893 ms to 34.414 ms and median peak RSS 33,396 KiB to
 [`2026-11-27-display-buffer.md`](../benchmarks/results/2026-11-27-display-buffer.md):
 median wall time 754.707 ms to 5.737 ms and median peak RSS 568,244 KiB to
 2,520 KiB, reflecting the removal of quadratic prefix copying and retained
-prefixes.
+prefixes. The follow-up temporary-reclamation comparison for T-114 is in
+[`2026-11-27-display-temporaries.md`](../benchmarks/results/2026-11-27-display-temporaries.md):
+a 100,000-element `List[Int]` display fell from a median peak RSS of
+6,552 KiB to 3,616 KiB, and a 50,000-element `List[Pair]` display with two
+`Bool` fields each fell from 9,368 KiB to 5,580 KiB.
 
 For comparison, the 2026-11-24 pre-T-055 `string_ops` native median was
 8.318 ms; it fell to the 1.6–3.2 ms range across later runs after single-byte

@@ -231,6 +231,97 @@ fn globals_and_mutation_match() {
 }
 
 #[test]
+fn bool_and_unit_nested_display_match() {
+    // Bool and Unit renderings are static strings at top level. Inside
+    // collections, struct fields, and enum payloads they must be heap-owned
+    // temporaries so the display builder can free them after copying.
+    assert_same(
+        "bool-unit-display",
+        r#"enum Flag:
+    On
+    Off
+    Both(a: Bool, b: Bool)
+
+struct Pair:
+    left: Bool
+    right: Bool
+
+fn nothing() -> Unit:
+    return
+
+fn main():
+    let pair = Pair(left=true, right=false)
+    print(pair)
+    let flags: List[Flag] = [On(), Off(), Both(true, false)]
+    print(flags)
+    let units: List[Unit] = [nothing(), nothing()]
+    print(units)
+    let bools: Map[Bool, Bool] = {true: false, false: true}
+    print(bools)
+    let nested: List[List[Bool]] = [[true, false], []]
+    print(nested)
+    let nested_units: Map[Bool, List[Unit]] = {true: units, false: []}
+    print(nested_units)
+    let structural: Map[Pair, List[Bool]] = {pair: [true]}
+    print(structural)
+"#,
+    );
+}
+
+#[test]
+fn nested_display_temporaries_are_freed_in_generated_c() {
+    // The differential test above proves behavior; this one pins the ownership
+    // shape in the emitted C so a future edit cannot silently drop the frees.
+    let source = r#"enum Flag:
+    On
+    Off
+
+struct Pair:
+    left: Bool
+    right: Bool
+
+fn nothing() -> Unit:
+    return
+
+fn main():
+    let pair = Pair(left=true, right=false)
+    print(pair)
+    let flags: List[Flag] = [On(), Off()]
+    print(flags)
+    let units: List[Unit] = [nothing()]
+    print(units)
+    let bools: Map[Bool, Bool] = {true: false}
+    print(bools)
+"#;
+    let compiled = vantyx::compile(source);
+    assert!(
+        !compiled.has_errors(),
+        "codegen fixture failed to compile:\n{}",
+        compiled.render("main.vtx", source)
+    );
+    let program = compiled.program.expect("parsed program");
+    let model = compiled.model.expect("checked model");
+    let ir = vantyx::ir::build(&program, &model).expect("IR build");
+    let c = vantyx::codegen_c::emit(&ir, "main.vtx", source);
+
+    assert!(c.contains("static vantyx_str vantyx_str_from_bool_owned(bool value)"));
+    assert!(c.contains("static vantyx_str vantyx_str_from_unit_owned(void)"));
+    assert!(c.contains("static void vantyx_display_free(vantyx_str value)"));
+    assert!(
+        c.contains("vantyx_str rendered = vantyx_value_display(item, list->elem_desc, depth + 1);")
+    );
+    assert!(c.contains("vantyx_display_free(rendered);"));
+    assert!(c.contains("vantyx_display_free(rendered_key);"));
+    assert!(c.contains("vantyx_display_free(rendered_value);"));
+    assert!(
+        c.contains("vantyx_display_free(vantyx_field_"),
+        "struct/enum display fields must free their rendered temporaries"
+    );
+    assert!(c.contains("case VANTYX_T_BOOL: return vantyx_str_from_bool_owned("));
+    assert!(c.contains("case VANTYX_T_UNIT: return vantyx_str_from_unit_owned();"));
+}
+
+#[test]
 fn functions_use_lexical_globals_matching() {
     // A callee resolves names against its own frame and the program's global
     // scope. Caller locals with the same name must not shadow the global.

@@ -4,6 +4,22 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-27 — Nested display temporaries are freed after append
+
+- Add `vantyx_str_from_bool_owned` and `vantyx_str_from_unit_owned` so every
+  nested display result is heap-owned; keep the static Bool/Unit helpers for
+  top-level `print` and interpolation, where nothing frees the result.
+- Add `vantyx_display_free` as the single free point and call it only after
+  `vantyx_sb_append_str` has copied the bytes.
+- Free element, key, value, struct-field, and enum-field temporaries; never
+  free final display results, top-level `Str` values, or user strings.
+- Keep `vantyx_map_get`'s missing-key `vantyx_value_display` call unfreed
+  because `vantyx_rt_error` is `_Noreturn`.
+- Measure before/after peak RSS on a 100k Int list and a 50k
+  Pair(Bool, Bool) list; record wall time as observed data, not a speed claim.
+- Reject a general arena or typed-appender redesign in this task; the free
+  point is local to display and does not change the v0.1 leak model.
+
 ## 2026-11-27 — Native display uses the string builder
 
 - Route list, map, struct, and enum display through the existing

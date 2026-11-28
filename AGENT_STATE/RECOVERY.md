@@ -13,7 +13,19 @@
 
 ## Last recorded repository state (2026-11-27)
 
-- T-113 is committed as `d8a476d` with CI pending. `tools/differential_fuzz.py` adds
+- T-114 is implemented and verified locally with commit pending and CI pending.
+  `src/codegen_c.rs` adds `vantyx_str_from_bool_owned`,
+  `vantyx_str_from_unit_owned`, and `vantyx_display_free`; list, map, struct,
+  and enum display bind each rendered element, key, value, and field, append
+  it, and free it; top-level `print`/interpolation keep the static helpers and
+  final results stay caller-owned. Two native tests were added. The 736-test
+  gate passed (404 library unit + 15 CLI unit + 47 AI integration + 118 e2e +
+  152 native), as did GCC native 152, sanitized native 152, examples, 9 fuzz
+  self-tests, 100/100 seed-1 differential cases, fuzz smoke, 13 skills, and the
+  link checker. Focused measurement: 100k Int median peak RSS 6,552 → 3,616
+  KiB and 50k Pair(Bool, Bool) 9,368 → 5,580 KiB. ADR-0054 is accepted.
+- T-113 is committed as `d8a476d` with CI pending; its status sync is
+  `fc453cf`. `tools/differential_fuzz.py` adds
   a twelfth `display_program` shape covering a three-node struct/list cycle, a
   self-referential node, a recursive `Chain` enum of depth 0–60,
   `Map[Key, Int]` with struct keys, `Map[List[Int], Str]`, `Map[Shape, Int]`,
@@ -23,7 +35,7 @@
   and 500; seven generated programs built and matched manually. The full gate
   passed: fmt/clippy clean, 734 tests, GCC native 150, sanitized native 150,
   examples, fuzz smoke, 13 skills, and 125 links in 192 Markdown files. No
-  Rust, language, or native behavior changed. Commit pending.
+  Rust, language, or native behavior changed.
 - T-112 is committed as `8911235` and adds single-buffer native collection and
   nominal display: list, map, struct, and enum rendering append every part into
   one growable `VantyxStrBuilder` in source order, removing quadratic prefix
@@ -51,7 +63,8 @@
   smoke, the 13-skill validator, and the link checker (122 links in 188
   Markdown files). Committed as `45c438b`; CI pending. Focused median
   59.893 ms → 34.414 ms and peak RSS 33,396 KiB → 17,564 KiB.
-- HEAD is at `d8a476d` (T-113); the status sync follows. The remote is at `a9a6d1a` (record the T-105 CI run), and CI
+- HEAD is at `fc453cf` (T-113 status sync); T-114 changes are in the working
+  tree with commit pending. The remote is at `a9a6d1a` (record the T-105 CI run), and CI
   run 45936329476 passed on it. T-112 is committed with CI pending. `779783c`
   contains T-105 and passed run 45936065460. `61cb9be` recorded the T-104 status-sync CI run and passed
   45934367601. `8805381` recorded the T-104 CI run and passed 45934076343. `4269010` contains call-site native

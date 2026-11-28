@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `d8a476d` (T-113); the status sync follows; the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-113 is committed with CI pending.
+- Last commit: `d8a476d` (T-113); the T-113 status sync is `fc453cf`; the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-114 is implemented and verified locally with commit pending and CI pending.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -19,6 +19,21 @@
 
 ## Current task
 
+T-114 — Free nested native display temporaries. Status: VERIFIED locally;
+commit pending; CI pending. `src/codegen_c.rs` adds owned Bool/Unit display
+helpers and `vantyx_display_free`; list, map, struct, and enum display bind
+each rendered element, key, value, and field, append it, and free it; top-level
+`print`/interpolation keep the static helpers and final display results stay
+caller-owned. Two new native tests cover Bool/Unit nested values and pin the
+emitted C. ADR-0054, `docs/memory_model.md`, `docs/benchmarks.md`, and
+`benchmarks/results/2026-11-27-display-temporaries.md` record the decision and
+focused measurement: 100k Int median peak RSS 6,552 → 3,616 KiB and 50k
+Pair(Bool, Bool) 9,368 → 5,580 KiB. The 736-test gate, GCC native suite,
+ASan/UBSan native suite, examples, fuzz self-tests, 100/100 seed-1 differential
+cases, fuzz smoke, 13-skill validator, and link checker pass. Independent
+`qa-verifier` review remains unavailable because the provider returned a
+free-usage limit error; no independent result is claimed.
+
 T-113 — Display-focused differential fuzz shape. Status: VERIFIED locally;
 commit `d8a476d`; CI pending. `tools/differential_fuzz.py` adds a twelfth
 `display_program` shape covering a three-node struct/list cycle, a
@@ -30,8 +45,7 @@ and now passes 9 tests. The twelve-shape fuzzer agreed 100/100 on seeds 1, 2,
 3, and 500; seven generated programs built and matched manually. No Rust,
 language, or native behavior changed. The 734-test gate, GCC native suite,
 ASan/UBSan native suite, examples, fuzz smoke, 13-skill validator, and link
-checker pass. Independent `qa-verifier` review remains unavailable because the
-provider returned a free-usage limit error; no independent result is claimed.
+checker pass.
 
 T-112 — Single-buffer native collection and nominal display. Status: VERIFIED
 locally; commit `8911235`; CI pending. Native list, map, struct, and enum display

@@ -1,6 +1,6 @@
 # ADR-0054: Free nested native display temporaries
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-27
 - Related: T-114, ADR-0052, ADR-0053
 
@@ -77,11 +77,22 @@ unreclaimed in v0.1.
 
 ## Tests and measurements
 
+- `tests/native.rs::bool_and_unit_nested_display_match` compares interpreter and
+  native output for `Bool` struct fields, `List[Flag]`, `List[Unit]`,
+  `Map[Bool, Bool]`, nested lists, and structural-key maps.
+- `tests/native.rs::nested_display_temporaries_are_freed_in_generated_c` pins
+  the emitted C: the owned helpers, `vantyx_display_free`, and the free after
+  each list/map/struct/enum append.
 - Existing differential native display tests cover large lists, structs,
   enum payloads, maps, cycles, deep enums, nested collections, quoting, and
   recursive values.
 - The full native suite runs under AddressSanitizer and
   UndefinedBehaviorSanitizer with leak detection disabled; a use-after-free
   would still be caught by ASan.
-- A focused before/after comparison on `benchmarks/display_ops.vtx` records
-  wall time and peak RSS in `benchmarks/results/`.
+- The focused before/after comparison in
+  `benchmarks/results/2026-11-27-display-temporaries.md` measured, on one
+  machine with nine alternating runs: a 100,000-element `List[Int]` display
+  fell from a median peak RSS of 6,552 KiB to 3,616 KiB, and a 50,000-element
+  `List[Pair]` display with two `Bool` fields each fell from 9,368 KiB to
+  5,580 KiB. Wall time also fell in those batches, but it is reported as
+  observed data, not a stable speed claim.

@@ -3,6 +3,14 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-114 — Free nested native display temporaries (2026-11-27; verified
+  locally; commit pending; CI pending; 736-test gate; list, map, struct, and
+  enum display bind each rendered element, key, value, and field, append it,
+  and free it through `vantyx_display_free`; nested Bool/Unit use owned helpers
+  so every nested result is heap-owned, while top-level `print`/interpolation
+  keep the static helpers and final results stay caller-owned; two new native
+  tests; ADR-0054; focused measurement 100k Int median peak RSS
+  6,552 → 3,616 KiB and 50k Pair(Bool, Bool) 9,368 → 5,580 KiB).
 - T-113 — Display-focused differential fuzz shape (2026-11-27; verified
   locally; commit `d8a476d`; CI pending; 734-test gate; `tools/differential_fuzz.py`
   adds a twelfth `display_program` shape for a three-node struct/list cycle, a
