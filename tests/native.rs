@@ -968,6 +968,67 @@ fn sorted_scalar_lists_match() {
 }
 
 #[test]
+fn reverse_lists_match() {
+    assert_same(
+        "reverse",
+        "struct Point:\n\
+         \x20   x: Int\n\
+         \x20   label: Str\n\
+         \n\
+         enum Item:\n\
+         \x20   Num(value: Int)\n\
+         \x20   Text(text: Str)\n\
+         \x20   Empty\n\
+         \n\
+         fn note(label: Str, value: Int) -> Int:\n\
+         \x20   print(label)\n\
+         \x20   return value\n\
+         \n\
+         fn main():\n\
+         \x20   let ints: List[Int] = [1, 2, 3]\n\
+         \x20   let reversed_ints = reverse(ints)\n\
+         \x20   print(reversed_ints)\n\
+         \x20   print(ints)\n\
+         \x20   push(reversed_ints, 4)\n\
+         \x20   print(reversed_ints)\n\
+         \x20   print(ints)\n\
+         \x20   let strings: List[Str] = [\"a\", \"b\", \"é\"]\n\
+         \x20   print(reverse(strings))\n\
+         \x20   let flags: List[Bool] = [true, false]\n\
+         \x20   print(reverse(flags))\n\
+         \x20   let floats: List[Float] = [1.5, -0.0, float(\"NaN\")]\n\
+         \x20   print(reverse(floats))\n\
+         \x20   let nested: List[List[Int]] = [[1], [2, 3], []]\n\
+         \x20   let nested_reversed = reverse(nested)\n\
+         \x20   print(nested_reversed)\n\
+         \x20   push(nested_reversed[0], 4)\n\
+         \x20   print(nested)\n\
+         \x20   let points: List[Point] = [Point(x=1, label=\"a\"), Point(x=2, label=\"b\")]\n\
+         \x20   print(reverse(points))\n\
+         \x20   let items: List[Item] = [Num(1), Text(\"x\"), Empty()]\n\
+         \x20   let reversed_items = reverse(items)\n\
+         \x20   print(reversed_items[0] == Empty(), reversed_items[1] == Text(\"x\"), reversed_items[2] == Num(1))\n\
+         \x20   let empty: List[Int] = []\n\
+         \x20   print(reverse(empty))\n\
+         \x20   print(reverse([note(\"left\", 1), note(\"right\", 2)]))\n",
+    );
+}
+
+#[test]
+fn dynamic_reverse_is_rejected_with_e0401() {
+    let Some(engines) = run_engines(
+        "reverse-any-unsupported",
+        "fn main():\n    let value: Any = [1, 2, 3]\n    print(reverse(value))\n",
+    ) else {
+        return;
+    };
+    assert_eq!(engines.build.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&engines.build.stderr);
+    assert!(stderr.contains("error[E0401]"), "{stderr}");
+    assert!(stderr.contains("Any"), "{stderr}");
+}
+
+#[test]
 fn float_display_matches() {
     assert_same(
         "float-display",

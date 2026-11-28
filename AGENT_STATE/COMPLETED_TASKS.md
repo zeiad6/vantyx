@@ -3,6 +3,17 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-117 — List reversal (2026-11-27; verified locally; commit pending; CI
+  pending; 759-test gate; `reverse(list: List[T]) -> List[T]` returns a new
+  shallow-copied list in reverse order for any supported element type, leaves
+  the input unchanged, evaluates its argument once, and reports
+  `E0301`/`E0302`/`R0005` with the native `E0401` boundary; three e2e and two
+  native tests cover `Int`, `Str`, `Bool`, `Float`, nested lists, structs,
+  enums, empty and one-element lists, aliasing, evaluation order, and dynamic
+  values; the collection fuzz shape prints `reverse` results for `List[Int]`,
+  `List[Str]`, and `List[Item]`; `reverse([])` remains `List[Any]`; GCC native
+  161, sanitized native 161, 100/100 fuzz on seeds 1 and 2, 9 fuzz self-tests,
+  fuzz smoke, 13 skills, and 130 links in 199 Markdown files).
 - T-116 — Atomic file replacement (2026-11-27; verified locally; commit
   `3e22628`; CI pending; 754-test gate; `write_file_atomic(path, text) -> Unit`
   writes a hidden same-directory temporary with exclusive creation, writes and

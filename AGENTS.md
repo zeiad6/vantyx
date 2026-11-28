@@ -120,11 +120,13 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   native display-temporary reclamation is committed in `3617fe3` with the
   736-test gate (CI pending); T-115 map key removal is committed in `b6f3f11`
   with the 743-test gate (CI pending); T-116 atomic whole-file replacement adds
-  `write_file_atomic` with the 754-test gate; commit `3e22628`; CI pending). The
+  `write_file_atomic` with the 754-test gate; commit `3e22628`; CI pending;
+  T-117 list reversal adds `reverse` with the 759-test gate; commit pending;
+  CI pending). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 754 passed (404 library unit + 15 CLI unit + 47 AI integration +
-  129 e2e + 159 native); the full native suite also passes with `VANTYX_CC=gcc`.
+- `cargo test`: 759 passed (404 library unit + 15 CLI unit + 47 AI integration +
+  132 e2e + 161 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - CI runs the native differential suite with generated programs compiled under
   AddressSanitizer and UndefinedBehaviorSanitizer via `tools/clang-sanitize.sh`
@@ -193,7 +195,8 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   UTF-8 text builtins, lexical path builtins whose trailing-dot stem and
   extension behavior matches the interpreter (T-086), deterministic
   scalar-list sorting over a stable merge sort for `Int`/`Float`/`Str`/`Bool`
-  (T-103, ADR-0050), checked arithmetic,
+  (T-103, ADR-0050), `reverse(list)` returning a new shallow-copied list for
+  any supported element type (T-117), checked arithmetic,
   bounds checks, structural equality.
 - Native rejects: `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads,
   `match` on `Any`, dynamically typed file/atomic-write/directory/glob/recursive-copy/
@@ -242,7 +245,8 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   rename/copy, recursive directory copy, metadata probes, text builtins,
   deterministic scalar-list sorting (scalar element types only; no comparator,
   key, descending flag, in-place variant, deduplication, or structural
-  ordering), and
+  ordering), and a shallow-copy `reverse` (no in-place variant, iterator, or
+  reclamation of the new list), and
   lexical POSIX-style path helpers only (no escaping/braces/case folding in
   globs and no metadata objects or preservation, recursive move, streaming,
   atomic copies or streaming atomic writes, error conversion or expression-position `?`, or sandbox; glob materializes sorted

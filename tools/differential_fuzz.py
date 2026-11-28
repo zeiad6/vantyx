@@ -217,6 +217,7 @@ fn main():
     let xs: List[Int] = [{", ".join(values)}]
     push(xs, {rng.randint(-5, 9)})
     print(xs)
+    print(reverse(xs))
     print(len(xs))
     print(xs[len(xs) - 1])
     print(contains(xs, {values[0]}))
@@ -224,6 +225,7 @@ fn main():
     print(xs)
     let words: List[Str] = [{", ".join('"' + w + '"' for w in words)}]
     print(join(words, "-"))
+    print(reverse(words))
     print(split("a,b,c", ","))
     print(replace("banana", "na", "X"))
     print(trim("  padded  "))
@@ -250,6 +252,7 @@ fn main():
     let named_again = Point(x=note("x2", {rng.randint(0, 9)}), y=note("y2", {rng.randint(0, 9)}))
     print(named_again)
     let items: List[Item] = [Num({rng.randint(0, 5)}), Text("x"), Empty()]
+    print(reverse(items))
     for item in items:
         print(item)
     print(classify({rng.randint(-1, 5)}))

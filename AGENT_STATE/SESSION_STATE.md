@@ -22,6 +22,27 @@
 
 ## Current task
 
+T-117 — List reversal. Status: VERIFIED locally on 2026-11-27; commit pending;
+CI pending. `reverse(list: List[T]) -> List[T]` returns a new
+shallow-copied list with the elements in reverse order for any supported
+element type and leaves the input unchanged. The checker returns the same
+`List[T]` element type and reports non-lists as `E0301` and wrong arity as
+`E0302`; the interpreter clones the elements in reverse order; the IR requires
+one statically typed list; and the native backend adds `vantyx_list_reversed`,
+which allocates a new list and copies raw element slots in reverse order.
+Three e2e tests and two native tests cover `Int`, `Str`, `Bool`, `Float`,
+nested lists, structs, enums, empty and one-element lists, input independence,
+argument evaluation order, `E0301`/`E0302`, `R0005`, and the native `E0401`
+boundary; the collection fuzz shape now prints `reverse` results for
+`List[Int]`, `List[Str]`, and `List[Item]`. `reverse([])` has no element type
+to adopt and remains `List[Any]` under the native `E0401` boundary. The full
+gate passed: 759 tests (404 library unit + 15 CLI unit + 47 AI integration +
+132 e2e + 161 native), GCC native 161, sanitized native 161, fmt/clippy clean
+and builds succeed, all five examples matched, 9 fuzzer self-tests, 100/100
+differential cases on seeds 1 and 2, fuzz smoke, 13 skills, and 130 links in
+199 Markdown files. Independent `qa-verifier` review remains unavailable because the
+provider returned a free-usage limit error; no independent result is claimed.
+
 T-116 — Atomic file replacement. Status: VERIFIED locally on 2026-11-27;
 commit `3e22628`; CI pending.
 `write_file_atomic(path, text) -> Unit` creates or replaces a file by writing

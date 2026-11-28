@@ -309,7 +309,7 @@ so `.bashrc` has no extension. See
 | Rename/copy | `rename` and byte-preserving `copy_file` in both engines; host-defined rename overwrite, regular-file source check, no metadata preservation, non-atomic copies |
 | Recursive copy | `copy_dir_all` in both engines; new target only, self-copy rejection, raw names, inner symlink and special-file rejection, 100,000-entry / 128-depth caps, no metadata preservation or rollback |
 | Text | UTF-8 `split`/`join`/`trim`/`starts_with`/`ends_with`/`replace` in both engines; Unicode `White_Space` trimming, literal non-overlapping replacement, no regex/case/normalization |
-| Collections | `sorted` in both engines returns a new ascending list of `Int`, `Float`, `Str`, or `Bool`; stable ties, `-0.0`/`0.0` equal, NaN last; the input is unchanged |
+| Collections | `sorted` in both engines returns a new ascending list of `Int`, `Float`, `Str`, or `Bool`; stable ties, `-0.0`/`0.0` equal, NaN last; `reverse` returns a new list in reverse order for any element type; both leave the input unchanged |
 | Paths | Lexical POSIX-style `path_join`/`path_parent`/`path_name`/`path_stem`/`path_extension`/`path_is_absolute` in both engines; no filesystem access, normalization, or containment |
 | REPL | Persistent declarations, line editing, single-line history, top-level Tab completion, expression echo |
 | AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, incremental vector reuse, MMR diversity reranking, citations, retrieval evaluation, tools, bounded agents; live cloud verification on 2026-11-24 and a 21/21 re-verification at 20:59Z (local model still missing; cloud access not guaranteed) |

@@ -2262,6 +2262,12 @@ impl<'a> Emitter<'a> {
                 };
                 format!("{function}({})", self.expr(&args[0]))
             }
+            "reverse" => {
+                let IrType::List(_) = &args[0].ty else {
+                    unreachable!("IR rejected reverse on this type");
+                };
+                format!("vantyx_list_reversed({})", self.expr(&args[0]))
+            }
             "split" => {
                 let text = self.expr(&args[0]);
                 let separator = self.expr(&args[1]);
@@ -3806,6 +3812,23 @@ static void vantyx_list_pop_raw(VantyxList* list, void* out, int line, int colum
     if (list->len == 0) vantyx_rt_error("R0003", "`pop` on an empty list", line, column);
     list->len--;
     memcpy(out, (char*)list->items + list->len * list->elem_size, (size_t)list->elem_size);
+}
+
+/* Returns a new list with the elements in reverse order. The input is not
+   modified; element values are shallow-copied, so nested collections and
+   structs remain shared exactly as they are through any other list copy. */
+static VantyxList* vantyx_list_reversed(VantyxList* list) {
+    VantyxList* result = vantyx_list_new(list->elem_size, list->elem_desc);
+    if (list->len > 0) {
+        vantyx_list_reserve(result, list->len, 0, 0);
+        for (int64_t index = 0; index < list->len; index++) {
+            memcpy((char*)result->items + index * list->elem_size,
+                   (char*)list->items + (list->len - 1 - index) * list->elem_size,
+                   (size_t)list->elem_size);
+        }
+        result->len = list->len;
+    }
+    return result;
 }
 
 /* Stable scalar-list sorting for the `sorted` builtin. The interpreter uses a

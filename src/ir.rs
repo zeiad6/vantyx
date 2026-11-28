@@ -2633,6 +2633,18 @@ impl<'a> Builder<'a> {
                 }
                 IrType::List(inner.clone())
             }
+            "reverse" => {
+                if lowered.len() != 1 {
+                    return Err(IrError::internal("`reverse` arity was not validated", span));
+                }
+                let IrType::List(inner) = &lowered[0].ty else {
+                    return Err(IrError::internal(
+                        "`reverse` argument is not a List",
+                        args[0].value.span,
+                    ));
+                };
+                IrType::List(inner.clone())
+            }
             "split" => {
                 if lowered.len() != 2 {
                     return Err(IrError::internal("`split` arity was not validated", span));

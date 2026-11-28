@@ -4,6 +4,34 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-27 — `reverse` returns a new shallow-copied list
+
+- Add `reverse(list: List[T]) -> List[T]` as a standard-library transformation
+  instead of a list method or an in-place mutation, matching `sorted`'s
+  new-list convention and keeping aliasing behavior consistent with list
+  assignment.
+- Copy raw element slots natively and clone `Value`s in the interpreter; do not
+  deep-copy nested lists, maps, structs, or enums. Shallow sharing is already
+  the observable list-copy semantics and avoids inventing a second ownership
+  rule.
+- Support every element type the backend can represent, not only scalars,
+  because reversal has no ordering requirement. A direct empty list literal has
+  no element type to adopt, so `reverse([])` remains `List[Any]` and stays
+  under the native `E0401` boundary rather than guessing a type.
+- Reject an in-place variant, iterator/lazy view, comparator, deduplication,
+  and reclamation of the new list in this task; each needs a separate design
+  and evidence.
+
+## 2026-11-27 — External skill search stays read-only
+
+- Re-ran `npx skills find "compiler engineering"` on 2026-11-27; results were
+  low-adoption (mostly one install) and unrelated to Vantyx's Rust compiler,
+  runtime, and verification work.
+- Keep the thirteen validated in-repository skills as the working library and
+  do not install an external skill without explicit approval. The harness
+  advertises the in-repo skills by ID, so no capability gap is currently
+  demonstrated.
+
 ## 2026-11-27 — Nested display temporaries are freed after append
 
 - Add `vantyx_str_from_bool_owned` and `vantyx_str_from_unit_owned` so every

@@ -2145,6 +2145,14 @@ impl<'a> Interpreter<'a> {
                 }
                 Ok(Value::list(sorted))
             }
+            "reverse" => {
+                self.arity(name, &args, 1, 1, span)?;
+                let Value::List(items) = &args[0] else {
+                    return Err(self.type_error(" in `reverse`", "`List`", &args[0], span));
+                };
+                let reversed: Vec<Value> = items.borrow().iter().rev().cloned().collect();
+                Ok(Value::list(reversed))
+            }
             "split" => {
                 self.arity(name, &args, 2, 2, span)?;
                 let text = match &args[0] {

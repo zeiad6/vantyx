@@ -23,6 +23,7 @@ pub const BUILTINS: &[&str] = &[
     "contains",
     "remove",
     "sorted",
+    "reverse",
     "keys",
     "values",
     "str",
@@ -2714,6 +2715,27 @@ impl<'a> Checker<'a> {
                                 args[0].span,
                             )
                             .with_help("pass a list of Int, Float, Str, or Bool"),
+                        );
+                        Type::List(Box::new(Type::Any))
+                    }
+                }
+            }
+            "reverse" => {
+                if !arity(self, 1, 1) {
+                    return Type::List(Box::new(Type::Any));
+                }
+                let list_ty = arg_ty(self, 0, None);
+                match &list_ty {
+                    Type::List(inner) => Type::List(inner.clone()),
+                    Type::Any => Type::Any,
+                    other => {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E0301",
+                                format!("`reverse` expects a List, found `{other}`"),
+                                args[0].span,
+                            )
+                            .with_help("pass a list; reversal preserves its element type"),
                         );
                         Type::List(Box::new(Type::Any))
                     }

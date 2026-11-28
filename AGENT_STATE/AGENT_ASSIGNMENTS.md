@@ -6,7 +6,7 @@ files. Only one subagent runs at a time until it finishes.
 
 | Role | Agent | Current assignment | Status |
 | --- | --- | --- | --- |
-| Orchestrator / chief engineer | primary session | T-116 atomic whole-file replacement, T-115 map key removal, and T-114 nested display-temporary reclamation verified locally, alongside T-078 through T-113; T-114 through T-116 commit and CI pending | In progress |
+| Orchestrator / chief engineer | primary session | T-117 list reversal verified locally pending the full gate, alongside T-116 atomic whole-file replacement, T-115 map key removal, and T-114 nested display-temporary reclamation; T-114 through T-117 commit and CI pending | In progress |
 | Compiler architecture review | `compiler-architect` | Native memory reclamation design (read-only) | Blocked on subagent capacity |
 | Backend implementation | `backend-engineer` | No active assignment; T-070/T-071 are committed | Idle |
 | Language implementation | `language-implementer` | T-075 `?` propagation implemented by the primary session; independent review when capacity returns | Idle |

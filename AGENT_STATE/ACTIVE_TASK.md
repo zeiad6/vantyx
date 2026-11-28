@@ -1,56 +1,65 @@
 # Active Task
 
-## T-116 — Atomic file replacement
+## T-117 — List reversal
 
-- Status: VERIFIED locally on 2026-11-27; commit `3e22628`; CI pending
-- Priority: P1 (standard library: file safety)
-- Dependencies: ADR-0026 (basic file I/O), T-097 (filesystem error wording)
+- Status: VERIFIED locally on 2026-11-27; commit pending; CI pending
+- Priority: P1 (standard library: list transformation)
+- Dependencies: T-103 (list transformation conventions), T-112 (native list
+  representation), T-115 (builtin registration and scope conventions)
 
 ### Implemented
 
-- `src/checker.rs` registers `write_file_atomic` and checks two `Str`
-  arguments; wrong types are `E0301` and wrong arity is `E0302`.
-- `src/interp.rs` adds a same-directory `.vantyx-tmp-<pid>-<serial>` file with
-  exclusive creation, `write_all`/`flush`/`sync_all`, rename, and failure
-  cleanup.
-- `src/ir.rs` validates both native arguments as `Str`.
-- `src/codegen_c.rs` binds the path and contents in source order and adds
-  `vantyx_write_file_atomic` with `open(O_CREAT|O_EXCL)`, a `write` loop,
-  `fsync`, POSIX `rename`, and temporary cleanup.
-- ADR-0055 records the design; the specification, `docs/security.md`,
-  `README.md`, `TASKS.md`, `PROJECT_STATUS.md`, and the agent-state files are
-  updated.
+- `src/checker.rs` registers `reverse` and returns the same `List[T]` element
+  type; non-lists are `E0301` and wrong arity is `E0302`.
+- `src/interp.rs` clones the elements in reverse order into a new list; the
+  input list is unchanged.
+- `src/ir.rs` requires one statically typed list and returns its element type.
+- `src/codegen_c.rs` adds `vantyx_list_reversed`, which allocates a new list
+  and copies raw element slots in reverse order.
+- The language specification, `README.md`, `docs/PROJECT_BASELINE.md`,
+  `TASKS.md`, `PROJECT_STATUS.md`, and the agent-state files are updated.
 
 ### Evidence
 
 - Full gate on 2026-11-27: `cargo fmt --check --all` and
   `cargo clippy --all-targets -- -D warnings` clean; debug and release builds
   succeed.
-- `cargo test` — 754 passed (404 library unit + 15 CLI unit + 47 AI
-  integration + 129 e2e + 159 native).
-- Full 159-test native suite passed with `VANTYX_CC=gcc` and under clang
+- `cargo test` — 759 passed (404 library unit + 15 CLI unit + 47 AI
+  integration + 132 e2e + 161 native).
+- Full 161-test native suite passed with `VANTYX_CC=gcc` and under clang
   AddressSanitizer/UndefinedBehaviorSanitizer with leak detection disabled.
 - All five examples matched interpreter and native output.
 - 9 fuzzer self-tests; 100/100 differential cases on seeds 1 and 2; fuzz smoke
   reported 9 depth/limit cases and 400 random/mutated inputs.
-- 13 skills validated; 130 relative links in 197 Markdown files resolve.
-- Focused probes covered creation, replacement, empty contents, nested
-  directories, a 900 KiB payload, symbolic and dangling links, hard links,
-  read-only targets whose mode becomes `0666 & umask`, missing parents,
-  directory targets, empty paths, root paths, trailing slashes, and
-  `E0301`/`E0302`/`E0401`/`R0005` boundaries. No `.vantyx-tmp-*` file remained.
+- 13 skills validated; 130 relative links in 199 Markdown files resolve.
+- Targeted tests: `cargo test --test e2e reverse` passed 3 and
+  `cargo test --test native reverse` passed 2.
 
 ### Remaining
 
+- Commit T-117 and record the hash in a status-sync commit.
 - Independent review remains unavailable (subagent free-usage limit).
 
 ### Scope limits
 
-- Whole-file replacement only; no append, streaming write, metadata
-  preservation, directory fsync, crash scavenging, atomic copy, or sandbox.
-- Temporary names are predictable and are not a security boundary.
-- The native helper relies on POSIX file descriptors and `rename`; native
-  Windows support remains unverified.
+- New list with `O(n)` extra storage; no in-place reversal, iterator, lazy
+  view, comparator, deduplication, or reclamation of the new list.
+- Shallow copying means nested collections and structs remain shared, matching
+  list assignment and other list-returning builtins.
+- `reverse([])` has no element type to adopt, stays `List[Any]`, and is
+  rejected natively with `E0401`; annotate the binding or the list literal.
+
+## T-116 — Atomic file replacement (completed)
+
+- Status: VERIFIED locally on 2026-11-27; commit `3e22628`; CI pending
+- `write_file_atomic(path, text) -> Unit` writes a hidden same-directory
+  temporary, fsyncs it, renames it over the target, and removes the temporary
+  on failure; it replaces symbolic links rather than following them, keeps the
+  old contents of hard links, and does not preserve metadata or fsync the
+  directory.
+- Six e2e and five native tests; ADR-0055; 754-test gate, GCC native 159,
+  sanitized native 159, 100/100 fuzz on seeds 1 and 2, examples, fuzz smoke,
+  13 skills, and 130 links in 197 Markdown files.
 
 ## T-115 — Map key removal (completed)
 

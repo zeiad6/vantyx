@@ -2676,6 +2676,124 @@ fn sorted_dynamic_any_value_rejects_mixed_lists() {
 }
 
 #[test]
+fn reverse_returns_a_new_list_for_all_element_types() {
+    let run = run_file(
+        "reverse",
+        "struct Point:\n\
+         \x20   x: Int\n\
+         \x20   label: Str\n\
+         \n\
+         enum Item:\n\
+         \x20   Num(value: Int)\n\
+         \x20   Text(text: Str)\n\
+         \x20   Empty\n\
+         \n\
+         fn note(label: Str, value: Int) -> Int:\n\
+         \x20   print(label)\n\
+         \x20   return value\n\
+         \n\
+         fn main():\n\
+         \x20   let ints: List[Int] = [1, 2, 3]\n\
+         \x20   let reversed_ints = reverse(ints)\n\
+         \x20   print(reversed_ints)\n\
+         \x20   print(ints)\n\
+         \x20   push(reversed_ints, 4)\n\
+         \x20   print(reversed_ints)\n\
+         \x20   print(ints)\n\
+         \x20   let strings: List[Str] = [\"a\", \"b\", \"é\"]\n\
+         \x20   print(reverse(strings))\n\
+         \x20   let flags: List[Bool] = [true, false]\n\
+         \x20   print(reverse(flags))\n\
+         \x20   let floats: List[Float] = [1.5, -0.0, float(\"NaN\")]\n\
+         \x20   print(reverse(floats))\n\
+         \x20   let nested: List[List[Int]] = [[1], [2, 3], []]\n\
+         \x20   let nested_reversed = reverse(nested)\n\
+         \x20   print(nested_reversed)\n\
+         \x20   push(nested_reversed[0], 4)\n\
+         \x20   print(nested)\n\
+         \x20   let points: List[Point] = [Point(x=1, label=\"a\"), Point(x=2, label=\"b\")]\n\
+         \x20   print(reverse(points))\n\
+         \x20   let items: List[Item] = [Num(1), Text(\"x\"), Empty()]\n\
+         \x20   let reversed_items = reverse(items)\n\
+         \x20   print(reversed_items[0] == Empty(), reversed_items[1] == Text(\"x\"), reversed_items[2] == Num(1))\n\
+         \x20   let empty: List[Int] = []\n\
+         \x20   print(reverse(empty))\n\
+         \x20   let one: List[Str] = [\"only\"]\n\
+         \x20   print(reverse(one))\n\
+         \x20   print(reverse([note(\"left\", 1), note(\"right\", 2)]))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "[3, 2, 1]\n\
+         [1, 2, 3]\n\
+         [3, 2, 1, 4]\n\
+         [1, 2, 3]\n\
+         [\"é\", \"b\", \"a\"]\n\
+         [false, true]\n\
+         [NaN, -0.0, 1.5]\n\
+         [[], [2, 3], [1]]\n\
+         [[1], [2, 3], [4]]\n\
+         [Point(x=2, label=\"b\"), Point(x=1, label=\"a\")]\n\
+         true true true\n\
+         []\n\
+         [\"only\"]\n\
+         left\n\
+         right\n\
+         [2, 1]\n"
+    );
+}
+
+#[test]
+fn reverse_rejects_non_lists_and_wrong_arity() {
+    let run = check_file(
+        "reverse-types",
+        "fn main():\n\
+         \x20   print(reverse(3))\n\
+         \x20   print(reverse(\"abc\"))\n\
+         \x20   print(reverse())\n\
+         \x20   print(reverse([1], [2]))\n",
+    );
+    assert_eq!(run.code, 1);
+    assert_eq!(
+        run.stderr.matches("error[E0301]").count(),
+        2,
+        "{}",
+        run.stderr
+    );
+    assert_eq!(
+        run.stderr.matches("error[E0302]").count(),
+        2,
+        "{}",
+        run.stderr
+    );
+    for message in [
+        "`reverse` expects a List, found `Int`",
+        "`reverse` expects a List, found `Str`",
+        "`reverse` expects 1 argument(s), found 0",
+        "`reverse` expects 1 argument(s), found 2",
+    ] {
+        assert!(run.stderr.contains(message), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn reverse_dynamic_any_value_uses_runtime_type_checks() {
+    let run = run_file(
+        "reverse-any",
+        "fn main():\n\
+         \x20   let list_value: Any = [3, 1, 2]\n\
+         \x20   print(reverse(list_value))\n\
+         \x20   let int_value: Any = 3\n\
+         \x20   print(reverse(int_value))\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "[2, 1, 3]\n");
+    assert!(run.stderr.contains("error[R0005]"), "{}", run.stderr);
+    assert!(run.stderr.contains("in `reverse`"), "{}", run.stderr);
+}
+
+#[test]
 fn path_builtins_round_trip() {
     let run = run_file(
         "path-builtins",

@@ -4,22 +4,19 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- None.
+- T-117 — List reversal. VERIFIED locally on 2026-11-27; commit pending;
+  CI pending; 759-test gate (404 library unit + 15 CLI unit + 47 AI integration
+  + 132 e2e + 161 native), GCC native 161, sanitized native 161, 100/100 fuzz
+  on seeds 1 and 2, examples, fuzz smoke, 13 skills, and 130 links in 199
+  Markdown files. `reverse(list: List[T]) -> List[T]` returns a new
+  shallow-copied list in reverse order for any supported element type, leaves
+  the input unchanged, evaluates its argument once, and reports
+  `E0301`/`E0302`/`R0005` with the native `E0401` boundary. Three e2e tests and
+  two native tests cover all element types, aliasing, evaluation order, empty
+  and one-element lists, diagnostics, and dynamic values; the collection fuzz
+  shape prints `reverse` results for `List[Int]`, `List[Str]`, and `List[Item]`.
 
 ## Verified locally, commit pending CI
-
-- T-116 — Atomic file replacement. VERIFIED locally on 2026-11-27; commit
-  `3e22628`; CI pending. `write_file_atomic(path, text)` writes a hidden
-  same-directory temporary, fsyncs it, renames it over the target, and removes
-  the temporary on failure; it replaces symbolic links rather than following
-  them and does not preserve mode/owner/timestamps or fsync the directory.
-  Six e2e tests and five native tests cover creation/replacement, empty
-  contents, nested paths, symbolic and dangling links, hard links, read-only
-  targets, missing parents, directory targets, empty paths, evaluation order,
-  `E0301`/`E0302`, `R0005`, and the native `E0401` boundary; ADR-0055;
-  754-test gate, GCC native 159, sanitized native 159, 100/100 fuzz on seeds 1
-  and 2, 9 fuzz self-tests, fuzz smoke, 13 skills, and 130 links in 197
-  Markdown files.
 
 - T-115 — Map key removal. VERIFIED locally on 2026-11-27; commit `b6f3f11`;
   CI pending. `remove(map, key)` deletes the first structurally equal entry,
@@ -53,7 +50,19 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## Queued
 
-- None. The next task will be selected after T-114 lands.
+- None. T-117 is in progress; the next task will be selected after it lands.
+
+## Completed in `3e22628` (CI pending)
+
+- T-116 — Atomic file replacement. VERIFIED locally on 2026-11-27; committed
+  as `3e22628`; `write_file_atomic(path, text)` writes a hidden same-directory
+  temporary with exclusive creation, writes and `fsync`s it, renames it over
+  the target, and unlinks the temporary on failure. It replaces symbolic links
+  rather than following them, keeps the old contents of hard links, and does
+  not preserve mode, owner, timestamps, or fsync the directory. Six e2e tests
+  and five native tests; ADR-0055; 754-test gate, GCC native 159, sanitized
+  native 159, 100/100 fuzz on seeds 1 and 2, examples, fuzz smoke, 13 skills,
+  and 130 links in 197 Markdown files.
 
 ## Completed in `8911235` (CI pending)
 
