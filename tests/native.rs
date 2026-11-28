@@ -38,6 +38,18 @@ fn workspace(name: &str, source: &str) -> PathBuf {
     directory
 }
 
+fn has_atomic_temp(directory: &Path) -> bool {
+    fs::read_dir(directory)
+        .expect("read directory")
+        .any(|entry| {
+            entry
+                .expect("directory entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".vantyx-tmp-")
+        })
+}
+
 fn run_engines(name: &str, source: &str) -> Option<Engines> {
     let directory = workspace(name, source);
     run_engines_in(directory, name)
@@ -2626,6 +2638,232 @@ fn file_io_evaluates_arguments_left_to_right() {
          \x20   write_file(path_for(), contents_for())\n\
          \x20   print(read_file(\"order.txt\"))\n";
     let Some(engines) = run_engines_with_cwd("file-io-order", source) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), native.status.code());
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "path\ntext\nx\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+}
+
+#[test]
+fn atomic_file_io_matches() {
+    let source = "fn main():\n\
+         \x20   write_file_atomic(\"note.txt\", \"discarded\")\n\
+         \x20   write_file_atomic(\"note.txt\", \"héllo\")\n\
+         \x20   print(read_file(\"note.txt\"))\n\
+         \x20   write_file_atomic(\"empty.txt\", \"\")\n\
+         \x20   print(file_exists(\"empty.txt\"), file_size(\"empty.txt\"))\n";
+    let Some(engines) = run_engines_with_cwd("atomic-file-io", source) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let directory = engines
+        .executable
+        .parent()
+        .expect("executable directory")
+        .to_path_buf();
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), native.status.code());
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "héllo\ntrue 0\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("note.txt")).expect("read note"),
+        "héllo"
+    );
+    assert!(
+        !has_atomic_temp(&directory),
+        "atomic write left a temporary file"
+    );
+}
+
+#[test]
+fn atomic_file_io_errors_match() {
+    for (label, call) in [
+        (
+            "atomic-file-io-missing",
+            "write_file_atomic(\"missing/note.txt\", \"x\")",
+        ),
+        (
+            "atomic-file-io-directory",
+            "write_file_atomic(\"blocked\", \"x\")",
+        ),
+        ("atomic-file-io-empty", "write_file_atomic(\"\", \"x\")"),
+    ] {
+        let source = format!("fn main():\n    {call}\n");
+        let directory = workspace(label, &source);
+        fs::create_dir(directory.join("blocked")).expect("create blocked directory");
+        let Some(engines) = run_engines_in_mode(directory.clone(), label, true) else {
+            return;
+        };
+        assert!(
+            engines.build.status.success(),
+            "{label} native build failed:\n{}",
+            String::from_utf8_lossy(&engines.build.stderr)
+        );
+        let interpreter_first = String::from_utf8_lossy(&engines.interpreter.stderr)
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        let native = engines.native.expect("native output");
+        assert_eq!(engines.interpreter.status.code(), Some(2), "{label}");
+        assert_eq!(native.status.code(), Some(2), "{label}");
+        assert_eq!(
+            String::from_utf8_lossy(&engines.interpreter.stdout),
+            String::from_utf8_lossy(&native.stdout),
+            "{label}"
+        );
+        let native_first = String::from_utf8_lossy(&native.stderr)
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        assert_eq!(interpreter_first, native_first, "{label}");
+        assert!(
+            interpreter_first.contains("error[R0015]"),
+            "{label}: {interpreter_first}"
+        );
+        assert!(
+            !has_atomic_temp(&directory),
+            "{label} left a temporary file"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_file_io_links_match() {
+    use std::os::unix::fs::symlink;
+
+    let source = "fn main():\n\
+         \x20   write_file_atomic(\"link.txt\", \"via-link\")\n\
+         \x20   print(read_file(\"link.txt\"), read_file(\"target.txt\"), is_symlink(\"link.txt\"))\n\
+         \x20   write_file_atomic(\"alias.txt\", \"via-alias\")\n\
+         \x20   print(read_file(\"alias.txt\"), read_file(\"original.txt\"))\n\
+         \x20   write_file_atomic(\"readonly.txt\", \"replaced-readonly\")\n\
+         \x20   print(read_file(\"readonly.txt\"))\n\
+         \x20   write_file_atomic(\"dangling.txt\", \"dangling-now-file\")\n\
+         \x20   print(read_file(\"dangling.txt\"), is_symlink(\"dangling.txt\"))\n";
+    let directory = workspace("atomic-file-io-links", source);
+    fs::write(directory.join("target.txt"), "target-old").expect("write target");
+    fs::write(directory.join("original.txt"), "original").expect("write original");
+    fs::write(directory.join("readonly.txt"), "readonly").expect("write readonly");
+    let mut readonly_permissions = fs::metadata(directory.join("readonly.txt"))
+        .expect("readonly metadata")
+        .permissions();
+    readonly_permissions.set_readonly(true);
+    fs::set_permissions(directory.join("readonly.txt"), readonly_permissions)
+        .expect("set readonly permissions");
+    symlink("target.txt", directory.join("link.txt")).expect("create symlink");
+    symlink("missing-target", directory.join("dangling.txt")).expect("create dangling symlink");
+    fs::hard_link(directory.join("original.txt"), directory.join("alias.txt"))
+        .expect("create hard link");
+    let Some(engines) = run_engines_in_mode(directory.clone(), "atomic-file-io-links", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "native build failed:\n{}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        "via-link target-old false\nvia-alias original\nreplaced-readonly\ndangling-now-file false\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        String::from_utf8_lossy(&native.stdout)
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("target.txt")).expect("read target"),
+        "target-old"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("original.txt")).expect("read original"),
+        "original"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("alias.txt")).expect("read alias"),
+        "via-alias"
+    );
+    assert!(
+        !fs::symlink_metadata(directory.join("link.txt"))
+            .expect("link metadata")
+            .file_type()
+            .is_symlink(),
+        "atomic replacement should replace the symlink itself"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("readonly.txt")).expect("read readonly"),
+        "replaced-readonly"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("dangling.txt")).expect("read dangling"),
+        "dangling-now-file"
+    );
+    assert!(
+        !fs::symlink_metadata(directory.join("dangling.txt"))
+            .expect("dangling metadata")
+            .file_type()
+            .is_symlink(),
+        "atomic replacement should replace a dangling symlink"
+    );
+}
+
+#[test]
+fn atomic_file_io_any_path_is_rejected_with_e0401() {
+    let source = "fn save(path: Any):\n\
+         \x20   write_file_atomic(path, \"x\")\n\n\
+         fn main():\n\
+         \x20   save(\"data.txt\")\n";
+    let directory = workspace("atomic-file-io-any", source);
+    let Some(engines) = run_engines_in_mode(directory, "atomic-file-io-any", true) else {
+        return;
+    };
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(engines.build.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&engines.build.stderr);
+    assert!(stderr.contains("error[E0401]"), "{stderr}");
+    assert!(stderr.contains("Any"), "{stderr}");
+}
+
+#[test]
+fn atomic_file_io_evaluates_arguments_left_to_right() {
+    let source = "fn path_for() -> Str:\n\
+         \x20   print(\"path\")\n\
+         \x20   return \"order.txt\"\n\n\
+         fn contents_for() -> Str:\n\
+         \x20   print(\"text\")\n\
+         \x20   return \"x\"\n\n\
+         fn main():\n\
+         \x20   write_file_atomic(path_for(), contents_for())\n\
+         \x20   print(read_file(\"order.txt\"))\n";
+    let Some(engines) = run_engines_with_cwd("atomic-file-io-order", source) else {
         return;
     };
     assert!(

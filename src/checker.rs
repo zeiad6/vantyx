@@ -39,6 +39,7 @@ pub const BUILTINS: &[&str] = &[
     "assert",
     "read_file",
     "write_file",
+    "write_file_atomic",
     "append_file",
     "file_exists",
     "list_dir",
@@ -3002,7 +3003,7 @@ impl<'a> Checker<'a> {
                 );
                 Type::Str
             }
-            "write_file" | "append_file" => {
+            "write_file" | "append_file" | "write_file_atomic" => {
                 if !arity(self, 2, 2) {
                     return Type::Unit;
                 }

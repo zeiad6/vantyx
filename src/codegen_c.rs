@@ -2119,15 +2119,21 @@ impl<'a> Emitter<'a> {
                 "vantyx_read_file({}, {line}, {column})",
                 self.expr(&args[0])
             ),
-            "write_file" | "append_file" => {
-                let append = if name == "append_file" { 1 } else { 0 };
+            "write_file" | "append_file" | "write_file_atomic" => {
                 let path_name = self.fresh("path");
                 let text_name = self.fresh("text");
                 let path = self.expr(&args[0]);
                 let text = self.expr(&args[1]);
-                format!(
-                    "({{ vantyx_str {path_name} = {path}; vantyx_str {text_name} = {text}; vantyx_write_file({path_name}, {text_name}, {append}, {line}, {column}); }})"
-                )
+                if name == "write_file_atomic" {
+                    format!(
+                        "({{ vantyx_str {path_name} = {path}; vantyx_str {text_name} = {text}; vantyx_write_file_atomic({path_name}, {text_name}, {line}, {column}); }})"
+                    )
+                } else {
+                    let append = if name == "append_file" { 1 } else { 0 };
+                    format!(
+                        "({{ vantyx_str {path_name} = {path}; vantyx_str {text_name} = {text}; vantyx_write_file({path_name}, {text_name}, {append}, {line}, {column}); }})"
+                    )
+                }
             }
             "file_size" => format!(
                 "vantyx_file_size({}, {line}, {column})",
@@ -3003,11 +3009,116 @@ static vantyx_unit vantyx_write_file(vantyx_str path, vantyx_str text, int appen
     return (vantyx_unit)0;
 }
 
+/* Atomically replaces `path` with `text`: write a same-directory temporary
+   file, fsync it, then rename it over the target. Readers observe either the
+   old file or the complete new contents, never a partial file. The temporary
+   is removed on failure. Symbolic links are replaced, not followed, and the
+   target's permissions are not preserved. The directory entry is not fsynced,
+   so this guarantees atomic replacement, not crash durability. */
+static vantyx_unit vantyx_write_file_atomic(vantyx_str path, vantyx_str text,
+                                            int line, int column) {
+    size_t path_length = strlen(path);
+    size_t trimmed = path_length;
+    while (trimmed > 0 && path[trimmed - 1] == '/') trimmed--;
+
+    /* Match Rust's `Path::parent` for the temporary directory: an empty
+       parent or a path made only of separators uses the current directory,
+       and repeated leading separators collapse to the filesystem root. */
+    char* directory;
+    if (trimmed == 0) {
+        directory = (char*)vantyx_strdup(".");
+    } else {
+        size_t slash = trimmed;
+        while (slash > 0 && path[slash - 1] != '/') slash--;
+        if (slash == 0) {
+            directory = (char*)vantyx_strdup(".");
+        } else {
+            size_t first_non_separator = 0;
+            while (first_non_separator < slash && path[first_non_separator] == '/') {
+                first_non_separator++;
+            }
+            if (first_non_separator == slash) {
+                directory = (char*)vantyx_strdup("/");
+            } else {
+                directory = (char*)vantyx_alloc_array(slash + 1, 1);
+                memcpy(directory, path, slash);
+                directory[slash] = '\0';
+            }
+        }
+    }
+
+    size_t directory_length = strlen(directory);
+    int separator = directory_length > 0 && directory[directory_length - 1] == '/' ? 0 : 1;
+    size_t temp_capacity = vantyx_checked_add(
+        vantyx_checked_add(directory_length, (size_t)separator, "temporary path"),
+        sizeof(".vantyx-tmp-") + 64, "temporary path");
+    char* temporary = (char*)vantyx_alloc_array(temp_capacity, 1);
+    static unsigned long long atomic_serial = 0;
+    int descriptor = -1;
+    int failure = 0;
+    for (int attempt = 0; attempt < 100; attempt++) {
+        int written = snprintf(temporary, temp_capacity, "%s%s.vantyx-tmp-%ld-%llu",
+                               directory, separator ? "/" : "",
+                               (long)getpid(), atomic_serial++);
+        if (written < 0 || (size_t)written >= temp_capacity) {
+            failure = ENAMETOOLONG;
+            break;
+        }
+        descriptor = open(temporary, O_WRONLY | O_CREAT | O_EXCL, 0666);
+        if (descriptor >= 0) break;
+        failure = errno;
+        if (failure != EEXIST) break;
+    }
+    if (descriptor < 0) {
+        if (failure == 0) failure = EEXIST;
+        char message[512];
+        snprintf(message, sizeof message, "cannot write file `%.200s`: %.200s",
+                 path, vantyx_os_error(failure));
+        free(temporary);
+        free(directory);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+
+    size_t length = strlen(text);
+    size_t offset = 0;
+    while (offset < length) {
+        ssize_t chunk = write(descriptor, text + offset, length - offset);
+        if (chunk < 0) {
+            if (errno == EINTR) continue;
+            failure = errno;
+            break;
+        }
+        if (chunk == 0) {
+            failure = EIO;
+            break;
+        }
+        offset += (size_t)chunk;
+    }
+    if (offset == length && fsync(descriptor) != 0) {
+        failure = errno;
+    }
+    close(descriptor);
+    if (failure == 0 && rename(temporary, path) != 0) {
+        failure = errno;
+    }
+    if (failure != 0) {
+        unlink(temporary);
+        char message[512];
+        snprintf(message, sizeof message, "cannot write file `%.200s`: %.200s",
+                 path, vantyx_os_error(failure));
+        free(temporary);
+        free(directory);
+        vantyx_rt_error("R0015", message, line, column);
+    }
+    free(temporary);
+    free(directory);
+    return (vantyx_unit)0;
+}
+
 static bool vantyx_file_exists(vantyx_str path) {
     struct stat info;
     return stat(path, &info) == 0;
 }
-
 /* Follows symbolic links and requires a regular file. Reports the logical
    size (`st_size`), not allocated blocks. */
 static int64_t vantyx_file_size(vantyx_str path, int line, int column) {

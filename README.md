@@ -106,8 +106,12 @@ fn main():
 
 Paths are host paths with the process's privileges, relative paths use the
 process working directory, reads are capped at 64 MiB and must be valid UTF-8
-without NUL bytes, and failures raise `R0015`. There is no sandbox and writes
-are not atomic. See [ADR-0026](docs/decisions/ADR-0026-basic-file-io.md).
+without NUL bytes, and failures raise `R0015`. `write_file` and `append_file`
+write in place; `write_file_atomic` replaces a whole file through a
+same-directory temporary file and rename, so readers see the old or the new
+contents, never a partial file. There is no sandbox. See
+[ADR-0026](docs/decisions/ADR-0026-basic-file-io.md) and
+[ADR-0055](docs/decisions/ADR-0055-atomic-file-replacement.md).
 
 Single-level directory operations work in both engines:
 
@@ -299,7 +303,7 @@ so `.bashrc` has no extension. See
 | Native boundaries | `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads, and `match` on `Any` are rejected with `E0401` |
 | Pattern matching | Variant, wildcard, integer, string, and boolean patterns; nested payload patterns with recursive exhaustiveness; top-level or-patterns with consistent bindings; integer ranges with half-open and inclusive bounds; `Bool`-checked guards |
 | Modules | `import` and `from ... import`; flat namespace, entry-directory confinement |
-| File and directory I/O | UTF-8 `read_file`/`write_file`/`append_file`/`file_exists` plus `list_dir`/`make_dir`/`remove_file`/`remove_dir`/`make_dir_all`/`remove_dir_all` in both engines; sorted listings, 64 MiB read cap, symlink-safe recursive removal, destructive-root refusal for final `.`/`..` and `/`, fatal `R0015` errors, no sandbox |
+| File and directory I/O | UTF-8 `read_file`/`write_file`/`write_file_atomic`/`append_file`/`file_exists` plus `list_dir`/`make_dir`/`remove_file`/`remove_dir`/`make_dir_all`/`remove_dir_all` in both engines; sorted listings, 64 MiB read cap, same-directory temp-and-rename whole-file replacement, symlink-safe recursive removal, destructive-root refusal for final `.`/`..` and `/`, fatal `R0015` errors, no sandbox |
 | Metadata probes | `file_size`/`is_file`/`is_dir`/`is_symlink` in both engines; size follows symlinks and requires a regular file, predicates return `false` when metadata cannot be read, `is_symlink` uses `lstat` and sees dangling links; no metadata object or preservation |
 | Glob | `glob` in both engines; Unicode `*`/`?`/classes, whole-component `**` without symlink traversal, explicit-dot hidden rules, byte-sorted deduplicated results, `R0016` malformed patterns, `R0015` I/O and caps; no escaping, braces, case folding, or sandbox |
 | Rename/copy | `rename` and byte-preserving `copy_file` in both engines; host-defined rename overwrite, regular-file source check, no metadata preservation, non-atomic copies |
@@ -580,12 +584,17 @@ or CI result without checking the recorded evidence there and in
 - Struct, enum, list, and map keys use linear structural search in native maps;
   scalar keys use a hash index with a fixed seed.
 - File and directory I/O is a small builtin slice: synchronous whole-file
-  reads/writes, single-level directory operations, recursive creation and
-  removal, lexical glob expansion, rename and byte-preserving regular-file copy,
-  recursive directory copy, and read-only metadata probes with fatal
-  `R0015`/`R0016` errors. There is no metadata object,
+  reads/writes, `write_file_atomic` whole-file replacement through a
+  same-directory temporary file and rename, single-level directory operations,
+  recursive creation and removal, lexical glob expansion, rename and
+  byte-preserving regular-file copy, recursive directory copy, and read-only
+  metadata probes with fatal `R0015`/`R0016` errors. `write_file` and
+  `append_file` remain in-place and non-atomic; atomic replacement does not
+  preserve mode, owner, timestamps, or hard-link identity, and does not fsync
+  the directory. There is no metadata object,
   mode/owner/timestamp query, recursive directory size, metadata preservation,
-  streaming, recursive move, atomic copy/write, or sandbox. `list_dir` and
+  streaming, recursive move, atomic copy or streaming atomic write, or sandbox.
+  `list_dir` and
   each glob directory read the whole directory into memory, glob results are
   materialized, and recursive removal can leave a partial tree; there is no
   confirmation, rollback, glob cancellation, or directory entry-count limit.

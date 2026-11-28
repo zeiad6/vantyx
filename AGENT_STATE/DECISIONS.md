@@ -893,3 +893,33 @@ file records operational choices.
   during iteration visits every key from the original sequence, including a
   key removed later in the loop. Indexing such a removed key still raises
   `R0008`, as it does in the interpreter.
+
+## T-116 — Atomic file replacement
+
+- Add a separate `write_file_atomic` builtin instead of changing `write_file`.
+  Existing callers rely on `write_file` following symbolic links, preserving
+  the inode and permissions, and leaving a truncated file on failure; an
+  opt-in name keeps those semantics and makes the stronger guarantee explicit.
+- Create the temporary file in the target's parent directory (or the current
+  directory when the parent is empty or the path is only separators, matching
+  Rust's `Path::parent`) so the rename does not cross filesystems for ordinary
+  paths.
+- Use exclusive creation and a bounded retry loop over
+  `.vantyx-tmp-<pid>-<serial>` names. The name is predictable and is not a
+  security boundary; the directory's permissions control interference.
+- `fsync` the temporary file before the rename, but do not fsync the containing
+  directory. The file contents survive a crash after the flush, while the
+  rename itself is atomic for readers but not a crash-durability guarantee.
+- Replace symbolic links rather than following them, and do not preserve
+  mode, owner, group, timestamps, ACLs, extended attributes, or hard-link
+  identity. This is POSIX rename behavior and is documented explicitly.
+- Remove the temporary on every failure after creation, best effort, then raise
+  `R0015` with the same `cannot write file \`path\`: <os error>` wording as
+  `write_file`.
+- Keep the interpreter as the oracle: `std::fs::OpenOptions::create_new`,
+  `write_all`, `sync_all`, and `std::fs::rename`; the native backend mirrors
+  the sequence with `open(O_CREAT|O_EXCL)`, a `write` loop, `fsync`, and
+  `rename`.
+- Record the design in ADR-0055 and document the non-durability, metadata, and
+  predictable-temporary-name limits in the specification, security notes, and
+  README.

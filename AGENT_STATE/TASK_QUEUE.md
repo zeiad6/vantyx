@@ -8,6 +8,19 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## Verified locally, commit pending CI
 
+- T-116 — Atomic file replacement. VERIFIED locally on 2026-11-27; commit
+  pending; CI pending. `write_file_atomic(path, text)` writes a hidden
+  same-directory temporary, fsyncs it, renames it over the target, and removes
+  the temporary on failure; it replaces symbolic links rather than following
+  them and does not preserve mode/owner/timestamps or fsync the directory.
+  Six e2e tests and five native tests cover creation/replacement, empty
+  contents, nested paths, symbolic and dangling links, hard links, read-only
+  targets, missing parents, directory targets, empty paths, evaluation order,
+  `E0301`/`E0302`, `R0005`, and the native `E0401` boundary; ADR-0055;
+  754-test gate, GCC native 159, sanitized native 159, 100/100 fuzz on seeds 1
+  and 2, 9 fuzz self-tests, fuzz smoke, 13 skills, and 130 links in 197
+  Markdown files.
+
 - T-115 — Map key removal. VERIFIED locally on 2026-11-27; commit `b6f3f11`;
   CI pending. `remove(map, key)` deletes the first structurally equal entry,
   preserves insertion order, and returns `Bool`; the native backend compacts

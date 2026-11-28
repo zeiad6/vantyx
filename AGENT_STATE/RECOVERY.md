@@ -13,6 +13,22 @@
 
 ## Last recorded repository state (2026-11-27)
 
+- T-116 is verified locally with the 754-test gate and is ready to commit; CI
+  pending. `write_file_atomic(path, text) -> Unit` writes a hidden
+  same-directory temporary with exclusive creation, writes and fsyncs it,
+  renames it over the target, and removes the temporary on failure. Readers see
+  the old file or the complete new contents, never a partial file. Symbolic
+  links are replaced rather than followed; hard links keep the old contents;
+  mode, owner, and timestamps are not preserved; the directory is not fsynced,
+  so this is atomic replacement for readers, not crash durability. Six e2e and
+  five native tests cover creation/replacement, empty contents, nested paths,
+  symbolic and dangling links, hard links, read-only targets, missing parents,
+  directory targets, empty paths, evaluation order, `E0301`/`E0302`, `R0005`,
+  and the native `E0401` boundary. ADR-0055 records the design. The gate
+  passed: 754 tests (404 library unit + 15 CLI unit + 47 AI integration + 129
+  e2e + 159 native), GCC native 159, sanitized native 159, examples, 9 fuzz
+  self-tests, 100/100 differential cases on seeds 1 and 2, fuzz smoke, 13
+  skills, and 130 links in 197 Markdown files.
 - T-115 is verified locally and committed as `b6f3f11` with the 743-test
   gate; CI pending.
   `remove(map, key) -> Bool` deletes the first structurally equal entry,

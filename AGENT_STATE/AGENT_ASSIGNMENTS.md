@@ -6,13 +6,13 @@ files. Only one subagent runs at a time until it finishes.
 
 | Role | Agent | Current assignment | Status |
 | --- | --- | --- | --- |
-| Orchestrator / chief engineer | primary session | T-100 exact JSONL duplicate-record removal, T-099 native `range(...)` list values outside `for` loops, T-098 deterministic train/held-out dataset splits, T-097 filesystem OS-error suffix and glob parse diagnostics, T-096 runtime diagnostic parity, T-095 JSON Schema conformance and shared preflight, T-094 dataset schema validation, T-093 reusable agent skill library, T-092 bounded JSONL dataset inspection, T-091 Safetensors shard-index aggregation, T-090 offline GGUF/Safetensors inspection, and T-089 same-file `copy_file` refusal verified locally, alongside T-078 through T-088; T-078 through T-100 commit and CI pending | In progress |
+| Orchestrator / chief engineer | primary session | T-116 atomic whole-file replacement, T-115 map key removal, and T-114 nested display-temporary reclamation verified locally, alongside T-078 through T-113; T-114 through T-116 commit and CI pending | In progress |
 | Compiler architecture review | `compiler-architect` | Native memory reclamation design (read-only) | Blocked on subagent capacity |
 | Backend implementation | `backend-engineer` | No active assignment; T-070/T-071 are committed | Idle |
 | Language implementation | `language-implementer` | T-075 `?` propagation implemented by the primary session; independent review when capacity returns | Idle |
 | Runtime/memory | `runtime-engineer` / `memory-model-engineer` | No active assignment | Idle |
 | Type system | `type-system-engineer` | No active assignment | Idle |
-| QA verification | `qa-verifier` | Independent T-062–T-066 and T-072–T-100 verification when capacity returns | Blocked: subagent provider usage limit |
+| QA verification | `qa-verifier` | Independent T-062–T-066 and T-072–T-116 verification when capacity returns | Blocked: subagent provider usage limit |
 | Spec sync | `spec-sync-auditor` | Post-T-078 through T-098 documentation drift audit | Queued |
 | Security | `security-auditor` | Recursive-removal boundary review when requested | Idle |
 | Tooling | `tooling-engineer` | `vantyx lint` delivered; formatter remains blocked on comment preservation; the fuzzer shrinker shipped, sanitizers and coverage measurement remain follow-ups | Idle |

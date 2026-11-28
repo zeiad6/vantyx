@@ -59,7 +59,7 @@ Known native limits:
 
 ## File and directory I/O boundary
 
-- `read_file`, `write_file`, `append_file`, `file_exists`, `file_size`,
+- `read_file`, `write_file`, `write_file_atomic`, `append_file`, `file_exists`, `file_size`,
   `is_file`, `is_dir`, `is_symlink`, `list_dir`, `glob`, `make_dir`,
   `remove_file`, `remove_dir`, `make_dir_all`, `remove_dir_all`, `rename`,
   `copy_file`, and `copy_dir_all` run with the host process's privileges. There
@@ -68,9 +68,16 @@ Known native limits:
   bytes before they become Vantyx strings. `list_dir` and `glob` reject
   non-UTF-8 entry names; `copy_dir_all` copies raw entry-name bytes without
   conversion. Failures raise `R0015` and exit 2.
-- Writes are not atomic; an error during `write_file` or `append_file` can leave
-  a partial file. `file_exists` returns `false` when `stat` fails, including
-  permission errors.
+- `write_file` and `append_file` are not atomic; an error can leave a partial
+  file. `write_file_atomic` writes a hidden same-directory temporary file,
+  flushes it with `fsync`, and renames it over the target, removing the
+  temporary on failure. Readers observe the old file or the complete new
+  contents, never a partial file. It replaces symbolic links rather than
+  following them, does not preserve mode, owner, timestamps, or hard-link
+  identity, and does not fsync the directory, so it is not a crash-durability
+  guarantee; a crash can leave a `.vantyx-tmp-*` file. The temporary name is
+  predictable but is not a security boundary. `file_exists` returns `false`
+  when `stat` fails, including permission errors.
 - `file_size`, `is_file`, and `is_dir` follow symbolic links; `is_symlink` uses
   `lstat` and observes the link itself. `file_size` raises `R0015` for missing
   paths, dangling links, and non-regular targets, while the predicates return

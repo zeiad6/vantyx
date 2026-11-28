@@ -4,10 +4,10 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `b6f3f11` (T-115); the status sync is pending. The remote
-  remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in
-  `779783c` and passed run 45936065460. T-114 is committed as `3617fe3` with
-  CI pending.
+- Last commit: `b6f3f11` (T-115); T-116 is verified locally and ready to
+  commit. The remote remains at `a9a6d1a`; CI run 45936329476 green on it.
+  T-105 is pushed in `779783c` and passed run 45936065460. T-114 is committed
+  as `3617fe3` with CI pending.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -22,27 +22,40 @@
 
 ## Current task
 
+T-116 — Atomic file replacement. Status: VERIFIED locally on 2026-11-27;
+commit pending; CI pending.
+`write_file_atomic(path, text) -> Unit` creates or replaces a file by writing
+a hidden same-directory temporary with exclusive creation, flushing it with
+`fsync`, and renaming it over the target. The temporary is removed on failure;
+a symbolic link is replaced rather than followed; hard links keep the old
+contents; mode, owner, and timestamps are not preserved; the directory entry is
+not fsynced, so the guarantee is atomic replacement for readers, not crash
+durability. The checker registers the builtin and checks two `Str` arguments;
+the interpreter uses `create_new`, `write_all`, `sync_all`, and `rename`; the
+native backend mirrors the sequence with `open(O_CREAT|O_EXCL)`, a `write`
+loop, `fsync`, and POSIX `rename`. Six e2e tests and five native tests cover
+creation/replacement, empty contents, nested paths, symbolic and dangling
+links, hard links, read-only targets, missing parents, directory targets, empty
+paths, evaluation order, `E0301`/`E0302`, `R0005`, and the native `E0401`
+boundary. The full gate passed: 754 tests (404 library unit + 15 CLI unit + 47
+AI integration + 129 e2e + 159 native), GCC native 159, sanitized native 159,
+fmt/clippy/builds clean, all five examples matched, 9 fuzzer self-tests,
+100/100 differential cases on seeds 1 and 2, fuzz smoke, 13 skills, and 130
+links in 197 Markdown files. Manual probes also matched for a 900 KiB payload,
+a read-only target, dangling links, root and trailing-slash paths, and
+`R0005`; no `.vantyx-tmp-*` file remained. ADR-0055 records the design.
+Independent `qa-verifier` review remains unavailable because the provider
+returned a free-usage limit error; no independent result is claimed.
+
 T-115 — Map key removal. Status: VERIFIED locally on 2026-11-27; commit
-`b6f3f11`; CI pending. `remove(map, key) -> Bool` deletes the first structurally
-equal entry, preserves insertion order, and returns whether an entry was
-removed. The checker registers the builtin, checks `Map[K,V]` and a key
-assignable to `K`, and lets a direct empty list literal adopt the map's
-`List[T]` key type. The interpreter removes the first matching entry from its
-insertion-ordered vector. The native backend binds the map and key in source
-order, compacts the entry buffers with `memmove`, decrements the length, and
-rebuilds the scalar-key hash index; native `for k in map` now snapshots the
-keys with `vantyx_map_keys`, matching the interpreter and fixing a divergence
-found during verification. Five e2e tests and two native tests cover scalar,
-`-0.0`/`0.0`, `NaN`, `Bool`, struct, and list keys, aliases, missing keys,
-reinsertion, evaluation order, empty-list key adoption, a 500-entry map with
-repeated removal, removal during iteration, `R0005`, `E0301`/`E0302`, and the
-native `E0401` boundary. The full gate passed: 743 tests (404 library unit + 15
-CLI unit + 47 AI integration + 123 e2e + 154 native), GCC native 154,
-sanitized native 154, fmt/clippy/builds clean, all five examples matched, 9
-fuzzer self-tests, 100/100 differential cases on seeds 1 and 2, fuzz smoke,
-13 skills, and 129 links in 196 Markdown files. Independent `qa-verifier`
-review remains unavailable because the provider returned a free-usage limit
-error; no independent result is claimed.
+`b6f3f11`; CI pending. `remove(map, key) -> Bool` deletes the first
+structurally equal entry, preserves insertion order, and returns whether an
+entry was removed; the native backend compacts the entry buffers, rebuilds the
+scalar-key hash index, and snapshots keys for `for k in map`. Five e2e and two
+native tests; the control-flow fuzz shape removes each visited key. The full
+743-test gate passed, including GCC and sanitized native, 100/100 differential
+cases on seeds 1 and 2, examples, fuzz smoke, 13 skills, and 129 links in 196
+Markdown files.
 
 T-114 — Free nested native display temporaries. Status: VERIFIED locally;
 commit `3617fe3`; CI pending. `src/codegen_c.rs` adds owned Bool/Unit display

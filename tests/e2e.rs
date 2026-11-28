@@ -1330,6 +1330,18 @@ fn io_workspace(label: &str) -> PathBuf {
     directory
 }
 
+fn has_atomic_temp(directory: &Path) -> bool {
+    fs::read_dir(directory)
+        .expect("read directory")
+        .any(|entry| {
+            entry
+                .expect("directory entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".vantyx-tmp-")
+        })
+}
+
 #[test]
 fn file_io_round_trips_and_reports_existence() {
     let directory = io_workspace("roundtrip");
@@ -1439,6 +1451,253 @@ fn file_io_rejects_non_str_arguments_at_compile_time() {
         "{}",
         run.stderr
     );
+}
+
+#[test]
+fn file_io_atomic_write_replaces_contents_and_cleans_up() {
+    let directory = io_workspace("atomic-roundtrip");
+    fs::create_dir(directory.join("nested")).expect("create nested directory");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   write_file_atomic(\"note.txt\", \"alpha\")\n\
+         \x20   print(read_file(\"note.txt\"))\n\
+         \x20   write_file_atomic(\"note.txt\", \"beta\")\n\
+         \x20   print(read_file(\"note.txt\"))\n\
+         \x20   write_file_atomic(\"empty.txt\", \"\")\n\
+         \x20   print(file_exists(\"empty.txt\"), file_size(\"empty.txt\"))\n\
+         \x20   write_file_atomic(\"nested/note.txt\", \"nested\")\n\
+         \x20   print(read_file(\"nested/note.txt\"))\n",
+    )
+    .expect("write atomic source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "alpha\nbeta\ntrue 0\nnested\n");
+    assert_eq!(
+        fs::read_to_string(directory.join("note.txt")).expect("read note"),
+        "beta"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("empty.txt")).expect("read empty"),
+        ""
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("nested/note.txt")).expect("read nested"),
+        "nested"
+    );
+    assert!(
+        !has_atomic_temp(&directory),
+        "atomic write left a temporary file in the workspace"
+    );
+    assert!(
+        !has_atomic_temp(&directory.join("nested")),
+        "atomic write left a temporary file in the nested directory"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn file_io_atomic_write_replaces_links_without_following() {
+    use std::os::unix::fs::symlink;
+
+    let directory = io_workspace("atomic-links");
+    fs::write(directory.join("target.txt"), "target-old").expect("write target");
+    fs::write(directory.join("original.txt"), "original").expect("write original");
+    fs::write(directory.join("readonly.txt"), "readonly").expect("write readonly");
+    let mut readonly_permissions = fs::metadata(directory.join("readonly.txt"))
+        .expect("readonly metadata")
+        .permissions();
+    readonly_permissions.set_readonly(true);
+    fs::set_permissions(directory.join("readonly.txt"), readonly_permissions)
+        .expect("set readonly permissions");
+    symlink("target.txt", directory.join("link.txt")).expect("create symlink");
+    symlink("missing-target", directory.join("dangling.txt")).expect("create dangling symlink");
+    fs::hard_link(directory.join("original.txt"), directory.join("alias.txt"))
+        .expect("create hard link");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn main():\n\
+         \x20   write_file_atomic(\"link.txt\", \"via-link\")\n\
+         \x20   print(read_file(\"link.txt\"), read_file(\"target.txt\"), is_symlink(\"link.txt\"))\n\
+         \x20   write_file_atomic(\"alias.txt\", \"via-alias\")\n\
+         \x20   print(read_file(\"alias.txt\"), read_file(\"original.txt\"))\n\
+         \x20   write_file_atomic(\"readonly.txt\", \"replaced-readonly\")\n\
+         \x20   print(read_file(\"readonly.txt\"))\n\
+         \x20   write_file_atomic(\"dangling.txt\", \"dangling-now-file\")\n\
+         \x20   print(read_file(\"dangling.txt\"), is_symlink(\"dangling.txt\"))\n",
+    )
+    .expect("write link source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "via-link target-old false\nvia-alias original\nreplaced-readonly\ndangling-now-file false\n"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("target.txt")).expect("read target"),
+        "target-old"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("original.txt")).expect("read original"),
+        "original"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("alias.txt")).expect("read alias"),
+        "via-alias"
+    );
+    assert!(
+        !fs::symlink_metadata(directory.join("link.txt"))
+            .expect("link metadata")
+            .file_type()
+            .is_symlink(),
+        "atomic replacement should replace the symlink itself"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("readonly.txt")).expect("read readonly"),
+        "replaced-readonly"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("dangling.txt")).expect("read dangling"),
+        "dangling-now-file"
+    );
+    assert!(
+        !fs::symlink_metadata(directory.join("dangling.txt"))
+            .expect("dangling metadata")
+            .file_type()
+            .is_symlink(),
+        "atomic replacement should replace a dangling symlink"
+    );
+}
+
+#[test]
+fn file_io_atomic_write_errors_are_fatal_and_clean_up() {
+    let directory = io_workspace("atomic-errors");
+    fs::create_dir(directory.join("blocked")).expect("create blocked directory");
+    for (label, call) in [
+        (
+            "atomic-missing",
+            "write_file_atomic(\"missing/note.txt\", \"x\")",
+        ),
+        ("atomic-directory", "write_file_atomic(\"blocked\", \"x\")"),
+        ("atomic-empty", "write_file_atomic(\"\", \"x\")"),
+    ] {
+        let source = directory.join(format!("{label}.vtx"));
+        fs::write(&source, format!("fn main():\n    {call}\n")).expect("write error source");
+        let run = vantyx_in_dir(
+            &directory,
+            &["run", source.to_str().expect("utf-8 path")],
+            None,
+        );
+        assert_eq!(run.code, 2, "{label} stderr: {}", run.stderr);
+        assert!(run.stdout.is_empty(), "{label} stdout: {}", run.stdout);
+        assert!(
+            run.stderr.contains("error[R0015]"),
+            "{label}: {}",
+            run.stderr
+        );
+        assert!(
+            run.stderr.contains("cannot write file"),
+            "{label}: {}",
+            run.stderr
+        );
+        assert!(
+            !has_atomic_temp(&directory),
+            "{label} left a temporary file in the workspace"
+        );
+        assert!(
+            !has_atomic_temp(&directory.join("blocked")),
+            "{label} left a temporary file in the blocked directory"
+        );
+    }
+}
+
+#[test]
+fn file_io_atomic_write_rejects_non_str_and_wrong_arity() {
+    let run = check_file(
+        "file-io-atomic-types",
+        "fn main():\n\
+         \x20   write_file_atomic(1, \"x\")\n\
+         \x20   write_file_atomic(\"x\", 2)\n\
+         \x20   write_file_atomic(\"x\")\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    assert!(run.stderr.contains("error[E0302]"), "{}", run.stderr);
+    assert!(
+        run.stderr
+            .contains("as a file path for `write_file_atomic`"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr
+            .contains("as the contents for `write_file_atomic`"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn file_io_atomic_write_dynamic_non_str_fails_at_runtime() {
+    let run = run_file(
+        "file-io-atomic-dynamic",
+        "fn save(path: Any):\n\
+         \x20   write_file_atomic(path, \"x\")\n\n\
+         fn main():\n\
+         \x20   save(1)\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stdout.is_empty());
+    assert!(run.stderr.contains("error[R0005]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("as the path for `write_file_atomic`"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn file_io_atomic_write_evaluates_arguments_left_to_right() {
+    let directory = io_workspace("atomic-order");
+    let source = directory.join("main.vtx");
+    fs::write(
+        &source,
+        "fn path_for() -> Str:\n\
+         \x20   print(\"path\")\n\
+         \x20   return \"order.txt\"\n\n\
+         fn contents_for() -> Str:\n\
+         \x20   print(\"text\")\n\
+         \x20   return \"x\"\n\n\
+         fn main():\n\
+         \x20   write_file_atomic(path_for(), contents_for())\n\
+         \x20   print(read_file(\"order.txt\"))\n",
+    )
+    .expect("write order source");
+
+    let run = vantyx_in_dir(
+        &directory,
+        &["run", source.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "path\ntext\nx\n");
+    assert_eq!(
+        fs::read_to_string(directory.join("order.txt")).expect("read order"),
+        "x"
+    );
+    assert!(!has_atomic_temp(&directory));
 }
 
 #[test]

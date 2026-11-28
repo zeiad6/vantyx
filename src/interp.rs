@@ -12,7 +12,9 @@ use crate::value::{FieldSlot, Value, format_float, map_get, map_insert};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::Path;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 pub const MAX_CALL_DEPTH: usize = 256;
 pub const MAX_EVAL_DEPTH: usize = 1024;
@@ -193,6 +195,60 @@ fn path_join(base: &str, child: &str) -> String {
     } else {
         format!("{base}/{child}")
     }
+}
+
+static ATOMIC_WRITE_SERIAL: AtomicU64 = AtomicU64::new(0);
+
+/// Replaces `path` with `text` by writing a same-directory temporary file,
+/// flushing it to disk, and renaming it over the target. Readers observe either
+/// the old file or the complete new contents, never a partially written file.
+///
+/// The temporary file is removed when any step fails. Symbolic links are
+/// replaced rather than followed, and the target's permissions are not
+/// preserved. The directory entry is not fsynced, so this guarantees atomic
+/// replacement, not crash durability of the rename itself.
+fn write_file_atomic(path: &str, text: &str) -> std::io::Result<()> {
+    let target = Path::new(path);
+    let directory = match target.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    let mut last_collision = None;
+    for _ in 0..100 {
+        let serial = ATOMIC_WRITE_SERIAL.fetch_add(1, AtomicOrdering::Relaxed);
+        let temporary = directory.join(format!(".vantyx-tmp-{}-{serial}", std::process::id()));
+        let mut file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                last_collision = Some(error);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let written = file
+            .write_all(text.as_bytes())
+            .and_then(|_| file.flush())
+            .and_then(|_| file.sync_all());
+        drop(file);
+        let result = match written {
+            Ok(()) => std::fs::rename(&temporary, target),
+            Err(error) => Err(error),
+        };
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        return result;
+    }
+    Err(last_collision.unwrap_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "temporary file name collision",
+        )
+    }))
 }
 
 #[derive(Clone, Debug)]
@@ -2491,7 +2547,7 @@ impl<'a> Interpreter<'a> {
                 })?;
                 Ok(Value::str(text))
             }
-            "write_file" | "append_file" => {
+            "write_file" | "append_file" | "write_file_atomic" => {
                 self.arity(name, &args, 2, 2, span)?;
                 let path = match &args[0] {
                     Value::Str(path) => path,
@@ -2520,6 +2576,16 @@ impl<'a> Interpreter<'a> {
                 }
                 if text.contains('\0') {
                     return Err(self.rt("R0015", "file contents contain a NUL byte", span));
+                }
+                if name == "write_file_atomic" {
+                    write_file_atomic(path, text).map_err(|error| {
+                        self.rt(
+                            "R0015",
+                            format!("cannot write file `{path}`: {error}"),
+                            span,
+                        )
+                    })?;
+                    return Ok(Value::Unit);
                 }
                 let mut file = if name == "append_file" {
                     std::fs::OpenOptions::new()

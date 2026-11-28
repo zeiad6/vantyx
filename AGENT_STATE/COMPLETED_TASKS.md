@@ -3,6 +3,20 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-116 — Atomic file replacement (2026-11-27; verified locally; commit
+  pending; CI pending; 754-test gate; `write_file_atomic(path, text) -> Unit`
+  writes a hidden same-directory temporary with exclusive creation, writes and
+  fsyncs it, renames it over the target, and removes the temporary on failure;
+  readers see the old or complete new contents, never a partial file; symbolic
+  links are replaced rather than followed, hard links keep the old contents,
+  mode/owner/timestamps are not preserved, and the directory is not fsynced, so
+  this is atomic replacement, not crash durability; six e2e and five native
+  tests cover creation/replacement, empty contents, nested paths, symbolic and
+  dangling links, hard links, read-only targets, missing parents, directory
+  targets, empty paths, evaluation order, `E0301`/`E0302`, `R0005`, and the
+  native `E0401` boundary; ADR-0055; GCC native 159, sanitized native 159,
+  100/100 fuzz on seeds 1 and 2, 9 fuzz self-tests, fuzz smoke, 13 skills, and
+  130 links in 197 Markdown files).
 - T-115 — Map key removal (2026-11-27; verified locally; commit `b6f3f11`;
   CI pending; 743-test gate; `remove(map, key) -> Bool` removes the first
   structurally equal entry, preserves insertion order, returns `false` for a

@@ -2872,7 +2872,7 @@ impl<'a> Builder<'a> {
                 }
                 IrType::Str
             }
-            "write_file" | "append_file" => {
+            "write_file" | "append_file" | "write_file_atomic" => {
                 if lowered.len() != 2 {
                     return Err(IrError::internal(
                         format!("`{name}` arity was not validated"),

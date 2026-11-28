@@ -119,11 +119,12 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   committed in `d8a476d` with the 734-test gate (CI pending); T-114 nested
   native display-temporary reclamation is committed in `3617fe3` with the
   736-test gate (CI pending); T-115 map key removal is committed in `b6f3f11`
-  with the 743-test gate (CI pending)). The
+  with the 743-test gate (CI pending); T-116 atomic whole-file replacement adds
+  `write_file_atomic` with the 754-test gate (CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 743 passed (404 library unit + 15 CLI unit + 47 AI integration +
-  123 e2e + 154 native); the full native suite also passes with `VANTYX_CC=gcc`.
+- `cargo test`: 754 passed (404 library unit + 15 CLI unit + 47 AI integration +
+  129 e2e + 159 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - CI runs the native differential suite with generated programs compiled under
   AddressSanitizer and UndefinedBehaviorSanitizer via `tools/clang-sanitize.sh`
@@ -185,7 +186,8 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   descriptors 0–2 with `/dev/null` so closed-stdout behavior and descriptor
   numbering match Rust (T-108, ADR-0051), imported
   modules, basic
-  UTF-8 file I/O, file metadata probes, single-level directory operations,
+  UTF-8 file I/O with atomic whole-file replacement through a same-directory
+  temporary file and rename (T-116), file metadata probes, single-level directory operations,
   recursive directory creation and symlink-safe removal, lexical glob
   expansion, rename and byte-preserving file copy, recursive directory copy,
   UTF-8 text builtins, lexical path builtins whose trailing-dot stem and
@@ -194,7 +196,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   (T-103, ADR-0050), checked arithmetic,
   bounds checks, structural equality.
 - Native rejects: `Any`, `List[Any]`, `Map[Any,*]`, `Any` enum payloads,
-  `match` on `Any`, dynamically typed file/directory/glob/recursive-copy/
+  `match` on `Any`, dynamically typed file/atomic-write/directory/glob/recursive-copy/
   rename/copy/metadata/text/path arguments, tuple/float patterns, unannotated
   value-returning functions. Same-file `copy_file` targets are refused with
   `R0015` in both engines before the target is opened, including symlink and
@@ -235,7 +237,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   seed for scalar keys, and O(n) scalar-key map-removal index rebuilds, no
   generics/closures/async/FFI, no formatter or LSP,
   the linter has only four conservative rules with no suppression or fixes,
-  basic whole-file I/O,
+  basic whole-file I/O with atomic whole-file replacement (T-116),
   single-level and recursive directory operations, lexical glob expansion,
   rename/copy, recursive directory copy, metadata probes, text builtins,
   deterministic scalar-list sorting (scalar element types only; no comparator,
@@ -243,7 +245,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   ordering), and
   lexical POSIX-style path helpers only (no escaping/braces/case folding in
   globs and no metadata objects or preservation, recursive move, streaming,
-  atomic copy/write, error conversion or expression-position `?`, or sandbox; glob materializes sorted
+  atomic copies or streaming atomic writes, error conversion or expression-position `?`, or sandbox; glob materializes sorted
   results under candidate/depth/component caps; recursive removal refuses
   final `.`/`..` and the filesystem root but still has no confirmation,
   rollback, trash, depth limit, or entry-count limit and intermediate links
