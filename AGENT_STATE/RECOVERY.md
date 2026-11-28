@@ -22,9 +22,9 @@
   `TMPDIR`, `TMP`, and `TEMP` pointing at that root so clang temporaries stay
   inside it. The built e2e binary passed 137/137 and the native binary 165/165
   when started with `TMPDIR=/proc TMP=/proc TEMP=/proc`. QA-F004 is fixed; the
-  789-test count is unchanged. T-123–T-127 remain uncommitted; the next command
-  is `git status --short` and `git diff --stat`, then the owner's commit
-  decision.
+  789-test count is unchanged. T-123–T-127 are committed as `f1dbe36`; CI has
+  not run on that commit. The next command is `git log -1 --stat` and CI
+  observation.
 - T-126 keys runtime conformance and contract strengthening by
   `(container identity, expected Type)` so a self-referential list or map cannot
   satisfy a mismatched recursive type merely by being revisited. `xs = [xs]`
@@ -53,9 +53,8 @@
   unit + 47 AI integration + 137 e2e + 165 native), GCC and sanitized native at
   165 each, 9 fuzzer self-tests, 100/100 differential fuzz on seed 1, all five
   examples, fuzz smoke, 13 skills, and 132 links in 207 Markdown files; clippy,
-  fmt, debug, and release builds were clean. These four tasks remain
-  uncommitted; the next command is `git status --short` and `git diff --stat`,
-  then the owner's commit decision.
+  fmt, debug, and release builds were clean. These four tasks are committed in
+  `f1dbe36`; CI has not run on that commit.
 - T-123 adds permanent runtime element, key, and value contracts to interpreter
   lists and maps so a `List[Int]` or `Map[K,V]` cannot be polluted through an
   `Any`, `List[Any]`, or `Map[Any, Any]` alias. `src/value.rs` stores the
@@ -72,8 +71,7 @@
   (422 library unit + 15 CLI unit + 47 AI integration + 135 e2e + 164 native),
   GCC and sanitized native at 164 each, 100/100 differential fuzz on seed 1,
   examples, fuzz smoke, 13 skills, and 132 links in 207 Markdown files.
-  T-123 is uncommitted; the next command is `git diff --stat` and the owner's
-  commit decision.
+  T-123 is committed in `f1dbe36`; CI has not run on that commit.
 - T-122 adds conservative ownership facts over typed IR with no codegen change
   and is committed as `6e58b37`; the 776-test gate passed. T-118, T-119, and
   T-120 are committed as `d6d7b77`; T-121 is verified

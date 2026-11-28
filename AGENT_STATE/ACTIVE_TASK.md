@@ -2,7 +2,7 @@
 
 ## T-127 — Hermetic test temporary directories
 
-- Status: VERIFIED locally on 2026-11-28; commit pending
+- Status: VERIFIED locally on 2026-11-28; commit `f1dbe36`; CI pending
 - Priority: P3 (test-infrastructure reliability)
 - Dependencies: QA-F004
 
@@ -32,7 +32,7 @@
 
 ## T-126 — Type-keyed cycle conformance rejects mismatched recursive containers
 
-- Status: VERIFIED locally on 2026-11-28; commit pending
+- Status: VERIFIED locally on 2026-11-28; commit `f1dbe36`; CI pending
 - Priority: P2 (gradual type-system soundness)
 - Dependencies: ADR-0003, ADR-0057, T-123
 
@@ -62,7 +62,7 @@
 
 ## T-125 — Accept a leading UTF-8 BOM in entry, module, and stdin sources
 
-- Status: VERIFIED locally on 2026-11-28; commit pending
+- Status: VERIFIED locally on 2026-11-28; commit `f1dbe36`; CI pending
 - Priority: P3 (cross-platform input compatibility)
 - Dependencies: QA-F002
 
@@ -88,7 +88,7 @@
 
 ## T-124 — `vantyx build -o` refuses to overwrite a source file
 
-- Status: VERIFIED locally on 2026-11-27; commit pending
+- Status: VERIFIED locally on 2026-11-27; commit `f1dbe36`; CI pending
 - Priority: P0 (data destruction)
 - Dependencies: QA-F001, T-089, ADR-0029
 
@@ -118,7 +118,7 @@
 
 ## T-123 — Runtime container contracts preserve the gradual guarantee
 
-- Status: VERIFIED locally on 2026-11-27; commit pending
+- Status: VERIFIED locally on 2026-11-27; commit `f1dbe36`; CI pending
 - Priority: P1 (type-system soundness)
 - Dependencies: ADR-0003, ADR-0005, ADR-0057
 

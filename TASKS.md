@@ -1238,7 +1238,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-123 — Runtime container contracts preserve the gradual guarantee
 - Priority: P1 (type-system soundness)
-- Status: VERIFIED locally on 2026-11-27; commit pending
+- Status: VERIFIED locally on 2026-11-27; commit `f1dbe36`; CI pending
 - Description: The gradual guarantee in ADR-0003 was violated for mutable containers. A `List[Int]` or `Map[K,V]` could be aliased as `Any`, `List[Any]`, or `Map[Any, Any]` and mutated with a wrong-typed element, key, or value; direct typed reads then observed the wrong type without a runtime error. Reproductions included `let alias: Any = xs; push(alias, "s")`, `alias[0] = "s"`, `alias["k"] = 3` on `Map[Int, Int]`, the same writes through `List[Any]` parameters, and nested containers reached through struct fields, enum payloads, map values, and list elements.
 - Acceptance: A successful typed boundary check gives a list an element contract and a map key/value contract; every later `push`, list index assignment, and map key/value assignment through any alias is validated against that contract; a mismatch is `R0005` and no mutation occurs. `List[Any]` and `Map[Any, Any]` that never crossed a typed boundary stay fully dynamic. Contracts strengthen one-way and recursively through nested containers, structs, and enum payloads, with cycles terminating. Display, equality, iteration order, aliasing, and the native `E0401` boundary are unchanged.
 - Dependencies: ADR-0003 (gradual guarantee), ADR-0005 (reference semantics), ADR-0057 (decision), T-103/T-115 (builtin and test conventions).
@@ -1249,7 +1249,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-124 — `vantyx build -o` refuses to overwrite a source file
 - Priority: P0 (data destruction)
-- Status: VERIFIED locally on 2026-11-27; commit pending
+- Status: VERIFIED locally on 2026-11-27; commit `f1dbe36`; CI pending
 - Description: `vantyx build file.vtx -o file.vtx` passed the output path directly to the C compiler, which replaced the source with the linked executable and exited `0`. The same happened for an imported module and for a symbolic-link target, so a plausible typo silently destroyed source code. The defect was found by the independent quality agent (QA-F001) and reproduced on the T-123 tree.
 - Acceptance: Before emitting or compiling C, `build` compares the requested output path with the canonical entry file and every loaded module. If the output resolves to any of them, including through a relative spelling, symbolic link, or hard link, it exits `64` with an actionable diagnostic and leaves every source byte unchanged. Normal builds and unrelated output paths keep working.
 - Dependencies: QA-F001, T-089 (`paths_refer_to_same_file`), ADR-0029 (same-file copy guard).
@@ -1260,7 +1260,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-125 — Accept a leading UTF-8 BOM in entry, module, and stdin sources
 - Priority: P3 (cross-platform input compatibility)
-- Status: VERIFIED locally on 2026-11-28; commit pending
+- Status: VERIFIED locally on 2026-11-28; commit `f1dbe36`; CI pending
 - Description: A UTF-8 byte-order mark at the start of a source file was rejected as `E0001` in both entry files and imported modules, even though CRLF was accepted and several Windows editors write a BOM by default. The independent quality agent reported this as QA-F002.
 - Acceptance: Exactly one leading U+FEFF is stripped before lexing in entry files, imported modules, and standard input, so spans and diagnostics refer to the remaining text. A U+FEFF anywhere else remains ordinary input and is still rejected outside a string literal. BOM and CRLF can be combined.
 - Dependencies: QA-F002; lexer and module source-reading paths.
@@ -1271,7 +1271,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-126 — Type-keyed cycle conformance rejects mismatched recursive containers
 - Priority: P2 (gradual type-system soundness)
-- Status: VERIFIED locally on 2026-11-28; commit pending
+- Status: VERIFIED locally on 2026-11-28; commit `f1dbe36`; CI pending
 - Description: `Value::conforms_to` used a visited set keyed only by container identity and returned `true` on every revisit. A self-referential list could therefore satisfy `List[List[Int]]`: the outer check revisited the same list while checking its element against `List[Int]`, and the identity-only shortcut accepted the mismatch. The checker then typed `ys[0][0]` as `Int` even though the runtime value was a list. The map form had the same hole. The independent quality agent reported this as QA-F003; it predates T-123.
 - Acceptance: Conformance returns `true` coinductively only when the same container is revisited under the same expected type. A revisit under a different type is evaluated normally, so `xs = [xs]` still conforms to `List[List[Any]]` but not to `List[List[Int]]`. Mutual cycles and map self-cycles follow the same rule. Contract strengthening uses the same key so it cannot skip a different expected type. Display, equality, mutation contracts, and the native `E0401` boundary are unchanged.
 - Dependencies: ADR-0003, ADR-0057, T-123.
@@ -1282,7 +1282,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-127 — Hermetic test temporary directories
 - Priority: P3 (test-infrastructure reliability)
-- Status: VERIFIED locally on 2026-11-28; commit pending
+- Status: VERIFIED locally on 2026-11-28; commit `f1dbe36`; CI pending
 - Description: The end-to-end and native test helpers created workspaces with `std::env::temp_dir()` and let `vantyx build` pass the inherited `TMPDIR` to clang. A concurrent cleanup or exhaustion of `/tmp` could therefore remove generated sources, object files, or link temporaries and turn a correct suite red. The independent quality agent observed four native failures with clang's `unable to rename temporary ... No such file or directory` and reported this as QA-F004.
 - Acceptance: Test workspaces and every child `vantyx` process use a suite-private root that does not depend on the process temp directory. The e2e and native suites pass unchanged when the test process is started with `TMPDIR`, `TMP`, and `TEMP` pointing at an unwritable directory. No production behavior, test assertions, or test counts change.
 - Dependencies: QA-F004.

@@ -4,13 +4,14 @@
 - Updated: 2026-11-28
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `6e58b37` (T-122 conservative ownership facts in typed IR).
+- Last commit: `f1dbe36` (T-123–T-127 container contracts, source guard, BOM,
+  type-keyed cycle conformance, and hermetic tests).
   The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is
   pushed in `779783c` and passed run 45936065460. T-117 is committed as
   `4108974` with CI pending; T-118, T-119, and T-120 are committed as
   `d6d7b77`; T-121 is committed as `75fcc34`; T-122 is committed as
-  `6e58b37`; T-123, T-124, T-125, T-126, and T-127 are verified locally with
-  the 789-test gate and remain uncommitted.
+  `6e58b37`; T-123, T-124, T-125, T-126, and T-127 are committed as `f1dbe36`
+  after the 789-test gate; CI has not run on that commit.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -26,7 +27,7 @@
 ## Current task
 
 T-127 — Hermetic test temporary directories. Status: VERIFIED locally on
-2026-11-28; commit pending. `tests/e2e.rs` and `tests/native.rs` add a
+2026-11-28; commit `f1dbe36`; CI pending. `tests/e2e.rs` and `tests/native.rs` add a
 `OnceLock`-backed `test_root()` that prefers `VANTYX_TEST_TMPDIR`, then Cargo's
 `CARGO_TARGET_TMPDIR`, then the process temp directory only as a
 manual-compilation fallback. Workspaces live under
@@ -37,7 +38,7 @@ the native binary 165/165 with the process temp directory set to unwritable
 `/proc`. QA-F004 is fixed; no production behavior or test count changed.
 
 T-126 — Type-keyed cycle conformance. Status: VERIFIED locally on 2026-11-28;
-commit pending. `src/value.rs` keys the `value_conforms` and `tighten_value`
+commit `f1dbe36`; CI pending. `src/value.rs` keys the `value_conforms` and `tighten_value`
 visited sets by `(container identity, expected Type)`. A cycle is accepted
 coinductively only when the same container is revisited under the same expected
 type, so `xs = [xs]` conforms to `List[List[Any]]` but not `List[List[Int]]`;
@@ -47,14 +48,14 @@ ADR-0057, specification §2.3, and `docs/type_system.md` record the rule. The
 native backend still rejects the dynamic containers with `E0401`.
 
 T-125 — Leading UTF-8 BOM acceptance. Status: VERIFIED locally on 2026-11-28;
-commit pending. `src/lib.rs` adds `strip_utf8_bom`; `src/main.rs::read_source`
+commit `f1dbe36`; CI pending. `src/lib.rs` adds `strip_utf8_bom`; `src/main.rs::read_source`
 applies it to file and stdin entries, and `src/module.rs` applies it to each
 imported module. BOM+CRLF, modules, stdin, and interior-BOM rejection are
 covered by `tests/e2e.rs::utf8_bom_is_accepted_at_the_start_of_sources`;
 specification §1.1, README, and `docs/security.md` document the rule.
 
 T-124 — Build output source guard. Status: VERIFIED locally on 2026-11-27;
-commit pending. `vantyx build -o` refuses an output path that resolves to the
+commit `f1dbe36`; CI pending. `vantyx build -o` refuses an output path that resolves to the
 entry file or any loaded module through a relative spelling, symbolic link, or
 hard link, exiting `64` before code generation and leaving every source byte
 unchanged. `src/main.rs` records canonical `source_paths` in `Compiled` and
@@ -64,7 +65,7 @@ symlink cases; independent QA verified 784 tests and manual variants.
 Specification §11, README, and `docs/security.md` document the guard.
 
 T-123 — Runtime container contracts preserve the gradual guarantee. Status:
-VERIFIED locally on 2026-11-27; commit pending. `src/value.rs` stores an
+VERIFIED locally on 2026-11-27; commit `f1dbe36`; CI pending. `src/value.rs` stores an
 element contract on every list and key/value contracts on every map;
 `Value::tighten` strengthens only `Any` contracts at successful typed
 boundaries and recurses through nested containers, structs, and enum payloads

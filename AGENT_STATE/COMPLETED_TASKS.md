@@ -4,30 +4,30 @@ Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
 - T-127 — Hermetic test temporary directories (2026-11-28; verified locally;
-  commit pending; 789-test gate; `tests/e2e.rs` and `tests/native.rs` keep
+  commit `f1dbe36`; 789-test gate; `tests/e2e.rs` and `tests/native.rs` keep
   workspaces and child compiler temporaries under a `OnceLock`-backed private
   root, preferring `VANTYX_TEST_TMPDIR` then `CARGO_TARGET_TMPDIR`, and set
   `TMPDIR`/`TMP`/`TEMP` on spawned `vantyx` commands; both built test binaries
   passed with the process temp directory set to unwritable `/proc`; QA-F004).
 - T-126 — Type-keyed cycle conformance (2026-11-28; verified locally; commit
-  pending; 789-test gate; `src/value.rs` keys conformance and strengthening by
+  `f1dbe36`; 789-test gate; `src/value.rs` keys conformance and strengthening by
   `(container identity, expected Type)`, so `xs = [xs]` conforms to
   `List[List[Any]]` but not `List[List[Int]]`; three library tests and one e2e
   test cover self-cycles, mutual cycles, maps, and `R0005`; ADR-0057,
   specification §2.3, and `docs/type_system.md` updated; GCC and sanitized
   native at 165 each).
 - T-125 — Leading UTF-8 BOM acceptance (2026-11-28; verified locally; commit
-  pending; 789-test gate; `strip_utf8_bom` is applied to entry, module, and
+  `f1dbe36`; 789-test gate; `strip_utf8_bom` is applied to entry, module, and
   stdin sources; BOM+CRLF, module, stdin, and interior-rejection coverage;
   specification §1.1, README, and security notes updated).
 - T-124 — Build output source guard (2026-11-27; verified locally; commit
-  pending; 784-test gate; `vantyx build -o` refuses the entry or any loaded
+  `f1dbe36`; 784-test gate; `vantyx build -o` refuses the entry or any loaded
   module through relative, symlink, or hard-link aliases with exit `64` and
   unchanged sources; `paths_refer_to_same_file_paths` shares the T-089
   device/inode rule; one native test; independent QA verified 784 tests and
   manual variants; specification §11, README, and security notes updated).
 - T-123 — Runtime container contracts (2026-11-27; verified locally; commit
-  pending; 783-test gate; `src/value.rs` stores an element contract on every
+  `f1dbe36`; 783-test gate; `src/value.rs` stores an element contract on every
   list and key/value contracts on every map, `Value::tighten` strengthens only
   `Any` contracts recursively through nested containers, structs, and enum
   payloads with a visited set, and `src/interp.rs` validates `push`, list index

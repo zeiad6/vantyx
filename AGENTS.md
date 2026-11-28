@@ -141,7 +141,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   container cannot satisfy a mismatched recursive type; T-127 makes the test
   suites hermetic by keeping workspaces and child compiler temporaries under
   Cargo's target temp root, verified with an unwritable process temp directory;
-  T-123–T-127 remain uncommitted. The
+  T-123–T-127 are committed in `f1dbe36`; CI pending. The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 789 passed (425 library unit + 15 CLI unit + 47 AI integration +
