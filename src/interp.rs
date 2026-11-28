@@ -99,7 +99,8 @@ fn sort_scalar_values(values: &mut [Value]) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// Unicode `White_Space` code points, shared by `trim` in both engines.
+/// Unicode `White_Space` code points, shared by `trim`, `trim_start`, and
+/// `trim_end` in both engines.
 fn is_text_whitespace(c: char) -> bool {
     matches!(
         c,
@@ -2399,11 +2400,18 @@ impl<'a> Interpreter<'a> {
                 }
                 Ok(Value::str(parts.join(&**separator)))
             }
-            "trim" => {
+            "trim" | "trim_start" | "trim_end" => {
                 self.arity(name, &args, 1, 1, span)?;
                 match &args[0] {
-                    Value::Str(text) => Ok(Value::str(text.trim_matches(is_text_whitespace))),
-                    other => Err(self.type_error(" in `trim`", "`Str`", other, span)),
+                    Value::Str(text) => {
+                        let trimmed = match name {
+                            "trim" => text.trim_matches(is_text_whitespace),
+                            "trim_start" => text.trim_start_matches(is_text_whitespace),
+                            _ => text.trim_end_matches(is_text_whitespace),
+                        };
+                        Ok(Value::str(trimmed))
+                    }
+                    other => Err(self.type_error(&format!(" in `{name}`"), "`Str`", other, span)),
                 }
             }
             "starts_with" | "ends_with" => {

@@ -169,14 +169,17 @@ Known native limits:
 
 ## Text processing boundary
 
-- `split`, `join`, `trim`, `starts_with`, `ends_with`, and `replace` operate
-  only on in-memory strings; they do not touch the filesystem or network.
+- `split`, `join`, `trim`, `trim_start`, `trim_end`, `starts_with`,
+  `ends_with`, and `replace` operate only on in-memory strings; they do not
+  touch the filesystem or network.
 - `split`, `join`, and `replace` allocate results proportional to their input
   and output sizes. There is no streaming API or output-size cap, so a very
   large input or replacement can exhaust memory. Native allocation failures
   terminate with exit 2 rather than continuing.
-- `trim` removes exactly the Unicode `White_Space` set. It does not remove
-  zero-width or format characters, and it is not a security sanitizer.
+- `trim`, `trim_start`, and `trim_end` remove exactly the Unicode
+  `White_Space` set from both ends, the leading end, and the trailing end
+  respectively. They do not remove zero-width or format characters, and they
+  are not a security sanitizer.
 - `replace` is literal and non-overlapping; an empty pattern raises `R0016`.
   There is no regular-expression engine, case conversion, Unicode
   normalization, locale handling, or grapheme-cluster API. Do not assume that

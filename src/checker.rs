@@ -55,6 +55,8 @@ pub const BUILTINS: &[&str] = &[
     "split",
     "join",
     "trim",
+    "trim_start",
+    "trim_end",
     "starts_with",
     "ends_with",
     "replace",
@@ -3084,7 +3086,7 @@ impl<'a> Checker<'a> {
                 );
                 Type::Str
             }
-            "trim" => {
+            "trim" | "trim_start" | "trim_end" => {
                 if !arity(self, 1, 1) {
                     return Type::Str;
                 }
@@ -3093,7 +3095,7 @@ impl<'a> Checker<'a> {
                     &text_ty,
                     &Type::Str,
                     args[0].span,
-                    " as the text for `trim`",
+                    &format!(" as the text for `{name}`"),
                 );
                 Type::Str
             }

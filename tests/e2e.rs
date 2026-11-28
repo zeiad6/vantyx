@@ -2570,6 +2570,16 @@ fn text_builtins_round_trip() {
          \x20   print(trim(\" \\t\\n\u{a0}héllo\u{3000} \"))\n\
          \x20   print(len(trim(\"\u{200b}x\u{200b}\")))\n\
          \x20   print(len(trim(\"\u{1c}z\u{1f}\")))\n\
+         \x20   print(trim_start(\" \\t\u{a0}héllo\u{3000} \"))\n\
+         \x20   print(len(trim_end(\" \\t\u{a0}héllo\u{3000} \")))\n\
+         \x20   print(trim_start(\"  abc  \"))\n\
+         \x20   print(trim_end(\"  abc  \"))\n\
+         \x20   print(len(trim_start(\"\u{200b}x \")))\n\
+         \x20   print(len(trim_end(\" \u{200b}x\")))\n\
+         \x20   print(len(trim_start(\" \\t\u{a0}\")))\n\
+         \x20   print(len(trim_end(\" \\t\u{a0}\")))\n\
+         \x20   print(len(trim_start(\"\")))\n\
+         \x20   print(len(trim_end(\"\")))\n\
          \x20   print(starts_with(\"hello\", \"he\"))\n\
          \x20   print(starts_with(\"hello\", \"lo\"))\n\
          \x20   print(ends_with(\"hello\", \"lo\"))\n\
@@ -2592,6 +2602,16 @@ fn text_builtins_round_trip() {
          héllo\n\
          3\n\
          3\n\
+         héllo\u{3000} \n\
+         8\n\
+         abc  \n\
+         \x20\x20abc\n\
+         3\n\
+         3\n\
+         0\n\
+         0\n\
+         0\n\
+         0\n\
          true\n\
          false\n\
          true\n\
@@ -2604,6 +2624,26 @@ fn text_builtins_round_trip() {
          true\n\
          true\n"
     );
+}
+
+#[test]
+fn trim_start_and_trim_end_boundaries() {
+    let run = run_file(
+        "trim-boundaries",
+        "fn main():\n\
+         \x20   print(len(trim_start(\" \\t\u{a0}\")))\n\
+         \x20   print(len(trim_end(\" \\t\u{a0}\")))\n\
+         \x20   print(len(trim_start(\"\")))\n\
+         \x20   print(len(trim_end(\"\")))\n\
+         \x20   print(len(trim_start(\"\u{200b} x \")))\n\
+         \x20   print(len(trim_end(\" x \u{200b}\")))\n\
+         \x20   print(len(trim_start(\" \u{200b}x\")))\n\
+         \x20   print(len(trim_end(\"x\u{200b} \")))\n\
+         \x20   print(trim_start(\"  abc  \"))\n\
+         \x20   print(trim_end(\"  abc  \"))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "0\n0\n0\n0\n4\n4\n2\n2\nabc  \n\x20\x20abc\n");
 }
 
 #[test]
@@ -2631,6 +2671,8 @@ fn text_builtins_reject_non_str_arguments() {
          \x20   print(split(1, \",\"))\n\
          \x20   print(join([1, 2], \",\"))\n\
          \x20   print(trim(true))\n\
+         \x20   print(trim_start(1))\n\
+         \x20   print(trim_end(true))\n\
          \x20   print(starts_with(\"a\", 1))\n\
          \x20   print(ends_with(1, \"a\"))\n\
          \x20   print(replace(\"a\", \"b\", 1))\n",
@@ -2641,6 +2683,8 @@ fn text_builtins_reject_non_str_arguments() {
         "as the text for `split`",
         "`join` expects List[Str], found `List[Int]`",
         "as the text for `trim`",
+        "as the text for `trim_start`",
+        "as the text for `trim_end`",
         "as the affix for `starts_with`",
         "as the text for `ends_with`",
         "as the replacement for `replace`",

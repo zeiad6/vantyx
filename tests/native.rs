@@ -3964,6 +3964,16 @@ fn text_builtins_match() {
                   \x20   print(trim(\" \\t\\n\u{a0}héllo\u{3000} \"))\n\
                   \x20   print(len(trim(\"\u{200b}x\u{200b}\")))\n\
                   \x20   print(len(trim(\"\u{1c}z\u{1f}\")))\n\
+                  \x20   print(trim_start(\" \\t\u{a0}héllo\u{3000} \"))\n\
+                  \x20   print(len(trim_end(\" \\t\u{a0}héllo\u{3000} \")))\n\
+                  \x20   print(trim_start(\"  abc  \"))\n\
+                  \x20   print(trim_end(\"  abc  \"))\n\
+                  \x20   print(len(trim_start(\"\u{200b}x \")))\n\
+                  \x20   print(len(trim_end(\" \u{200b}x\")))\n\
+                  \x20   print(len(trim_start(\" \\t\u{a0}\")))\n\
+                  \x20   print(len(trim_end(\" \\t\u{a0}\")))\n\
+                  \x20   print(len(trim_start(\"\")))\n\
+                  \x20   print(len(trim_end(\"\")))\n\
                   \x20   print(starts_with(\"hello\", \"he\"))\n\
                   \x20   print(starts_with(\"hello\", \"lo\"))\n\
                   \x20   print(ends_with(\"hello\", \"lo\"))\n\
@@ -3994,6 +4004,16 @@ fn text_builtins_match() {
                     héllo\n\
                     3\n\
                     3\n\
+                    héllo\u{3000} \n\
+                    8\n\
+                    abc  \n\
+                    \x20\x20abc\n\
+                    3\n\
+                    3\n\
+                    0\n\
+                    0\n\
+                    0\n\
+                    0\n\
                     true\n\
                     false\n\
                     true\n\
@@ -4005,6 +4025,39 @@ fn text_builtins_match() {
                     [\"\"]\n\
                     true\n\
                     true\n";
+    assert_eq!(
+        String::from_utf8_lossy(&engines.interpreter.stdout),
+        expected
+    );
+    assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+}
+
+#[test]
+fn trim_start_and_trim_end_boundaries_match() {
+    let source = "fn main():\n\
+                  \x20   print(len(trim_start(\" \\t\u{a0}\")))\n\
+                  \x20   print(len(trim_end(\" \\t\u{a0}\")))\n\
+                  \x20   print(len(trim_start(\"\")))\n\
+                  \x20   print(len(trim_end(\"\")))\n\
+                  \x20   print(len(trim_start(\"\u{200b} x \")))\n\
+                  \x20   print(len(trim_end(\" x \u{200b}\")))\n\
+                  \x20   print(len(trim_start(\" \u{200b}x\")))\n\
+                  \x20   print(len(trim_end(\"x\u{200b} \")))\n\
+                  \x20   print(trim_start(\"  abc  \"))\n\
+                  \x20   print(trim_end(\"  abc  \"))\n";
+    let directory = workspace("trim-boundaries", source);
+    let Some(engines) = run_engines_in_mode(directory, "trim-boundaries", true) else {
+        return;
+    };
+    assert!(
+        engines.build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&engines.build.stderr)
+    );
+    let native = engines.native.expect("native output");
+    assert_eq!(engines.interpreter.status.code(), Some(0));
+    assert_eq!(native.status.code(), Some(0));
+    let expected = "0\n0\n0\n0\n4\n4\n2\n2\nabc  \n\x20\x20abc\n";
     assert_eq!(
         String::from_utf8_lossy(&engines.interpreter.stdout),
         expected

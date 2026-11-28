@@ -2295,7 +2295,14 @@ impl<'a> Emitter<'a> {
                     "({{ VantyxList* {list_name} = {list}; vantyx_str {separator_name} = {separator}; vantyx_text_join({list_name}, {separator_name}); }})"
                 )
             }
-            "trim" => format!("vantyx_text_trim({})", self.expr(&args[0])),
+            "trim" | "trim_start" | "trim_end" => {
+                let function = match name {
+                    "trim" => "vantyx_text_trim",
+                    "trim_start" => "vantyx_text_trim_start",
+                    _ => "vantyx_text_trim_end",
+                };
+                format!("{function}({})", self.expr(&args[0]))
+            }
             "starts_with" | "ends_with" => {
                 let function = if name == "starts_with" {
                     "vantyx_text_starts_with"
@@ -3618,6 +3625,8 @@ static int64_t vantyx_int_from_float(double value, int line, int column) {
 }
 
 static vantyx_str vantyx_text_trim(vantyx_str text);
+static vantyx_str vantyx_text_trim_start(vantyx_str text);
+static vantyx_str vantyx_text_trim_end(vantyx_str text);
 
 /* The interpreter trims Unicode whitespace and then uses Rust's strict
    integer/float grammars. `strtoll`/`strtod` alone accept forms Rust rejects
@@ -4092,6 +4101,35 @@ static vantyx_str vantyx_text_trim(vantyx_str text) {
     }
     if (start == 0 && end == length) return text;
     return vantyx_strndup(text + start, end - start);
+}
+
+static vantyx_str vantyx_text_trim_start(vantyx_str text) {
+    size_t length = strlen(text);
+    size_t start = 0;
+    while (start < length) {
+        int bytes = 0;
+        uint32_t code = vantyx_utf8_decode((const unsigned char*)text + start, &bytes);
+        if (!vantyx_text_is_whitespace(code)) break;
+        start += (size_t)bytes;
+    }
+    if (start == 0) return text;
+    return vantyx_strndup(text + start, length - start);
+}
+
+static vantyx_str vantyx_text_trim_end(vantyx_str text) {
+    size_t length = strlen(text);
+    size_t end = 0;
+    size_t position = 0;
+    while (position < length) {
+        int bytes = 0;
+        uint32_t code = vantyx_utf8_decode((const unsigned char*)text + position, &bytes);
+        if (!vantyx_text_is_whitespace(code)) {
+            end = position + (size_t)bytes;
+        }
+        position += (size_t)bytes;
+    }
+    if (end == length) return text;
+    return vantyx_strndup(text, end);
 }
 
 static bool vantyx_text_starts_with(vantyx_str text, vantyx_str prefix) {

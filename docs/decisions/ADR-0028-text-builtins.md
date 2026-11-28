@@ -108,3 +108,28 @@ Negative:
 - The native text tests pass under `-fsanitize=address,undefined` with leak
   detection disabled for intentional v0.1 leaks.
 - Full gate and test counts are recorded in `TASKS.md` and `PROJECT_STATUS.md`.
+
+## Amendment (T-129, 2026-11-28)
+
+Adds two builtins to the same family:
+
+| Builtin | Signature | Behavior |
+| --- | --- | --- |
+| `trim_start` | `(Str) -> Str` | Remove leading Unicode `White_Space` only |
+| `trim_end` | `(Str) -> Str` | Remove trailing Unicode `White_Space` only |
+
+- They remove exactly the same Unicode `White_Space` set as `trim`, from only
+  the leading or trailing end. Neither removes zero-width or format
+  characters. `trim(text)` produces the same result as
+  `trim_end(trim_start(text))`; both new builtins produce text identical to
+  the input when there is nothing to remove.
+- They are implemented in the checker builtin table, typed IR lowering
+  (`Str` required, otherwise `E0401`), the interpreter, and native C helpers
+  that share the existing explicit whitespace table. There is no new syntax,
+  dependency, error code, or size limit.
+- The native helpers avoid allocating when no characters are removed; otherwise
+  they allocate one result proportional to the retained text, like `trim`.
+- Verification extends the text round trip in `tests/e2e.rs` and
+  `tests/native.rs` with leading/trailing Unicode whitespace, mixed ASCII and
+  Unicode whitespace, zero-width characters, all-whitespace, and empty strings,
+  plus static and dynamic non-`Str` argument diagnostics for both names.

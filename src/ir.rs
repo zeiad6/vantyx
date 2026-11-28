@@ -2715,14 +2715,17 @@ impl<'a> Builder<'a> {
                 }
                 IrType::Str
             }
-            "trim" => {
+            "trim" | "trim_start" | "trim_end" => {
                 if lowered.len() != 1 {
-                    return Err(IrError::internal("`trim` arity was not validated", span));
+                    return Err(IrError::internal(
+                        format!("`{name}` arity was not validated"),
+                        span,
+                    ));
                 }
                 if lowered[0].ty != IrType::Str {
                     return Err(IrError::unsupported(
                         format!(
-                            "native `trim` requires a Str, found `{}`",
+                            "native `{name}` requires a Str, found `{}`",
                             lowered[0].ty.name()
                         ),
                         span,
