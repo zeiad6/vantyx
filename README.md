@@ -313,7 +313,7 @@ so `.bashrc` has no extension. See
 | Paths | Lexical POSIX-style `path_join`/`path_parent`/`path_name`/`path_stem`/`path_extension`/`path_is_absolute` in both engines; no filesystem access, normalization, or containment |
 | REPL | Persistent declarations, line editing, single-line history, top-level Tab completion, expression echo |
 | AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, incremental vector reuse, MMR diversity reranking, citations, retrieval evaluation, tools, bounded agents; live cloud verification on 2026-11-24 and a 21/21 re-verification at 20:59Z (local model still missing; cloud access not guaranteed) |
-| Memory | Interpreter is reference-counted; native allocations are leaked by design, except nested display temporaries (ADR-0054) and top-level `print` renderings for statically owned types (T-121); no cycle collector; ADR-0056 stages native reclamation but no stage from it is implemented |
+| Memory | Interpreter is reference-counted; native allocations are leaked by design, except nested display temporaries (ADR-0054) and top-level `print` renderings for statically owned types (T-121); no cycle collector; ADR-0056 stages native reclamation; Stage 2 is partially implemented by T-121, no other stage is implemented |
 | Tooling | `vantyx lint` (four conservative rules), fuzz smoke, differential fuzzer, benchmarks, docs; no formatter, LSP, package manager, or debug info |
 | Production readiness | No stable ABI, no LTS, not recommended for production |
 

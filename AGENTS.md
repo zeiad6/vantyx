@@ -27,7 +27,7 @@ Repository codename: RustZ.
    in v0.1, except nested display temporaries (ADR-0054) and top-level `print`
    renderings for statically owned types (T-121); there is no general
    reclamation, cycle collector, or sandbox. ADR-0056 stages native reclamation
-   but no stage from it is implemented.
+   Stage 2 is partially implemented by T-121; no other stage is implemented.
 
 ## Verification commands
 
@@ -131,7 +131,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   runtime change; T-118/T-119/T-120 are committed in `d6d7b77`; T-121 reclaims
   top-level `print` renderings for statically owned types with the 770-test
   gate and a focused median peak-RSS reduction of 19,268 KiB → 8,296 KiB;
-  commit pending). The
+  commit `75fcc34`, status sync `69d5f00`). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 770 passed (413 library unit + 15 CLI unit + 47 AI integration +
@@ -248,9 +248,9 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   so cloud access can change and is not guaranteed. Evidence:
   `docs/ai/LIVE_VERIFICATION.md`.
 - Known gaps: no general native reclamation (ADR-0056 stages ownership analysis
-  and arenas, but no stage is implemented; T-121 only frees top-level `print`
-  renderings for statically owned types and ADR-0054 frees nested display
-  temporaries), O(n) structural-key native maps, a fixed hash
+  and arenas; Stage 2 is partially implemented by T-121 for top-level `print`
+  renderings of statically owned types, no other stage is implemented, and
+  ADR-0054 frees nested display temporaries), O(n) structural-key native maps, a fixed hash
   seed for scalar keys, and O(n) scalar-key map-removal index rebuilds, no
   generics/closures/async/FFI, no formatter or LSP,
   the linter has only four conservative rules with no suppression or fixes,
