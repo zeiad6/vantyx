@@ -11,9 +11,72 @@
 5. Continue from the last verified checkpoint in
    `AGENT_STATE/CHECKPOINTS/`.
 
-## Last recorded repository state (2026-11-27)
+## Last recorded repository state (2026-11-28)
 
-- T-118, T-119, and T-120 are committed as `d6d7b77`; T-121 is verified
+- T-127 makes the e2e and native suites hermetic against cleanup or exhaustion
+  of the process temp directory. Both test files add a `OnceLock`-backed
+  `test_root()` that prefers `VANTYX_TEST_TMPDIR`, then Cargo's
+  `CARGO_TARGET_TMPDIR`, then the process temp directory only as a
+  manual-compilation fallback; workspaces live under
+  `test_root()/vantyx-tests-<pid>`, and every spawned `vantyx` command receives
+  `TMPDIR`, `TMP`, and `TEMP` pointing at that root so clang temporaries stay
+  inside it. The built e2e binary passed 137/137 and the native binary 165/165
+  when started with `TMPDIR=/proc TMP=/proc TEMP=/proc`. QA-F004 is fixed; the
+  789-test count is unchanged. T-123–T-127 remain uncommitted; the next command
+  is `git status --short` and `git diff --stat`, then the owner's commit
+  decision.
+- T-126 keys runtime conformance and contract strengthening by
+  `(container identity, expected Type)` so a self-referential list or map cannot
+  satisfy a mismatched recursive type merely by being revisited. `xs = [xs]`
+  still conforms to `List[List[Any]]` but no longer to `List[List[Int]]`; the
+  annotated binding raises `R0005` instead of letting a statically `Int`
+  expression evaluate to a list. Three library tests and one e2e test cover
+  self-cycles, mutual cycles, maps, and the binding failure; ADR-0057,
+  specification §2.3, and `docs/type_system.md` record the rule. Interpreter-only;
+  the native backend still rejects the dynamic containers with `E0401`.
+- T-125 accepts one leading UTF-8 BOM in entry files, imported modules, and
+  standard input via `src/lib.rs::strip_utf8_bom`, applied in
+  `src/module.rs` (entry and imported modules) and `src/main.rs::read_source`
+  (standard input). A BOM may be combined with
+  CRLF; an interior U+FEFF is still `E0001`. Specification §1.1, README, and
+  `docs/security.md` document the rule; one e2e test covers entry, module,
+  stdin, BOM+CRLF, and interior rejection.
+- T-124 makes `vantyx build -o` refuse an output path that resolves to the entry
+  file or any loaded module, including relative spellings, symbolic links, and
+  hard links, exiting `64` before code generation with every source byte
+  unchanged. `src/main.rs` records canonical `source_paths` and checks the
+  output before emitting C; `src/fs_safety.rs` adds
+  `paths_refer_to_same_file_paths` sharing the T-089 device/inode rule. One
+  native test covers the entry, module, and symlink cases; specification §11,
+  README, and `docs/security.md` document the guard. The defect was QA-F001.
+- The T-126/T-125/T-124/T-123 gate passed 789 tests (425 library unit + 15 CLI
+  unit + 47 AI integration + 137 e2e + 165 native), GCC and sanitized native at
+  165 each, 9 fuzzer self-tests, 100/100 differential fuzz on seed 1, all five
+  examples, fuzz smoke, 13 skills, and 132 links in 207 Markdown files; clippy,
+  fmt, debug, and release builds were clean. These four tasks remain
+  uncommitted; the next command is `git status --short` and `git diff --stat`,
+  then the owner's commit decision.
+- T-123 adds permanent runtime element, key, and value contracts to interpreter
+  lists and maps so a `List[Int]` or `Map[K,V]` cannot be polluted through an
+  `Any`, `List[Any]`, or `Map[Any, Any]` alias. `src/value.rs` stores the
+  contracts and adds `Value::tighten`, which strengthens only `Any` contracts
+  recursively through nested containers, structs, and enum payloads with a
+  visited set; `src/interp.rs` tags literals from `model.expr_types`, calls
+  `tighten` after every successful validation, and validates `push`, list index
+  assignment, and map key/value assignment before mutating with `R0005`.
+  Fully dynamic `List[Any]`/`Map[Any, Any]` stay mutable; the native backend
+  already rejects them with `E0401`, so no native code changed. Three e2e,
+  three library, and one native test cover the guarantee. ADR-0057,
+  specification §2.3, `docs/type_system.md`, `docs/memory_model.md`, and
+  `docs/PROJECT_BASELINE.md` record the design. The full gate passed 783 tests
+  (422 library unit + 15 CLI unit + 47 AI integration + 135 e2e + 164 native),
+  GCC and sanitized native at 164 each, 100/100 differential fuzz on seed 1,
+  examples, fuzz smoke, 13 skills, and 132 links in 207 Markdown files.
+  T-123 is uncommitted; the next command is `git diff --stat` and the owner's
+  commit decision.
+- T-122 adds conservative ownership facts over typed IR with no codegen change
+  and is committed as `6e58b37`; the 776-test gate passed. T-118, T-119, and
+  T-120 are committed as `d6d7b77`; T-121 is verified
   locally on 2026-11-27 with the full 770-test gate and is committed as
   `75fcc34`. T-118 extends `L0003` to all-terminating `if`/`elif`/`else` and
   `match` statements with nine new unit tests and updated lint documentation.

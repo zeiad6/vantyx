@@ -4,6 +4,23 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-27 — Container contracts are permanent and one-way
+
+- A typed list or map stores the element, key, and value types it was validated
+  against. A successful `Any -> T` boundary strengthens only `Any` contracts
+  and never widens a concrete contract back to `Any`.
+- The contract is permanent for the value's lifetime. A later write through a
+  `List[Any]` or `Any` alias can raise `R0005` even though the alias's static
+  type permits it. This is a runtime type error, not silent corruption; the
+  alternative copy-on-boundary design would break ADR-0005 reference semantics.
+- Empty containers are strengthened too. Otherwise dynamic code called from a
+  typed frame could insert a wrong-typed element while the typed frame still
+  held the `List[Int]` view.
+- Do not add scoped seals, per-alias capabilities, or contract reset without a
+  new ADR and tests for calls, early returns, and runtime errors. The native
+  backend is intentionally unaffected because it rejects `Any`, `List[Any]`,
+  and `Map[Any, *]` with `E0401`.
+
 ## 2026-11-27 — Reclaim only statically owned top-level `print` renderings
 
 - `print` now selects `vantyx_print_owned` only when the static argument type is
@@ -1013,3 +1030,53 @@ file records operational choices.
 - Record the design in ADR-0055 and document the non-durability, metadata, and
   predictable-temporary-name limits in the specification, security notes, and
   README.
+
+## 2026-11-27 — Refuse to overwrite a source with the build output
+
+- Compare the requested `-o` path against the canonical entry file and every
+  loaded module before emitting C or invoking the system compiler. A collision
+  exits `64` with a diagnostic naming both paths.
+- Reuse the T-089 device/inode comparison on Unix (canonical paths elsewhere)
+  so relative spellings, symbolic links, and hard links are caught. This is a
+  best-effort guard, not an atomic transaction; races remain possible.
+- Do not protect unrelated files at the output path. Replacing them matches
+  ordinary compiler behavior and is not a source-loss surprise.
+
+## 2026-11-28 — Strip exactly one leading UTF-8 BOM
+
+- Accept a single U+FEFF at the start of entry files, imported modules, and
+  standard input, because several Windows editors write one by default. Strip
+  it before lexing so spans and diagnostics refer to the remaining text.
+- Do not treat a BOM anywhere else as special, and do not accept UTF-16 or
+  UTF-32. Interior U+FEFF remains `E0001` outside a string literal.
+- Keep the library `compile(&str)` API literal: the CLI and module loader strip
+  the BOM. A caller passing a BOM directly still gets the lexer error.
+
+## 2026-11-28 — Key cycle conformance by container identity and expected type
+
+- A visited-set entry means "this container is already being checked against
+  this exact expected type", not merely "this container was seen". Returning
+  `true` on an identity-only revisit let `xs = [xs]` satisfy
+  `List[List[Int]]`.
+- Remove the key after each recursive check so sibling occurrences of the same
+  container are still checked under the same type; only a true ancestor cycle
+  takes the coinductive shortcut.
+- Apply the same key to contract strengthening so it cannot skip a different
+  expected type while walking a cyclic value.
+- This is interpreter-only. The native backend rejects the dynamic containers
+  with `E0401`, and no read-time checks or recursive-type inference are added.
+
+## 2026-11-28 — Keep test temporary files under the target directory
+
+- Use Cargo's `CARGO_TARGET_TMPDIR` for integration-test workspaces instead of
+  `std::env::temp_dir()`. The target directory is project-scoped and is not a
+  shared cleanup target like `/tmp`.
+- Set `TMPDIR`, `TMP`, and `TEMP` on every spawned `vantyx` command so clang
+  and other compiler children place object and link temporaries in the same
+  private root. Controlling only the workspace path is insufficient because
+  clang inherits the test process environment.
+- Keep a `VANTYX_TEST_TMPDIR` runtime override and a process-temp fallback for
+  manual compilation. Tests must still run when Cargo's variable is absent.
+- Remove the private root at process start rather than exit. Integration test
+  binaries have no reliable teardown hook, and stale target-directory artifacts
+  are preferable to deleting a directory another concurrent run may own.

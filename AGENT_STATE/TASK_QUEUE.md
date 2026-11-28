@@ -4,6 +4,44 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## Current work
 
+- T-127 — Hermetic test temporary directories. VERIFIED locally on
+  2026-11-28; commit pending; 789-test gate. Test workspaces and child
+  compiler temporaries use a private `OnceLock` root (preferring
+  `VANTYX_TEST_TMPDIR`, then `CARGO_TARGET_TMPDIR`), and spawned `vantyx`
+  commands receive `TMPDIR`/`TMP`/`TEMP`; the built e2e and native binaries
+  passed 137/137 and 165/165 with the process temp directory set to
+  unwritable `/proc` (QA-F004).
+
+- T-126 — Type-keyed cycle conformance. VERIFIED locally on 2026-11-28;
+  commit pending; 789-test gate. `src/value.rs` keys conformance and
+  strengthening by `(container identity, expected Type)`, so a self-referential
+  container cannot satisfy a mismatched recursive type; three library tests and
+  one e2e test; ADR-0057, specification §2.3, and `docs/type_system.md`.
+
+- T-125 — Leading UTF-8 BOM acceptance. VERIFIED locally on 2026-11-28;
+  commit pending; 789-test gate. `strip_utf8_bom` is applied to entry, module,
+  and stdin sources; one e2e test covers BOM+CRLF, a module, stdin, and
+  interior-BOM rejection; specification §1.1, README, and security notes.
+
+- T-124 — Build output source guard. VERIFIED locally on 2026-11-27; commit
+  pending; 784-test gate. `vantyx build -o` refuses the entry or any loaded
+  module through relative, symlink, or hard-link aliases with exit `64` and
+  unchanged sources; one native test; independent QA verified 784 tests and
+  manual variants; specification §11, README, and security notes.
+
+- T-123 — Runtime container contracts preserve the gradual guarantee. VERIFIED
+  locally on 2026-11-27; commit pending; 783-test gate (422 library unit + 15
+  CLI unit + 47 AI integration + 135 e2e + 164 native), GCC and sanitized
+  native at 164 each, 100/100 differential fuzz on seed 1, examples, fuzz
+  smoke, 13 skills, and 132 links in 207 Markdown files. `src/value.rs` adds
+  `ListValue`/`MapValue` contracts and `Value::tighten`; `src/interp.rs` tags
+  literals from `model.expr_types`, strengthens contracts at successful typed
+  boundaries, and validates `push`, list index assignment, and map key/value
+  assignment through any alias with `R0005` before mutation. Fully dynamic
+  `List[Any]`/`Map[Any, Any]` stay mutable; the native `E0401` boundary is
+  unchanged. ADR-0057 and the specification, type-system, memory-model, and
+  baseline documents record the design.
+
 - T-121 — Reclaim top-level native `print` display temporaries. VERIFIED locally
   on 2026-11-27; commit `75fcc34`; 770-test gate (413 library unit + 15 CLI unit +
   47 AI integration + 132 e2e + 163 native), GCC and sanitized native at 163

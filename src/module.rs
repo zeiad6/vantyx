@@ -306,6 +306,7 @@ impl Loader {
                 return None;
             }
         };
+        let source = crate::strip_utf8_bom(&source).to_string();
         if source.len() > MAX_MODULE_BYTES {
             self.diagnostics.push(
                 Diagnostic::error(

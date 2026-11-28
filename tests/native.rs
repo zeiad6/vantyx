@@ -6,6 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -26,10 +27,39 @@ fn compiler_available() -> bool {
         .unwrap_or(false)
 }
 
+/// Private root for test workspaces and child-process temporary files.
+///
+/// Cargo provides `CARGO_TARGET_TMPDIR` for integration tests. Keeping both
+/// workspaces and `TMPDIR`/`TMP`/`TEMP` there means an external cleanup of the
+/// process temp directory cannot remove files while clang is linking.
+fn test_root() -> &'static Path {
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    ROOT.get_or_init(|| {
+        let base = std::env::var_os("VANTYX_TEST_TMPDIR")
+            .map(PathBuf::from)
+            .or_else(|| option_env!("CARGO_TARGET_TMPDIR").map(PathBuf::from))
+            .unwrap_or_else(std::env::temp_dir);
+        let root = base.join(format!("vantyx-tests-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create test temp root");
+        root
+    })
+}
+
+/// A `vantyx` command whose compiler children keep temporary files inside the
+/// suite-private root instead of the process temp directory.
+fn vantyx_command() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_vantyx"));
+    command
+        .env("TMPDIR", test_root())
+        .env("TMP", test_root())
+        .env("TEMP", test_root());
+    command
+}
+
 fn workspace(name: &str, source: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
-        "vantyx-native-{}-{}-{}",
-        std::process::id(),
+    let directory = test_root().join(format!(
+        "native-{}-{}",
         COUNTER.fetch_add(1, Ordering::Relaxed),
         name
     ));
@@ -72,14 +102,14 @@ fn run_engines_in_mode(directory: PathBuf, name: &str, run_in_directory: bool) -
     let source_path = directory.join("main.vtx");
     let executable = directory.join("program");
 
-    let mut interpreter_command = Command::new(env!("CARGO_BIN_EXE_vantyx"));
+    let mut interpreter_command = vantyx_command();
     interpreter_command.arg("run").arg(&source_path);
     if run_in_directory {
         interpreter_command.current_dir(&directory);
     }
     let interpreter = interpreter_command.output().expect("run interpreter");
 
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(&source_path)
         .arg("-o")
@@ -1398,6 +1428,28 @@ fn list_of_any_is_rejected_with_e0401() {
 }
 
 #[test]
+fn gradual_container_alias_writes_are_rejected_with_e0401() {
+    for (name, source) in [
+        (
+            "gradual-alias-push-unsupported",
+            "fn main():\n    let xs: List[Int] = [1]\n    let alias: Any = xs\n    push(alias, \"s\")\n",
+        ),
+        (
+            "gradual-alias-map-unsupported",
+            "fn main():\n    let m: Map[Int, Int] = {1: 2}\n    let alias: Any = m\n    alias[1] = 3\n",
+        ),
+    ] {
+        let Some(engines) = run_engines(name, source) else {
+            return;
+        };
+        assert_eq!(engines.build.status.code(), Some(1), "{name}");
+        let stderr = String::from_utf8_lossy(&engines.build.stderr);
+        assert!(stderr.contains("error[E0401]"), "{name}: {stderr}");
+        assert!(stderr.contains("Any"), "{name}: {stderr}");
+    }
+}
+
+#[test]
 fn dynamic_any_is_rejected_with_e0401() {
     let Some(engines) = run_engines(
         "any-unsupported",
@@ -1975,7 +2027,7 @@ fn generated_c_temp_file_is_owner_only() {
     }
     let directory = workspace("temp-permissions", "fn main():\n    print(1)\n");
     let source = directory.join("main.vtx");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(&source)
         .arg("-o")
@@ -2004,7 +2056,7 @@ fn default_output_path_is_the_source_stem() {
     }
     let directory = workspace("default-output", "print(\"default\")\n");
     let source = directory.join("main.vtx");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(&source)
         .output()
@@ -2020,6 +2072,89 @@ fn default_output_path_is_the_source_stem() {
         .output()
         .expect("run default output");
     assert_eq!(String::from_utf8_lossy(&output.stdout), "default\n");
+}
+
+#[test]
+fn build_refuses_to_overwrite_a_source_file() {
+    let directory = workspace(
+        "build-output-source",
+        "fn main():\n    print(\"do not destroy\")\n",
+    );
+    let source = directory.join("main.vtx");
+    let before = fs::read(&source).expect("read source");
+    let build = vantyx_command()
+        .arg("build")
+        .arg(&source)
+        .arg("-o")
+        .arg(&source)
+        .output()
+        .expect("build over source");
+    assert_eq!(
+        build.status.code(),
+        Some(64),
+        "stderr: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&build.stderr);
+    assert!(stderr.contains("is also a source file"), "{stderr}");
+    assert!(
+        stderr.contains("help: choose a different `-o` path"),
+        "{stderr}"
+    );
+    assert_eq!(fs::read(&source).expect("source still exists"), before);
+
+    let directory = workspace(
+        "build-output-module",
+        "import \"lib/helper.vtx\"\n\nfn main():\n    print(helper())\n",
+    );
+    fs::create_dir_all(directory.join("lib")).expect("create module dir");
+    let helper = directory.join("lib/helper.vtx");
+    fs::write(&helper, "fn helper() -> Int:\n    return 7\n").expect("write module");
+    let before = fs::read(&helper).expect("read module");
+    let build = vantyx_command()
+        .arg("build")
+        .arg(directory.join("main.vtx"))
+        .arg("-o")
+        .arg(&helper)
+        .output()
+        .expect("build over module");
+    assert_eq!(
+        build.status.code(),
+        Some(64),
+        "stderr: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&build.stderr);
+    assert!(stderr.contains("is also a source file"), "{stderr}");
+    assert_eq!(fs::read(&helper).expect("module still exists"), before);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+
+        let directory = workspace("build-output-symlink", "fn main():\n    print(1)\n");
+        let real = directory.join("real.vtx");
+        fs::write(&real, "fn main():\n    print(1)\n").expect("write real source");
+        let alias = directory.join("link.vtx");
+        symlink(&real, &alias).expect("create symlink");
+        let before = fs::read(&real).expect("read real source");
+        let build = vantyx_command()
+            .arg("build")
+            .arg(&alias)
+            .arg("-o")
+            .arg(&real)
+            .output()
+            .expect("build over symlinked source");
+        assert_eq!(
+            build.status.code(),
+            Some(64),
+            "stderr: {}",
+            String::from_utf8_lossy(&build.stderr)
+        );
+        let stderr = String::from_utf8_lossy(&build.stderr);
+        assert!(stderr.contains("is also a source file"), "{stderr}");
+        assert_eq!(fs::read(&real).expect("real source still exists"), before);
+    }
 }
 
 #[test]
@@ -3497,7 +3632,7 @@ fn recursive_directory_removal_does_not_follow_symlinks() {
     }
 
     let interpreter_directory = setup("recursive-symlinks-interpreter");
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let interpreter = vantyx_command()
         .arg("run")
         .arg(interpreter_directory.join("main.vtx"))
         .current_dir(&interpreter_directory)
@@ -3506,7 +3641,7 @@ fn recursive_directory_removal_does_not_follow_symlinks() {
 
     let native_directory = setup("recursive-symlinks-native");
     let executable = native_directory.join("program");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(native_directory.join("main.vtx"))
         .arg("-o")
@@ -3785,7 +3920,7 @@ fn file_metadata_symlink_rules_match() {
     }
 
     let interpreter_directory = setup("metadata-symlinks-interpreter");
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let interpreter = vantyx_command()
         .arg("run")
         .arg(interpreter_directory.join("main.vtx"))
         .current_dir(&interpreter_directory)
@@ -3794,7 +3929,7 @@ fn file_metadata_symlink_rules_match() {
 
     let native_directory = setup("metadata-symlinks-native");
     let executable = native_directory.join("program");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(native_directory.join("main.vtx"))
         .arg("-o")
@@ -3962,7 +4097,7 @@ fn string_contains_argument_order_is_compiler_independent() {
     let directory = workspace("contains-order-compilers", source);
     let source_path = directory.join("main.vtx");
 
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let interpreter = vantyx_command()
         .arg("run")
         .arg(&source_path)
         .output()
@@ -3977,7 +4112,7 @@ fn string_contains_argument_order_is_compiler_independent() {
 
     for compiler in ["clang", "gcc"] {
         let executable = directory.join(format!("program-{compiler}"));
-        let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        let build = vantyx_command()
             .arg("build")
             .arg(&source_path)
             .arg("-o")
@@ -4932,7 +5067,7 @@ fn recursive_copy_depth_limit_matches_in_both_engines() {
     }
     fs::create_dir_all(&deep).expect("create deep copy tree");
 
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let interpreter = vantyx_command()
         .arg("run")
         .arg(directory.join("main.vtx"))
         .current_dir(&directory)
@@ -4945,7 +5080,7 @@ fn recursive_copy_depth_limit_matches_in_both_engines() {
     let _ = fs::remove_dir_all(directory.join("copy"));
 
     let executable = directory.join("program");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(directory.join("main.vtx"))
         .arg("-o")
@@ -4999,7 +5134,7 @@ fn recursive_copy_symlink_rules_match_in_both_engines() {
         }
         let interpreter_directory = workspace(&format!("{label}-interpreter"), source);
         setup(&interpreter_directory);
-        let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        let interpreter = vantyx_command()
             .arg("run")
             .arg(interpreter_directory.join("main.vtx"))
             .current_dir(&interpreter_directory)
@@ -5015,7 +5150,7 @@ fn recursive_copy_symlink_rules_match_in_both_engines() {
         let native_directory = workspace(&format!("{label}-native"), source);
         setup(&native_directory);
         let executable = native_directory.join("program");
-        let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+        let build = vantyx_command()
             .arg("build")
             .arg(native_directory.join("main.vtx"))
             .arg("-o")
@@ -5097,7 +5232,7 @@ fn recursive_copy_special_files_match_in_both_engines() {
     fs::create_dir(interpreter_directory.join("tree")).expect("create special tree");
     let interpreter_socket = UnixListener::bind(interpreter_directory.join("tree/sock"))
         .expect("bind interpreter socket");
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let interpreter = vantyx_command()
         .arg("run")
         .arg(interpreter_directory.join("main.vtx"))
         .current_dir(&interpreter_directory)
@@ -5116,7 +5251,7 @@ fn recursive_copy_special_files_match_in_both_engines() {
     let native_socket =
         UnixListener::bind(native_directory.join("tree/sock")).expect("bind native socket");
     let executable = native_directory.join("program");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(native_directory.join("main.vtx"))
         .arg("-o")
@@ -5162,7 +5297,7 @@ fn recursive_copy_non_utf8_names_match_in_both_engines() {
     let interpreter_directory = workspace("copy-non-utf8-interpreter", source);
     fs::create_dir(interpreter_directory.join("tree")).expect("create non-utf8 tree");
     fs::write(interpreter_directory.join("tree").join(name), "raw").expect("write non-utf8 file");
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let interpreter = vantyx_command()
         .arg("run")
         .arg(interpreter_directory.join("main.vtx"))
         .current_dir(&interpreter_directory)
@@ -5183,7 +5318,7 @@ fn recursive_copy_non_utf8_names_match_in_both_engines() {
     fs::create_dir(native_directory.join("tree")).expect("create native non-utf8 tree");
     fs::write(native_directory.join("tree").join(name), "raw").expect("write native non-utf8 file");
     let executable = native_directory.join("program");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(native_directory.join("main.vtx"))
         .arg("-o")
@@ -5417,7 +5552,7 @@ fn print_write_failure_headlines_match_interpreter() {
     let directory = workspace("print-write-failure", "fn main():\n    print(\"hello\")\n");
     let source_path = directory.join("main.vtx");
     let executable = directory.join("program");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(&source_path)
         .arg("-o")
@@ -5434,7 +5569,7 @@ fn print_write_failure_headlines_match_interpreter() {
         eprintln!("skipping print write-failure test: /dev/full is unavailable");
         return;
     };
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let interpreter = vantyx_command()
         .arg("run")
         .arg(&source_path)
         .stdout(Stdio::from(full.try_clone().expect("clone /dev/full")))
@@ -5491,7 +5626,7 @@ fn print_broken_pipe_headlines_match_interpreter() {
     let directory = workspace("print-broken-pipe", "fn main():\n    print(\"hello\")\n");
     let source_path = directory.join("main.vtx");
     let executable = directory.join("program");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(&source_path)
         .arg("-o")
@@ -5509,7 +5644,7 @@ fn print_broken_pipe_headlines_match_interpreter() {
         drop(reader);
         Stdio::from(OwnedFd::from(writer))
     };
-    let interpreter = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let interpreter = vantyx_command()
         .arg("run")
         .arg(&source_path)
         .stdout(closed_stdout())
@@ -5582,7 +5717,7 @@ fn closed_stdout_matches_interpreter_and_does_not_reuse_descriptors() {
     );
     let source_path = directory.join("main.vtx");
     let executable = directory.join("program");
-    let build = Command::new(env!("CARGO_BIN_EXE_vantyx"))
+    let build = vantyx_command()
         .arg("build")
         .arg(&source_path)
         .arg("-o")

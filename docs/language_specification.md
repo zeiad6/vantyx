@@ -8,7 +8,7 @@ Vantyx is an indentation-based, gradually typed language. Programs are checked b
 ## 1. Lexical structure
 
 ### 1.1 Source encoding
-Source files are UTF-8 and use the `.vtx` extension. Identifiers are currently ASCII: `[A-Za-z_][A-Za-z0-9_]*`. Unicode identifiers are planned.
+Source files are UTF-8 and use the `.vtx` extension. A single UTF-8 byte-order mark (`EF BB BF`, U+FEFF) at the start of an entry file, imported module, or standard-input source is accepted and stripped before lexing; a U+FEFF anywhere else, including a second leading BOM, is not special. CRLF line endings are accepted. The library-level `compile(&str)` API does not strip a BOM itself; the CLI and module loader do. Identifiers are currently ASCII: `[A-Za-z_][A-Za-z0-9_]*`. Unicode identifiers are planned.
 
 ### 1.2 Comments
 `#` starts a comment that runs to the end of the line. Comments and blank lines do not produce tokens.
@@ -76,7 +76,24 @@ Unannotated function parameters have type `Any`. An unannotated return type is i
 `List[T]` and `Map[K, V]` are invariant at annotated boundaries except that `T` may flow to `Any`. `Any` accepts any value and defers checking to runtime.
 
 ### 2.3 Gradual guarantee
-If a value has static type `T` (not `Any`), then every runtime operation on it either behaves according to `T` or terminates with a runtime type error. The runtime never performs an unchecked cast. Dynamic values are validated at annotated function boundaries, annotated bindings, and returns.
+If a value has static type `T` (not `Any`), then every runtime operation on it either behaves according to `T` or terminates with a runtime type error. The runtime never performs an unchecked cast. Dynamic values are validated at annotated function boundaries, annotated bindings, returns, struct fields, and enum payloads.
+
+Mutable containers carry their validated element, key, and value types as
+runtime contracts. A `List[Int]` or `Map[K, V]` that has crossed a typed
+boundary keeps that contract for the rest of its lifetime, even when an alias
+sees it as `Any`, `List[Any]`, or `Map[Any, Any]`. `push`, list index
+assignment, and map key or value assignment validate the written value against
+the contract and raise `R0005` on a mismatch. `List[Any]` and `Map[Any, Any]`
+values that have never been validated stay fully dynamic. Contract
+strengthening is one-way: a validated container cannot be widened back to
+`Any`, so a later write through a dynamic alias may be rejected even when the
+dynamic static type would allow it. This is a runtime type error, never a
+silent wrong-typed value. Conformance uses a visited set keyed by both the
+container identity and the expected type, so a cyclic value can satisfy a
+recursive type only when the same container is revisited under the same
+expected type; a revisit under a different type is rejected rather than
+silently accepted. See
+[ADR-0057](decisions/ADR-0057-container-element-contracts.md).
 
 ## 3. Declarations
 
@@ -744,7 +761,7 @@ Known limitations:
 
 ## 11. Native compilation (v0.1 subset)
 
-`vantyx build file.vtx [-o output]` lowers the checked program to a typed IR and emits GNU C11, then invokes `clang` (override with `VANTYX_CC`) and links with libc/libm.
+`vantyx build file.vtx [-o output]` lowers the checked program to a typed IR and emits GNU C11, then invokes `clang` (override with `VANTYX_CC`) and links with libc/libm. The output path is refused with exit `64` when it resolves to the entry file or any loaded module, including through a relative spelling, symbolic link, or hard link, so a build cannot replace its own source. An unrelated existing file at the output path is replaced, as with ordinary compilers. A leading UTF-8 BOM in the entry or a module is accepted (specification §1.1).
 
 Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for statically known type arguments, nominal structs, and nominal enums; globals; functions; `if`/`elif`/`else`; `while`; `for ... in range(...)`, `range(...)` as a `List[Int]` value, `for x in list`, `for c in str`, `for k in map`; `s[i]`; `m[k]`; `match` statements and expressions over statically typed enums and `Int`/`Str`/`Bool` literals and integer ranges; `return`/`break`/`continue`; statement-position `?` propagation for nominal two-variant enums; `print`, `len(Str/List/Map)`, `range` (1–3 Int bounds), `push`, `pop`, `contains(List/Str/Map)`, `remove(Map)`, `sorted`, `reverse`, `keys`, `values`, `str`, `int`, `float`, `bool`, `type`, `abs`, `min`, `max`, `sqrt`, `floor`, `ceil`, `assert`, `read_file`, `write_file`, `write_file_atomic`, `append_file`, `file_exists`, `file_size`, `is_file`, `is_dir`, `is_symlink`, `list_dir`, `glob`, `make_dir`, `remove_file`, `remove_dir`, `make_dir_all`, `remove_dir_all`, `rename`, `copy_file`, `copy_dir_all`, `split`, `join`, `trim`, `starts_with`, `ends_with`, `replace`, `path_join`, `path_parent`, `path_name`, `path_stem`, `path_extension`, `path_is_absolute`. Match guards, nested payload patterns, integer range patterns, and top-level or-patterns are supported. `range(...)` outside a `for` loop builds a `List[Int]` with the same 1–3 `Int` bounds, negative-step, zero-step, and 10,000,000-element limit checks as the interpreter. Native file and directory I/O validates UTF-8 and NUL bytes in C, sorts directory entries by byte order, and enforces the same 64 MiB read limit. Native `write_file_atomic` creates a same-directory hidden temporary file with `open(O_CREAT|O_EXCL)`, writes and `fsync`s it, renames it over the target, and unlinks the temporary on failure; it replaces symbolic links rather than following them and does not preserve metadata. Native recursive creation uses component-by-component `mkdir` with directory confirmation; native recursive removal uses the same lexical destructive-root refusal as the interpreter, then `lstat`, `opendir`/`readdir`, `unlink`, and `rmdir` without following symbolic links, and trims a trailing root separator before the link check. Native metadata probes use POSIX `stat`/`lstat` with the same follow-symlink rules, regular-file rule for `file_size`, and `R0015` failures as the interpreter. Native glob expansion uses POSIX `opendir`/`readdir`/`lstat`, a component matcher over Unicode scalar values, the same hidden and symlink rules, byte sorting, deduplication, limits, and `R0016`/`R0015` error split as the interpreter. Native `rename` delegates to POSIX `rename`; native `copy_file` copies regular-file bytes with libc streams and does not validate or preserve metadata. Native `copy_dir_all` resolves source and target parents with POSIX `realpath`, creates only a new target outside the source, walks with `opendir`/`readdir`/`lstat`, rejects inner symbolic links and special files, copies raw names and bytes with `mkdir` and libc streams, and does not preserve metadata. Native text builtins use the same UTF-8 decoder, Unicode `White_Space` table, literal split rules, and non-overlapping replacement as the interpreter, and evaluate multi-argument calls, including string `contains`, left to right. Native `type` evaluates its argument exactly once before yielding the static type name. Native path builtins use byte-scanned C helpers with the same POSIX-style, non-normalizing rules and ordered `path_join` evaluation as the interpreter. Statically non-`Str` arguments are rejected by the checker with `E0301`; dynamically typed (`Any`) file, directory, glob, rename/copy, metadata, text, and path arguments reach the native boundary and are rejected with `E0401`.
 

@@ -4,6 +4,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 struct Run {
     code: i32,
@@ -11,8 +12,34 @@ struct Run {
     stderr: String,
 }
 
+/// Private root for test workspaces and child-process temporary files.
+///
+/// Cargo provides `CARGO_TARGET_TMPDIR` for integration tests. Keeping both
+/// workspaces and `TMPDIR`/`TMP`/`TEMP` there means an external cleanup of the
+/// process temp directory cannot remove files while a build is running.
+fn test_root() -> &'static Path {
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    ROOT.get_or_init(|| {
+        let base = std::env::var_os("VANTYX_TEST_TMPDIR")
+            .map(PathBuf::from)
+            .or_else(|| option_env!("CARGO_TARGET_TMPDIR").map(PathBuf::from))
+            .unwrap_or_else(std::env::temp_dir);
+        let root = base.join(format!("vantyx-tests-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create test temp root");
+        root
+    })
+}
+
+fn configure_temp_env(command: &mut Command) {
+    command
+        .env("TMPDIR", test_root())
+        .env("TMP", test_root())
+        .env("TEMP", test_root());
+}
+
 fn temp_source(name: &str, source: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!("vantyx-e2e-{}", std::process::id()));
+    let directory = test_root().join("sources");
     fs::create_dir_all(&directory).expect("create temp dir");
     let path = directory.join(format!("{name}.vtx"));
     fs::write(&path, source).expect("write source");
@@ -44,6 +71,7 @@ fn vantyx_in_dir_with_env(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    configure_temp_env(&mut command);
     if let Some(directory) = directory {
         command.current_dir(directory);
     }
@@ -821,10 +849,7 @@ fn repl_echoes_new_expression_values_once() {
 
 #[test]
 fn repl_history_persists_across_sessions() {
-    let path = std::env::temp_dir().join(format!(
-        "vantyx-repl-history-{}-persist",
-        std::process::id()
-    ));
+    let path = test_root().join("repl-history-persist");
     let _ = fs::remove_file(&path);
     let history = path.to_str().expect("utf-8 history path");
     let first = vantyx_with_env(
@@ -1282,7 +1307,8 @@ fn nested_patterns_bind_payloads_at_every_level() {
 
 #[test]
 fn modules_run_and_check_end_to_end() {
-    let directory = std::env::temp_dir().join(format!("vantyx-e2e-modules-{}", std::process::id()));
+    let directory = test_root().join("modules");
+    let _ = fs::remove_dir_all(&directory);
     fs::create_dir_all(directory.join("lib")).expect("create module dir");
     fs::write(
         directory.join("lib/math.vtx"),
@@ -1323,8 +1349,7 @@ fn modules_run_and_check_end_to_end() {
 }
 
 fn io_workspace(label: &str) -> PathBuf {
-    let directory =
-        std::env::temp_dir().join(format!("vantyx-e2e-io-{}-{label}", std::process::id()));
+    let directory = test_root().join(format!("io-{label}"));
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir_all(&directory).expect("create io workspace");
     directory
@@ -1369,6 +1394,76 @@ fn file_io_round_trips_and_reports_existence() {
     assert_eq!(
         fs::read_to_string(directory.join("note.txt")).expect("read note"),
         "alpha beta"
+    );
+}
+
+#[test]
+fn utf8_bom_is_accepted_at_the_start_of_sources() {
+    let directory = io_workspace("bom");
+    let entry = directory.join("entry.vtx");
+    fs::write(&entry, "\u{feff}fn main():\r\n    print(\"entry\")\r\n").expect("write bom entry");
+    let entry_run = vantyx_in_dir(
+        &directory,
+        &["run", entry.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(entry_run.code, 0, "stderr: {}", entry_run.stderr);
+    assert_eq!(entry_run.stdout, "entry\n");
+
+    let helper = directory.join("helper.vtx");
+    fs::write(
+        &helper,
+        "\u{feff}fn helper() -> Str:\n    return \"module\"\n",
+    )
+    .expect("write bom module");
+    let main = directory.join("main.vtx");
+    fs::write(
+        &main,
+        "from \"helper.vtx\" import helper\n\nfn main():\n    print(helper())\n",
+    )
+    .expect("write module entry");
+    let module_run = vantyx_in_dir(
+        &directory,
+        &["run", main.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(module_run.code, 0, "stderr: {}", module_run.stderr);
+    assert_eq!(module_run.stdout, "module\n");
+
+    let stdin_run = vantyx(
+        &["run", "-"],
+        Some("\u{feff}fn main():\n    print(\"stdin\")\n"),
+    );
+    assert_eq!(stdin_run.code, 0, "stderr: {}", stdin_run.stderr);
+    assert_eq!(stdin_run.stdout, "stdin\n");
+
+    let interior = directory.join("interior.vtx");
+    fs::write(&interior, "fn main():\n    print(1)\n\u{feff}").expect("write interior bom");
+    let interior_run = vantyx_in_dir(
+        &directory,
+        &["run", interior.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(interior_run.code, 1, "stderr: {}", interior_run.stderr);
+    assert!(
+        interior_run.stderr.contains("error[E0001]"),
+        "{}",
+        interior_run.stderr
+    );
+
+    let duplicate = directory.join("duplicate.vtx");
+    fs::write(&duplicate, "\u{feff}\u{feff}fn main():\n    print(1)\n")
+        .expect("write duplicate bom");
+    let duplicate_run = vantyx_in_dir(
+        &directory,
+        &["run", duplicate.to_str().expect("utf-8 path")],
+        None,
+    );
+    assert_eq!(duplicate_run.code, 1, "stderr: {}", duplicate_run.stderr);
+    assert!(
+        duplicate_run.stderr.contains("error[E0001]"),
+        "{}",
+        duplicate_run.stderr
     );
 }
 
@@ -2672,6 +2767,203 @@ fn sorted_dynamic_any_value_rejects_mixed_lists() {
             .contains("homogeneous List of Int, Float, Str, or Bool"),
         "{}",
         run.stderr
+    );
+}
+
+#[test]
+fn typed_containers_reject_writes_through_dynamic_aliases() {
+    let push = run_file(
+        "gradual-alias-push",
+        "fn main():\n\
+         \x20   let xs: List[Int] = [1]\n\
+         \x20   let alias: Any = xs\n\
+         \x20   push(alias, \"s\")\n",
+    );
+    assert_eq!(push.code, 2, "stderr: {}", push.stderr);
+    assert!(push.stderr.contains("error[R0005]"), "{}", push.stderr);
+    assert!(
+        push.stderr
+            .contains("in `push`: expected `Int`, found `Str`"),
+        "{}",
+        push.stderr
+    );
+
+    let index = run_file(
+        "gradual-alias-index",
+        "fn main():\n\
+         \x20   let xs: List[Int] = [1]\n\
+         \x20   let alias: Any = xs\n\
+         \x20   alias[0] = \"s\"\n",
+    );
+    assert_eq!(index.code, 2, "stderr: {}", index.stderr);
+    assert!(index.stderr.contains("error[R0005]"), "{}", index.stderr);
+    assert!(
+        index
+            .stderr
+            .contains("assignment to a list element: expected `Int`, found `Str`"),
+        "{}",
+        index.stderr
+    );
+
+    let map_key = run_file(
+        "gradual-alias-map-key",
+        "fn main():\n\
+         \x20   let m: Map[Int, Int] = {1: 2}\n\
+         \x20   let alias: Any = m\n\
+         \x20   alias[\"k\"] = 3\n",
+    );
+    assert_eq!(map_key.code, 2, "stderr: {}", map_key.stderr);
+    assert!(
+        map_key.stderr.contains("error[R0005]"),
+        "{}",
+        map_key.stderr
+    );
+    assert!(
+        map_key
+            .stderr
+            .contains("as the key for map assignment: expected `Int`, found `Str`"),
+        "{}",
+        map_key.stderr
+    );
+
+    let map_value = run_file(
+        "gradual-alias-map-value",
+        "fn main():\n\
+         \x20   let m: Map[Int, Int] = {1: 2}\n\
+         \x20   let alias: Any = m\n\
+         \x20   alias[1] = \"v\"\n",
+    );
+    assert_eq!(map_value.code, 2, "stderr: {}", map_value.stderr);
+    assert!(
+        map_value.stderr.contains("error[R0005]"),
+        "{}",
+        map_value.stderr
+    );
+    assert!(
+        map_value
+            .stderr
+            .contains("as the value for map assignment: expected `Int`, found `Str`"),
+        "{}",
+        map_value.stderr
+    );
+}
+
+#[test]
+fn typed_boundaries_tighten_dynamic_containers() {
+    let parameter = run_file(
+        "gradual-parameter-tightening",
+        "fn take(xs: List[Int]) -> Unit:\n\
+         \x20   push(xs, 2)\n\
+         \n\
+         fn main():\n\
+         \x20   var xs: List[Any] = [1]\n\
+         \x20   take(xs)\n\
+         \x20   push(xs, \"s\")\n",
+    );
+    assert_eq!(parameter.code, 2, "stderr: {}", parameter.stderr);
+    assert!(
+        parameter.stderr.contains("error[R0005]"),
+        "{}",
+        parameter.stderr
+    );
+    assert!(
+        parameter
+            .stderr
+            .contains("in `push`: expected `Int`, found `Str`"),
+        "{}",
+        parameter.stderr
+    );
+
+    let nested = run_file(
+        "gradual-nested-tightening",
+        "fn main():\n\
+         \x20   let inner: List[Any] = [1]\n\
+         \x20   let m: Map[Int, List[Int]] = {1: inner}\n\
+         \x20   push(inner, \"s\")\n",
+    );
+    assert_eq!(nested.code, 2, "stderr: {}", nested.stderr);
+    assert!(nested.stderr.contains("error[R0005]"), "{}", nested.stderr);
+    assert!(
+        nested
+            .stderr
+            .contains("in `push`: expected `Int`, found `Str`"),
+        "{}",
+        nested.stderr
+    );
+
+    let field = run_file(
+        "gradual-field-tightening",
+        "struct Holder:\n\
+         \x20   xs: List[Int]\n\
+         \n\
+         fn main():\n\
+         \x20   let inner: List[Any] = [1]\n\
+         \x20   let holder = Holder(xs=inner)\n\
+         \x20   push(inner, \"s\")\n",
+    );
+    assert_eq!(field.code, 2, "stderr: {}", field.stderr);
+    assert!(field.stderr.contains("error[R0005]"), "{}", field.stderr);
+    assert!(
+        field
+            .stderr
+            .contains("in `push`: expected `Int`, found `Str`"),
+        "{}",
+        field.stderr
+    );
+}
+
+#[test]
+fn dynamic_containers_remain_fully_mutable() {
+    let run = run_file(
+        "gradual-dynamic-containers",
+        "fn main():\n\
+         \x20   var xs: List[Any] = [1, \"a\"]\n\
+         \x20   push(xs, true)\n\
+         \x20   xs[0] = 2.5\n\
+         \x20   print(xs)\n\
+         \x20   var m: Map[Any, Any] = {}\n\
+         \x20   m[1] = \"a\"\n\
+         \x20   m[\"k\"] = 2\n\
+         \x20   print(m)\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "[2.5, \"a\", true]\n{1: \"a\", \"k\": 2}\n");
+}
+
+#[test]
+fn self_referential_containers_reject_mismatched_recursive_types() {
+    let list = run_file(
+        "gradual-cycle-list",
+        "fn main():\n\
+         \x20   let xs: List[Any] = []\n\
+         \x20   push(xs, xs)\n\
+         \x20   let ys: List[List[Int]] = xs\n\
+         \x20   print(ys)\n",
+    );
+    assert_eq!(list.code, 2, "stderr: {}", list.stderr);
+    assert!(list.stdout.is_empty(), "stdout: {}", list.stdout);
+    assert!(
+        list.stderr
+            .contains("type mismatch in binding `ys`: expected `List[List[Int]]`"),
+        "{}",
+        list.stderr
+    );
+
+    let map = run_file(
+        "gradual-cycle-map",
+        "fn main():\n\
+         \x20   var m: Map[Any, Any] = {}\n\
+         \x20   m[\"self\"] = m\n\
+         \x20   let n: Map[Str, Map[Str, Int]] = m\n\
+         \x20   print(n)\n",
+    );
+    assert_eq!(map.code, 2, "stderr: {}", map.stderr);
+    assert!(map.stdout.is_empty(), "stdout: {}", map.stdout);
+    assert!(
+        map.stderr
+            .contains("type mismatch in binding `n`: expected `Map[Str, Map[Str, Int]]`"),
+        "{}",
+        map.stderr
     );
 }
 

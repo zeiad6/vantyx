@@ -34,14 +34,16 @@ Struct(Name), Enum(Name)
 
 ## Soundness boundary
 
-Static types are trusted. At every boundary where an `Any` value enters a typed position (annotated binding, parameter, return), the runtime validates the value. Therefore a well-typed program cannot observe a value of the wrong type without a runtime error.
+Static types are trusted. At every boundary where an `Any` value enters a typed position (annotated binding, parameter, return, struct field, or enum payload), the runtime validates the value. Therefore a well-typed program cannot observe a value of the wrong type without a runtime error. Conformance tracks both container identity and the expected type, so a cyclic value cannot satisfy a mismatched recursive type merely by being revisited; a revisit under a different expected type is rejected.
+
+Lists and maps also carry element, key, and value contracts. A successful validation strengthens an `Any` contract to the validated type, recursively through nested containers, structs, and enum payloads. The contract is permanent: mutations through any alias, including an `Any` or `List[Any]` alias, are checked against it, and `push`, list index assignment, and map key/value assignment raise `R0005` on a mismatch. `List[Any]` and `Map[Any, Any]` that never crossed a typed boundary remain fully dynamic. Because strengthening is one-way, a write that the dynamic alias's static type permits can be rejected after another alias validated the container; that is a runtime type error, not silent corruption. See [ADR-0057](decisions/ADR-0057-container-element-contracts.md).
 
 ## Mutability
 
 - `let` freezes the binding, not the referenced value.
 - `var` allows rebinding.
 - Function parameters are immutable bindings.
-- Struct fields and collection contents are mutable through any binding; this is documented reference semantics.
+- Struct fields and collection contents are mutable through any binding; this is documented reference semantics. A typed container's element, key, and value contract still applies to writes through dynamic aliases (ADR-0057).
 - Enum values are immutable: variant and payload slots cannot be reassigned. Payload values that are references keep their normal mutability and aliasing.
 
 ## Native subset

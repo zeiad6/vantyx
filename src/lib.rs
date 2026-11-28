@@ -53,6 +53,15 @@ impl CompileResult {
     }
 }
 
+/// Removes one leading UTF-8 byte-order mark, if present.
+///
+/// A BOM is accepted only at the start of a source file. Interior U+FEFF
+/// characters remain ordinary input and are rejected by the lexer outside a
+/// string literal, which keeps source spans aligned with the remaining text.
+pub fn strip_utf8_bom(source: &str) -> &str {
+    source.strip_prefix('\u{feff}').unwrap_or(source)
+}
+
 /// Compiles a complete program, requiring an entry point.
 pub fn compile(source: &str) -> CompileResult {
     compile_with_options(source, true)

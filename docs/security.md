@@ -18,6 +18,8 @@ Expected properties, exercised by tests:
 - `SourceMap::line_col` clamps offsets to UTF-8 boundaries, so invalid spans cannot panic diagnostic rendering.
 - The checker reports errors and does not execute user code.
 - IR lowering rejects unsupported constructs with `E0401` instead of miscompiling them.
+- `vantyx build -o` refuses an output path that resolves to the entry file or any loaded module, including through a relative spelling, symbolic link, or hard link, and exits `64` before writing. Unrelated output paths are still replaced as by an ordinary compiler.
+- A single leading UTF-8 BOM is stripped from entry, module, and standard-input sources; an interior U+FEFF remains ordinary input.
 - Runtime failures become diagnostics with exit code 2; compile failures exit 1; usage errors exit 64.
 
 Known limits:

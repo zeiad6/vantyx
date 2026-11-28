@@ -131,11 +131,31 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   runtime change; T-118/T-119/T-120 are committed in `d6d7b77`; T-121 reclaims
   top-level `print` renderings for statically owned types with the 770-test
   gate and a focused median peak-RSS reduction of 19,268 KiB → 8,296 KiB;
-  commit `75fcc34`, status sync `69d5f00`). The
+  commit `75fcc34`, status sync `69d5f00`; T-122 adds conservative ownership
+  facts over typed IR with the 776-test gate; commit `6e58b37`; T-123 adds
+  permanent runtime element, key, and value contracts that prevent
+  wrong-typed writes through dynamic aliases, with the 783-test gate; T-124
+  makes `build -o` refuse to overwrite the entry or a loaded module, with the
+  784-test gate; T-125 accepts a leading UTF-8 BOM in entries, modules, and
+  stdin; T-126 keys cycle conformance by expected type so a self-referential
+  container cannot satisfy a mismatched recursive type; T-127 makes the test
+  suites hermetic by keeping workspaces and child compiler temporaries under
+  Cargo's target temp root, verified with an unwritable process temp directory;
+  T-123–T-127 remain uncommitted. The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 776 passed (419 library unit + 15 CLI unit + 47 AI integration +
-  132 e2e + 163 native); the full native suite also passes with `VANTYX_CC=gcc`.
+- `cargo test`: 789 passed (425 library unit + 15 CLI unit + 47 AI integration +
+  137 e2e + 165 native); the full native suite also passes with `VANTYX_CC=gcc`.
+  The e2e and native test helpers use Cargo's `CARGO_TARGET_TMPDIR` (override
+  with `VANTYX_TEST_TMPDIR`) and set `TMPDIR`/`TMP`/`TEMP` on spawned `vantyx`
+  commands, so a cleanup of the process temp directory cannot break the suite.
+- Interpreter lists and maps enforce permanent element, key, and value
+  contracts (T-123, ADR-0057): a successful `Any -> T` validation strengthens
+  `Any` contracts recursively through nested containers, structs, and enum
+  payloads, and `push`, list index assignment, and map key/value assignment
+  raise `R0005` before mutation when a value does not conform. Fully dynamic
+  `List[Any]`/`Map[Any, Any]` stay mutable; the native backend rejects those
+  dynamic containers with `E0401`, so no native code changed.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - CI runs the native differential suite with generated programs compiled under
   AddressSanitizer and UndefinedBehaviorSanitizer via `tools/clang-sanitize.sh`

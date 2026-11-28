@@ -20,6 +20,8 @@
 //! best-effort guard against mistakes, not an atomic transaction: a caller can
 //! still race the check, and non-Unix builds fall back to canonical paths.
 
+use std::path::Path;
+
 /// Why a recursive-removal root was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RemovalRefusal {
@@ -69,6 +71,12 @@ pub fn refused_removal_root(path: &str) -> Option<RemovalRefusal> {
 /// back to canonical paths. Any metadata failure returns `false` so the copy
 /// itself can report the more useful error.
 pub fn paths_refer_to_same_file(source: &str, target: &str) -> bool {
+    paths_refer_to_same_file_paths(Path::new(source), Path::new(target))
+}
+
+/// Path-typed form of [`paths_refer_to_same_file`] for callers that already
+/// hold `Path` values, such as the build-output guard.
+pub fn paths_refer_to_same_file_paths(source: &Path, target: &Path) -> bool {
     let (Ok(source_metadata), Ok(target_metadata)) =
         (std::fs::metadata(source), std::fs::metadata(target))
     else {

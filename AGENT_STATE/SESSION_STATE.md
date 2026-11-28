@@ -1,14 +1,16 @@
 # Session State
 
 - Session ID: `ses_df3f90e90ffeFHPWt10GTzpwye`
-- Updated: 2026-11-27
+- Updated: 2026-11-28
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `d6d7b77` (T-118/T-119/T-120). The remote
-  remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in
-  `779783c` and passed run 45936065460. T-117 is committed as `4108974` with
-  CI pending; T-118, T-119, and T-120 are committed as `d6d7b77`; T-121 is
-  verified locally with the 770-test gate; T-121 is committed as `75fcc34`.
+- Last commit: `6e58b37` (T-122 conservative ownership facts in typed IR).
+  The remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is
+  pushed in `779783c` and passed run 45936065460. T-117 is committed as
+  `4108974` with CI pending; T-118, T-119, and T-120 are committed as
+  `d6d7b77`; T-121 is committed as `75fcc34`; T-122 is committed as
+  `6e58b37`; T-123, T-124, T-125, T-126, and T-127 are verified locally with
+  the 789-test gate and remain uncommitted.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -22,6 +24,62 @@
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
+
+T-127 — Hermetic test temporary directories. Status: VERIFIED locally on
+2026-11-28; commit pending. `tests/e2e.rs` and `tests/native.rs` add a
+`OnceLock`-backed `test_root()` that prefers `VANTYX_TEST_TMPDIR`, then Cargo's
+`CARGO_TARGET_TMPDIR`, then the process temp directory only as a
+manual-compilation fallback. Workspaces live under
+`test_root()/vantyx-tests-<pid>`, and every spawned `vantyx` command receives
+`TMPDIR`, `TMP`, and `TEMP` pointing at that root so clang temporaries cannot be
+removed by an external `/tmp` cleanup. The built e2e binary passed 137/137 and
+the native binary 165/165 with the process temp directory set to unwritable
+`/proc`. QA-F004 is fixed; no production behavior or test count changed.
+
+T-126 — Type-keyed cycle conformance. Status: VERIFIED locally on 2026-11-28;
+commit pending. `src/value.rs` keys the `value_conforms` and `tighten_value`
+visited sets by `(container identity, expected Type)`. A cycle is accepted
+coinductively only when the same container is revisited under the same expected
+type, so `xs = [xs]` conforms to `List[List[Any]]` but not `List[List[Int]]`;
+the annotated binding raises `R0005`. Mutual cycles and self-referential maps
+follow the same rule. Three library tests and one e2e test cover the cases;
+ADR-0057, specification §2.3, and `docs/type_system.md` record the rule. The
+native backend still rejects the dynamic containers with `E0401`.
+
+T-125 — Leading UTF-8 BOM acceptance. Status: VERIFIED locally on 2026-11-28;
+commit pending. `src/lib.rs` adds `strip_utf8_bom`; `src/main.rs::read_source`
+applies it to file and stdin entries, and `src/module.rs` applies it to each
+imported module. BOM+CRLF, modules, stdin, and interior-BOM rejection are
+covered by `tests/e2e.rs::utf8_bom_is_accepted_at_the_start_of_sources`;
+specification §1.1, README, and `docs/security.md` document the rule.
+
+T-124 — Build output source guard. Status: VERIFIED locally on 2026-11-27;
+commit pending. `vantyx build -o` refuses an output path that resolves to the
+entry file or any loaded module through a relative spelling, symbolic link, or
+hard link, exiting `64` before code generation and leaving every source byte
+unchanged. `src/main.rs` records canonical `source_paths` in `Compiled` and
+checks the output before emitting C; `src/fs_safety.rs` adds
+`paths_refer_to_same_file_paths`. One native test covers the entry, module, and
+symlink cases; independent QA verified 784 tests and manual variants.
+Specification §11, README, and `docs/security.md` document the guard.
+
+T-123 — Runtime container contracts preserve the gradual guarantee. Status:
+VERIFIED locally on 2026-11-27; commit pending. `src/value.rs` stores an
+element contract on every list and key/value contracts on every map;
+`Value::tighten` strengthens only `Any` contracts at successful typed
+boundaries and recurses through nested containers, structs, and enum payloads
+with a visited set. `src/interp.rs` tags literals from `model.expr_types`,
+validates `push`, list index assignment, and map key/value assignment through
+any alias, and raises `R0005` before mutation. Fully dynamic `List[Any]` and
+`Map[Any, Any]` stay mutable; the native backend already rejects them with
+`E0401`, so no native code changed. Three e2e tests, three library tests, and
+one native test cover the guarantee. ADR-0057 and the specification,
+type-system, and memory-model documents record the design.
+
+The full gate for T-123–T-126 passed 789 tests (425 library unit + 15 CLI unit
++ 47 AI integration + 137 e2e + 165 native), GCC and sanitized native at 165
+each, 100/100 differential fuzz on seed 1, 9 fuzzer self-tests, examples, fuzz
+smoke, 13 skills, and the link checker.
 
 T-121 — Reclaim top-level native `print` display temporaries. Status: VERIFIED
 locally on 2026-11-27; commit `75fcc34`. `print` used to

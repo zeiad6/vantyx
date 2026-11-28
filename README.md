@@ -343,6 +343,9 @@ cargo build --release
 the system compiler with `-O2`, and produces a standalone executable. Programs
 that use `Any`, dynamic `match`, or other interpreter-only features must run
 with `vantyx run`; the native compiler reports `E0401` instead of guessing.
+`build -o` refuses a path that resolves to the entry file or any loaded module,
+so a typo cannot replace source code with the executable. Entry files, modules,
+and standard input may start with a UTF-8 BOM.
 
 ## AI host
 

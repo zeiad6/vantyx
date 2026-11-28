@@ -71,24 +71,17 @@ fn run_cli() -> i32 {
 }
 
 fn read_source(path: &str) -> Result<String, i32> {
+    let mut source = String::new();
     if path == "-" {
-        let mut source = String::new();
-        match io::stdin().read_to_string(&mut source) {
-            Ok(_) => Ok(source),
-            Err(error) => {
-                eprintln!("error: cannot read standard input: {error}");
-                Err(1)
-            }
+        if let Err(error) = io::stdin().read_to_string(&mut source) {
+            eprintln!("error: cannot read standard input: {error}");
+            return Err(1);
         }
-    } else {
-        match fs::read_to_string(path) {
-            Ok(source) => Ok(source),
-            Err(error) => {
-                eprintln!("error: cannot read `{path}`: {error}");
-                Err(1)
-            }
-        }
+    } else if let Err(error) = fs::read_to_string(path) {
+        eprintln!("error: cannot read `{path}`: {error}");
+        return Err(1);
     }
+    Ok(vantyx::strip_utf8_bom(&source).to_string())
 }
 
 /// A successfully checked entry file and every source it imported.
@@ -96,6 +89,8 @@ struct Compiled {
     program: Program,
     model: SemanticModel,
     sources: SourceRegistry,
+    /// Canonical on-disk paths of the entry and every loaded module.
+    source_paths: Vec<PathBuf>,
 }
 
 /// Loads an entry file (and its modules), or compiles stdin as one source.
@@ -119,6 +114,7 @@ fn compile_entry(path: &str) -> Result<Compiled, i32> {
             program,
             model,
             sources,
+            source_paths: Vec::new(),
         });
     }
 
@@ -139,10 +135,24 @@ fn compile_entry(path: &str) -> Result<Compiled, i32> {
         eprintln!("error: internal compiler error: missing program after successful check");
         return Err(1);
     };
+    let root = fs::canonicalize(path)
+        .ok()
+        .and_then(|entry| entry.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut source_paths = Vec::new();
+    for file in loaded.sources.iter() {
+        if file.name == "<stdin>" {
+            continue;
+        }
+        if let Ok(source) = fs::canonicalize(root.join(&file.name)) {
+            source_paths.push(source);
+        }
+    }
     Ok(Compiled {
         program,
         model,
         sources: loaded.sources,
+        source_paths,
     })
 }
 
@@ -240,6 +250,20 @@ fn build_file(path: &str, output: Option<&str>) -> i32 {
             path
         }
     };
+
+    if let Some(source) = compiled
+        .source_paths
+        .iter()
+        .find(|source| vantyx::fs_safety::paths_refer_to_same_file_paths(&output_path, source))
+    {
+        eprintln!(
+            "error: output path `{}` is also a source file `{}`; refusing to overwrite it",
+            output_path.display(),
+            source.display()
+        );
+        eprintln!("help: choose a different `-o` path");
+        return 64;
+    }
 
     let c_source = vantyx::codegen_c::emit_with_sources(&ir, &compiled.sources);
     let temp = match write_generated_c(&c_source) {

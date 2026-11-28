@@ -29,7 +29,7 @@
 
 1. **Reference cycles** between lists/maps/structs leak. A cycle collector or ownership analysis is planned.
 2. **Aliasing surprises**: `let a = [1]; let b = a; push(b, 2)` changes `a`. This is documented reference semantics, not memory unsafety.
-3. **Dynamic containers**: `List[Any]` can hold mixed values; typed reads are validated at annotated boundaries.
+3. **Dynamic containers**: `List[Any]` can hold mixed values; typed reads are validated at annotated boundaries. Each list stores an element contract and each map a key/value contract; a successful typed validation strengthens `Any` contracts recursively, and later writes through any alias are checked against them (ADR-0057). This metadata does not change reference identity, display, or equality.
 4. **Resource exhaustion**: large allocations can abort the process; there is no sandbox or memory quota.
 5. **Enum payload aliasing**: copying an enum copies its payload slots, but list/map/struct payloads still alias. Mutating such a payload is visible through every copy, exactly like struct fields.
 

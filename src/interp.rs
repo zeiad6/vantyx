@@ -308,11 +308,11 @@ enum Place {
         index: usize,
     },
     ListIndex {
-        target: Rc<std::cell::RefCell<Vec<Value>>>,
+        target: Rc<crate::value::ListValue>,
         index: usize,
     },
     MapIndex {
-        target: Rc<std::cell::RefCell<Vec<(Value, Value)>>>,
+        target: Rc<crate::value::MapValue>,
         key: Value,
     },
 }
@@ -534,6 +534,7 @@ impl<'a> Interpreter<'a> {
         context: &str,
     ) -> Result<(), RuntimeError> {
         if value.conforms_to(ty) {
+            value.tighten(ty);
             Ok(())
         } else {
             Err(self.rt(
@@ -836,13 +837,13 @@ impl<'a> Interpreter<'a> {
     ) -> Result<Flow, RuntimeError> {
         let iterable = self.eval_expr(iter)?;
         match iterable {
-            Value::List(items) => {
+            Value::List(list) => {
                 // Snapshot the length, but read elements live so mutation is
                 // visible without extending the iteration.
-                let len = items.borrow().len();
+                let len = list.items.borrow().len();
                 for index in 0..len {
                     let item = {
-                        let borrowed = items.borrow();
+                        let borrowed = list.items.borrow();
                         match borrowed.get(index) {
                             Some(value) => value.clone(),
                             None => break,
@@ -868,8 +869,9 @@ impl<'a> Interpreter<'a> {
                 }
                 Ok(Flow::Normal)
             }
-            Value::Map(entries) => {
-                let keys: Vec<Value> = entries
+            Value::Map(map) => {
+                let keys: Vec<Value> = map
+                    .entries
                     .borrow()
                     .iter()
                     .map(|(key, _)| key.clone())
@@ -1140,9 +1142,9 @@ impl<'a> Interpreter<'a> {
                 let base_value = self.eval_expr(base)?;
                 let index_value = self.eval_expr(index)?;
                 match base_value {
-                    Value::List(items) => {
+                    Value::List(list) => {
                         let position = self.index_position(&index_value, target.span)?;
-                        let len = items.borrow().len();
+                        let len = list.items.borrow().len();
                         if position >= len {
                             return Err(self.rt(
                                 "R0003",
@@ -1153,12 +1155,12 @@ impl<'a> Interpreter<'a> {
                             ));
                         }
                         Ok(Place::ListIndex {
-                            target: items,
+                            target: list,
                             index: position,
                         })
                     }
-                    Value::Map(entries) => Ok(Place::MapIndex {
-                        target: entries,
+                    Value::Map(map) => Ok(Place::MapIndex {
+                        target: map,
                         key: index_value,
                     }),
                     Value::Str(_) => Err(self.rt(
@@ -1203,7 +1205,7 @@ impl<'a> Interpreter<'a> {
                     .ok_or_else(|| self.rt("R0010", "field disappeared during assignment", span))
             }
             Place::ListIndex { target, index } => {
-                let borrowed = target.borrow();
+                let borrowed = target.items.borrow();
                 borrowed.get(*index).cloned().ok_or_else(|| {
                     self.rt(
                         "R0003",
@@ -1215,15 +1217,14 @@ impl<'a> Interpreter<'a> {
                     )
                 })
             }
-            Place::MapIndex { target, key } => {
-                map_get(target.borrow().as_slice(), key).ok_or_else(|| {
+            Place::MapIndex { target, key } => map_get(target.entries.borrow().as_slice(), key)
+                .ok_or_else(|| {
                     self.rt(
                         "R0008",
                         format!("key `{}` is not present in the map", key.display()),
                         span,
                     )
-                })
-            }
+                }),
         }
     }
 
@@ -1288,7 +1289,9 @@ impl<'a> Interpreter<'a> {
                 Ok(())
             }
             Place::ListIndex { target, index } => {
-                let mut borrowed = target.borrow_mut();
+                let elem_ty = target.elem_ty.borrow().clone();
+                self.validate(&value, &elem_ty, span, " in assignment to a list element")?;
+                let mut borrowed = target.items.borrow_mut();
                 let Some(slot) = borrowed.get_mut(*index) else {
                     return Err(self.rt(
                         "R0003",
@@ -1303,7 +1306,11 @@ impl<'a> Interpreter<'a> {
                 Ok(())
             }
             Place::MapIndex { target, key } => {
-                map_insert(&mut target.borrow_mut(), key.clone(), value);
+                let key_ty = target.key_ty.borrow().clone();
+                let value_ty = target.value_ty.borrow().clone();
+                self.validate(key, &key_ty, span, " as the key for map assignment")?;
+                self.validate(&value, &value_ty, span, " as the value for map assignment")?;
+                map_insert(&mut target.entries.borrow_mut(), key.clone(), value);
                 Ok(())
             }
         }
@@ -1360,7 +1367,11 @@ impl<'a> Interpreter<'a> {
                 for element in elements {
                     values.push(self.eval_expr(element)?);
                 }
-                Ok(Value::list(values))
+                let elem_ty = match self.model.expr_types.get(&expr.id) {
+                    Some(Type::List(inner)) => (**inner).clone(),
+                    _ => Type::Any,
+                };
+                Ok(Value::list_typed(values, elem_ty))
             }
             ExprKind::Map(entries) => {
                 let mut values: Vec<(Value, Value)> = Vec::with_capacity(entries.len());
@@ -1369,7 +1380,11 @@ impl<'a> Interpreter<'a> {
                     let value = self.eval_expr(value)?;
                     map_insert(&mut values, key, value);
                 }
-                Ok(Value::map(values))
+                let (key_ty, value_ty) = match self.model.expr_types.get(&expr.id) {
+                    Some(Type::Map(key, value)) => ((**key).clone(), (**value).clone()),
+                    _ => (Type::Any, Type::Any),
+                };
+                Ok(Value::map_typed(values, key_ty, value_ty))
             }
             ExprKind::Try { .. } => Err(self.rt(
                 "R0017",
@@ -1566,9 +1581,9 @@ impl<'a> Interpreter<'a> {
 
     fn index_value(&self, base: Value, index: Value, span: Span) -> Result<Value, RuntimeError> {
         match base {
-            Value::List(items) => {
+            Value::List(list) => {
                 let position = self.index_position(&index, span)?;
-                let borrowed = items.borrow();
+                let borrowed = list.items.borrow();
                 borrowed.get(position).cloned().ok_or_else(|| {
                     self.rt(
                         "R0003",
@@ -1594,8 +1609,8 @@ impl<'a> Interpreter<'a> {
                     )),
                 }
             }
-            Value::Map(entries) => {
-                let borrowed = entries.borrow();
+            Value::Map(map) => {
+                let borrowed = map.entries.borrow();
                 map_get(borrowed.as_slice(), &index).ok_or_else(|| {
                     self.rt(
                         "R0008",
@@ -2024,8 +2039,8 @@ impl<'a> Interpreter<'a> {
                 self.arity(name, &args, 1, 1, span)?;
                 match &args[0] {
                     Value::Str(text) => Ok(Value::Int(text.chars().count() as i64)),
-                    Value::List(items) => Ok(Value::Int(items.borrow().len() as i64)),
-                    Value::Map(entries) => Ok(Value::Int(entries.borrow().len() as i64)),
+                    Value::List(list) => Ok(Value::Int(list.items.borrow().len() as i64)),
+                    Value::Map(map) => Ok(Value::Int(map.entries.borrow().len() as i64)),
                     other => {
                         Err(self.type_error(" in `len`", "`Str`, `List`, or `Map`", other, span))
                     }
@@ -2071,13 +2086,15 @@ impl<'a> Interpreter<'a> {
                     let value = start_wide + step_wide * index;
                     items.push(Value::Int(value as i64));
                 }
-                Ok(Value::list(items))
+                Ok(Value::list_typed(items, Type::Int))
             }
             "push" => {
                 self.arity(name, &args, 2, 2, span)?;
                 match &args[0] {
-                    Value::List(items) => {
-                        items.borrow_mut().push(args[1].clone());
+                    Value::List(list) => {
+                        let elem_ty = list.elem_ty.borrow().clone();
+                        self.validate(&args[1], &elem_ty, span, " in `push`")?;
+                        list.items.borrow_mut().push(args[1].clone());
                         Ok(Value::Unit)
                     }
                     other => Err(self.type_error(" in `push`", "`List`", other, span)),
@@ -2086,7 +2103,8 @@ impl<'a> Interpreter<'a> {
             "pop" => {
                 self.arity(name, &args, 1, 1, span)?;
                 match &args[0] {
-                    Value::List(items) => items
+                    Value::List(list) => list
+                        .items
                         .borrow_mut()
                         .pop()
                         .ok_or_else(|| self.rt("R0003", "`pop` on an empty list", span)),
@@ -2096,8 +2114,8 @@ impl<'a> Interpreter<'a> {
             "contains" => {
                 self.arity(name, &args, 2, 2, span)?;
                 match &args[0] {
-                    Value::List(items) => Ok(Value::Bool(
-                        items.borrow().iter().any(|item| item.equals(&args[1])),
+                    Value::List(list) => Ok(Value::Bool(
+                        list.items.borrow().iter().any(|item| item.equals(&args[1])),
                     )),
                     Value::Str(text) => match &args[1] {
                         Value::Str(needle) => Ok(Value::Bool(text.contains(&**needle))),
@@ -2108,8 +2126,8 @@ impl<'a> Interpreter<'a> {
                             span,
                         )),
                     },
-                    Value::Map(entries) => Ok(Value::Bool(
-                        map_get(entries.borrow().as_slice(), &args[1]).is_some(),
+                    Value::Map(map) => Ok(Value::Bool(
+                        map_get(map.entries.borrow().as_slice(), &args[1]).is_some(),
                     )),
                     other => Err(self.type_error(
                         " in `contains`",
@@ -2122,8 +2140,8 @@ impl<'a> Interpreter<'a> {
             "remove" => {
                 self.arity(name, &args, 2, 2, span)?;
                 match &args[0] {
-                    Value::Map(entries) => {
-                        let mut entries = entries.borrow_mut();
+                    Value::Map(map) => {
+                        let mut entries = map.entries.borrow_mut();
                         let Some(index) = entries.iter().position(|(key, _)| key.equals(&args[1]))
                         else {
                             return Ok(Value::Bool(false));
@@ -2136,22 +2154,24 @@ impl<'a> Interpreter<'a> {
             }
             "sorted" => {
                 self.arity(name, &args, 1, 1, span)?;
-                let Value::List(items) = &args[0] else {
+                let Value::List(list) = &args[0] else {
                     return Err(self.type_error(" in `sorted`", "`List`", &args[0], span));
                 };
-                let mut sorted = items.borrow().clone();
+                let elem_ty = list.elem_ty.borrow().clone();
+                let mut sorted = list.items.borrow().clone();
                 if let Err(expected) = sort_scalar_values(&mut sorted) {
                     return Err(self.type_error(" in `sorted`", expected, &args[0], span));
                 }
-                Ok(Value::list(sorted))
+                Ok(Value::list_typed(sorted, elem_ty))
             }
             "reverse" => {
                 self.arity(name, &args, 1, 1, span)?;
-                let Value::List(items) = &args[0] else {
+                let Value::List(list) = &args[0] else {
                     return Err(self.type_error(" in `reverse`", "`List`", &args[0], span));
                 };
-                let reversed: Vec<Value> = items.borrow().iter().rev().cloned().collect();
-                Ok(Value::list(reversed))
+                let elem_ty = list.elem_ty.borrow().clone();
+                let reversed: Vec<Value> = list.items.borrow().iter().rev().cloned().collect();
+                Ok(Value::list_typed(reversed, elem_ty))
             }
             "split" => {
                 self.arity(name, &args, 2, 2, span)?;
@@ -2182,12 +2202,12 @@ impl<'a> Interpreter<'a> {
                 } else {
                     text.split(&**separator).map(Value::str).collect()
                 };
-                Ok(Value::list(parts))
+                Ok(Value::list_typed(parts, Type::Str))
             }
             "join" => {
                 self.arity(name, &args, 2, 2, span)?;
                 let items = match &args[0] {
-                    Value::List(items) => items.borrow(),
+                    Value::List(list) => list.items.borrow(),
                     other => {
                         return Err(self.type_error(" in `join`", "`List[Str]`", other, span));
                     }
@@ -2330,8 +2350,13 @@ impl<'a> Interpreter<'a> {
             "keys" | "values" => {
                 self.arity(name, &args, 1, 1, span)?;
                 match &args[0] {
-                    Value::Map(entries) => {
-                        let borrowed = entries.borrow();
+                    Value::Map(map) => {
+                        let elem_ty = if name == "keys" {
+                            map.key_ty.borrow().clone()
+                        } else {
+                            map.value_ty.borrow().clone()
+                        };
+                        let borrowed = map.entries.borrow();
                         let items = borrowed
                             .iter()
                             .map(|(key, value)| {
@@ -2342,7 +2367,7 @@ impl<'a> Interpreter<'a> {
                                 }
                             })
                             .collect();
-                        Ok(Value::list(items))
+                        Ok(Value::list_typed(items, elem_ty))
                     }
                     other => Err(self.type_error(&format!(" in `{name}`"), "`Map`", other, span)),
                 }
@@ -2741,7 +2766,10 @@ impl<'a> Interpreter<'a> {
                     names.push(name);
                 }
                 names.sort();
-                Ok(Value::list(names.into_iter().map(Value::str).collect()))
+                Ok(Value::list_typed(
+                    names.into_iter().map(Value::str).collect(),
+                    Type::Str,
+                ))
             }
             "glob" => {
                 self.arity(name, &args, 1, 1, span)?;
@@ -2766,7 +2794,10 @@ impl<'a> Interpreter<'a> {
                     };
                     self.rt(code, error.message, span)
                 })?;
-                Ok(Value::list(paths.into_iter().map(Value::str).collect()))
+                Ok(Value::list_typed(
+                    paths.into_iter().map(Value::str).collect(),
+                    Type::Str,
+                ))
             }
             "make_dir" | "remove_file" | "remove_dir" | "make_dir_all" | "remove_dir_all" => {
                 self.arity(name, &args, 1, 1, span)?;

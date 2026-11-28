@@ -1,5 +1,169 @@
 # Active Task
 
+## T-127 — Hermetic test temporary directories
+
+- Status: VERIFIED locally on 2026-11-28; commit pending
+- Priority: P3 (test-infrastructure reliability)
+- Dependencies: QA-F004
+
+### Implemented
+
+- `tests/e2e.rs` and `tests/native.rs` add a `OnceLock`-backed `test_root()`
+  that prefers `VANTYX_TEST_TMPDIR`, then Cargo's `CARGO_TARGET_TMPDIR`, then
+  the process temp directory only as a manual-compilation fallback.
+- Workspaces live under `test_root()/vantyx-tests-<pid>`.
+- `tests/e2e.rs::configure_temp_env` and `tests/native.rs::vantyx_command` set
+  `TMPDIR`, `TMP`, and `TEMP` on every spawned `vantyx` command, so clang and
+  other children keep temporary files inside the private root.
+
+### Evidence
+
+- Direct e2e binary with `TMPDIR=/proc TMP=/proc TEMP=/proc`: 137 passed.
+- Direct native binary with the same unwritable temp variables: 165 passed.
+- Targeted `utf8_bom` and `build_refuses_to_overwrite_a_source_file` passed.
+- Full `cargo test`: 789 passed, unchanged counts.
+
+### Remaining
+
+- Leave the commit for the repository owner. The private root is removed at
+  process start, not exit, so completed runs leave artifacts under the target
+  directory. The independent QA final report predates T-127, so this task is
+  locally verified only.
+
+## T-126 — Type-keyed cycle conformance rejects mismatched recursive containers
+
+- Status: VERIFIED locally on 2026-11-28; commit pending
+- Priority: P2 (gradual type-system soundness)
+- Dependencies: ADR-0003, ADR-0057, T-123
+
+### Implemented
+
+- `src/value.rs` keys the `value_conforms` and `tighten_value` visited sets by
+  `(container identity, expected Type)` instead of identity alone.
+- A cycle is accepted coinductively only when the same container is revisited
+  under the same expected type; a different expected type is evaluated
+  normally, so `xs = [xs]` conforms to `List[List[Any]]` but not
+  `List[List[Int]]`.
+- Specification §2.3, `docs/type_system.md`, and ADR-0057 document the rule.
+
+### Evidence
+
+- `cargo test --lib value`: 21 passed, including three new cycle tests.
+- `cargo test --test e2e self_referential`: 1 passed.
+- Full gate: 789 tests (425 library unit + 15 CLI unit + 47 AI integration +
+  137 e2e + 165 native), GCC native 165, sanitized native 165, 9 fuzzer
+  self-tests, 100/100 differential cases on seed 1, examples, fuzz smoke,
+  13 skills, and links.
+
+### Remaining
+
+- Leave the commit for the repository owner. Independent review of T-125/T-126
+  is pending provider capacity.
+
+## T-125 — Accept a leading UTF-8 BOM in entry, module, and stdin sources
+
+- Status: VERIFIED locally on 2026-11-28; commit pending
+- Priority: P3 (cross-platform input compatibility)
+- Dependencies: QA-F002
+
+### Implemented
+
+- `src/lib.rs` adds `strip_utf8_bom`; `src/module.rs` applies it to the entry
+  file and every imported module after reading and before the size check,
+  lexing, and source registration, and `src/main.rs::read_source` applies it to
+  standard input.
+- Specification §1.1, README, and `docs/security.md` document the rule.
+
+### Evidence
+
+- `cargo test --test e2e utf8_bom`: 1 passed (BOM+CRLF entry, module, stdin,
+  interior-BOM and duplicate-BOM rejection).
+- Full gate: 789 tests, GCC and sanitized native 165 each, 100/100 fuzz on
+  seed 1, examples, fuzz smoke, 13 skills, and links.
+
+### Remaining
+
+- Leave the commit for the repository owner. Only a single leading BOM is
+  stripped; UTF-16/UTF-32 and interior BOMs remain unsupported.
+
+## T-124 — `vantyx build -o` refuses to overwrite a source file
+
+- Status: VERIFIED locally on 2026-11-27; commit pending
+- Priority: P0 (data destruction)
+- Dependencies: QA-F001, T-089, ADR-0029
+
+### Implemented
+
+- `src/main.rs` records canonical `source_paths` in `Compiled` and checks the
+  output path before code generation.
+- `src/fs_safety.rs` adds `paths_refer_to_same_file_paths`, using device/inode
+  identity on Unix and canonical paths elsewhere.
+- A collision exits `64` with `is also a source file` and a help line; every
+  source byte is unchanged.
+- Specification §11, README, and `docs/security.md` document the guard.
+
+### Evidence
+
+- `cargo test --test native build_refuses_to_overwrite_a_source_file`:
+  1 passed (entry, imported module, symlink target).
+- `cargo test`: 784 passed at the T-124 checkpoint.
+- Independent QA snapshot: 784 passed; manual entry, module, relative,
+  symlink, hard-link, and output-symlink variants all exited `64` with sources
+  byte-identical (`AGENT_STATE/QUALITY_AGENT_FINDINGS.md`).
+
+### Remaining
+
+- Leave the commit for the repository owner. Only loaded source files are
+  protected; unrelated output files are still replaced.
+
+## T-123 — Runtime container contracts preserve the gradual guarantee
+
+- Status: VERIFIED locally on 2026-11-27; commit pending
+- Priority: P1 (type-system soundness)
+- Dependencies: ADR-0003, ADR-0005, ADR-0057
+
+### Implemented
+
+- `src/value.rs` adds `ListValue` (`items`, `elem_ty`) and `MapValue`
+  (`entries`, `key_ty`, `value_ty`); `Value::List`/`Value::Map` now hold them.
+- `Value::list_typed`/`map_typed` set contracts, `Value::tighten` strengthens
+  only `Any` contracts, and recursion through nested containers, structs, and
+  enum payloads is cycle-safe with `MAX_VALUE_DEPTH`.
+- `src/interp.rs` tags list/map literals from `model.expr_types`, calls
+  `tighten` after every successful `validate`, and validates `push`,
+  `Place::ListIndex`, and `Place::MapIndex` writes before mutating with
+  `R0005`.
+- `range`, `split`, `keys`, `values`, `sorted`, `reverse`, `list_dir`, and
+  `glob` return results tagged with the element type their checker signature
+  guarantees.
+- ADR-0057, specification §2.3, `docs/type_system.md`, `docs/memory_model.md`,
+  `TASKS.md`, `PROJECT_STATUS.md`, `AGENTS.md`, and
+  `docs/PROJECT_BASELINE.md` record the design and the 783-test gate.
+
+### Evidence
+
+- `cargo test --lib value`: 18 passed (including three new contract tests).
+- `cargo test --test native gradual_container`: 1 passed.
+- `cargo test --test e2e typed_`: 2 passed.
+- Full gate on 2026-11-27: `cargo build`, `cargo build --release`,
+  `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check --all`
+  clean; `cargo test` 783 passed (422 library unit + 15 CLI unit + 47 AI
+  integration + 135 e2e + 164 native); GCC native 164; sanitized native 164
+  under ASan/UBSan with leak detection disabled; 9 fuzzer self-tests; 100/100
+  differential cases on seed 1; all five examples matched; fuzz smoke 9
+  depth/limit cases and 400 random/mutated inputs; 13 skills validated; 132
+  links in 207 Markdown files.
+- Independent QA verification on 2026-11-27: an isolated copy with matching
+  source hashes passed the full suite, 783 passed / 0 failed
+  (`/home/kali/qa-work/cargo-test-t123-full.log`). The same review reported
+  QA-F001 (`vantyx build <source> -o <source>` overwrites the source) as a
+  separate pre-existing P0, tracked as T-124.
+
+### Remaining
+
+- Leave the commit for the repository owner. T-124 addresses the independent
+  QA build-output finding.
+
 ## T-121 — Reclaim top-level native `print` display temporaries
 
 - Status: VERIFIED on 2026-11-27; commit `75fcc34`
