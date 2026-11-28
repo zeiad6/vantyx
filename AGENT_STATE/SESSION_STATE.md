@@ -4,10 +4,11 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `92f8e19` (T-117 status sync). The remote
+- Last commit: `d6d7b77` (T-118/T-119/T-120). The remote
   remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in
   `779783c` and passed run 45936065460. T-117 is committed as `4108974` with
-  CI pending; T-118, T-119, and T-120 are verified locally and uncommitted.
+  CI pending; T-118, T-119, and T-120 are committed as `d6d7b77`; T-121 is
+  verified locally with the 770-test gate; T-121 is committed as `75fcc34`.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -22,8 +23,25 @@
 
 ## Current task
 
+T-121 — Reclaim top-level native `print` display temporaries. Status: VERIFIED
+locally on 2026-11-27; commit `75fcc34`. `print` used to
+render `Int`, `Float`, `List`, `Map`, `Struct`, and `Enum` arguments into fresh
+heap strings and never free them. `src/codegen_c.rs` now adds
+`vantyx_print_owned`, which writes and frees, and an exhaustive static-type
+predicate selects it; borrowed `Str` and static `Bool`/`Unit` renderings keep
+`vantyx_print_text` and are never freed. Two native tests cover every argument
+type and pin the emitted ownership split. Nine alternating runs of a
+200,000-line print workload measured median peak RSS 19,268 KiB → 8,296 KiB
+(−56.9%) with byte-identical output; wall time was unchanged within noise. ADR-0054
+is amended, ADR-0056 marks Stage 2 as partially implemented, and
+`benchmarks/results/2026-11-27-print-temporaries.md` records the raw data. The
+full gate passed 770 tests (413 library unit + 15 CLI unit + 47 AI integration
++ 132 e2e + 163 native), GCC and sanitized native at 163 each, 100/100
+differential fuzz on seed 1, sanitized fuzz 20/20, examples, fuzz smoke, 13
+skills, and 130 links in 201 Markdown files.
+
 T-118 — `L0003` all-terminating `if`/`match`. Status: VERIFIED locally on
-2026-11-27; commit pending. `src/lint.rs` adds a `Termination` kind and a
+2026-11-27; committed in `d6d7b77`. `src/lint.rs` adds a `Termination` kind and a
 conservative local `block_terminates` analysis; an `if` with `else` is
 terminating only when every branch terminates, and a `match` statement only
 when every arm body terminates. An `if` without `else`, a falling branch or
@@ -36,7 +54,7 @@ fuzz on seed 1, sanitized fuzz 20/20, examples, 13 skills, and 130 links in
 200 Markdown files.
 
 T-119 — Sanitized differential fuzz in CI. Status: VERIFIED locally on
-2026-11-27; commit pending. The CI `sanitizers` job now builds
+2026-11-27; committed in `d6d7b77`. The CI `sanitizers` job now builds
 `target/debug/vantyx` and runs `tools/differential_fuzz.py --iterations 20
 --seed 1` through `tools/clang-sanitize.sh` with
 `ASAN_OPTIONS=detect_leaks=0:abort_on_error=1` and
@@ -44,12 +62,13 @@ T-119 — Sanitized differential fuzz in CI. Status: VERIFIED locally on
 agreed 20/20, and the workflow YAML parses.
 
 T-120 — Native memory reclamation design. Status: DESIGN ACCEPTED on
-2026-11-27; docs-only. ADR-0056 stages ownership facts in typed IR,
-fresh-temporary reclamation, conservative escape analysis with stack/arena
-allocation for non-escaping locals, a deferred measured choice between
-reference counting plus cycle collection and a precise tracing collector for
-escaping values, and a separate interpreter cycle decision. No runtime
-behavior changed and no reclamation stage from the ADR is implemented.
+2026-11-27; docs-only; committed in `d6d7b77`. ADR-0056 stages ownership facts
+in typed IR, fresh-temporary reclamation, conservative escape analysis with
+stack/arena allocation for non-escaping locals, a deferred measured choice
+between reference counting plus cycle collection and a precise tracing
+collector for escaping values, and a separate interpreter cycle decision.
+T-120 itself changed no runtime behavior; T-121 later partially implements
+Stage 2 for top-level `print` renderings of statically owned types.
 
 T-117 — List reversal. Status: VERIFIED locally on 2026-11-27; commit
 `4108974`; CI pending. `reverse(list: List[T]) -> List[T]` returns a new

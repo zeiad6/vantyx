@@ -2,13 +2,28 @@
 
 Ordered by priority. The orchestrator updates this file after each checkpoint.
 
-## In progress
+## Current work
+
+- T-121 — Reclaim top-level native `print` display temporaries. VERIFIED locally
+  on 2026-11-27; commit `75fcc34`; 770-test gate (413 library unit + 15 CLI unit +
+  47 AI integration + 132 e2e + 163 native), GCC and sanitized native at 163
+  each, 100/100 differential fuzz on seed 1, sanitized fuzz 20/20, examples,
+  fuzz smoke, 13 skills, and 130 links in 201 Markdown files. `src/codegen_c.rs` adds
+  `vantyx_print_owned` and an exhaustive static-type predicate, so `Int`,
+  `Float`, `List`, `Map`, `Struct`, and `Enum` print renderings are freed after
+  `fputs` copies them while borrowed `Str` and static `Bool`/`Unit` renderings
+  are never freed. A differential test covers every argument type and an
+  emitted-C test pins the ownership split. Nine alternating runs of a
+  200,000-line workload measured median peak RSS 19,268 KiB → 8,296 KiB
+  (−56.9%); wall time was unchanged within noise. ADR-0054 amendment, memory
+  model, ADR-0056 Stage 2 status, and the benchmark result file are updated.
 
 - T-118 — `L0003` recognizes all-terminating `if`/`match`. VERIFIED locally on
-  2026-11-27; commit pending; 768-test gate (413 library unit + 15 CLI unit +
-  47 AI integration + 132 e2e + 161 native), GCC and sanitized native at 161
-  each, 100/100 ordinary differential fuzz on seed 1, sanitized fuzz 20/20,
-  examples, 13 skills, and 130 links in 200 Markdown files. The pass treats a
+  2026-11-27; committed in `d6d7b77`; 768-test gate at commit time (413 library
+  unit + 15 CLI unit + 47 AI integration + 132 e2e + 161 native), GCC and
+  sanitized native at 161 each, 100/100 ordinary differential fuzz on seed 1,
+  sanitized fuzz 20/20, examples, 13 skills, and 130 links in 200 Markdown
+  files. The pass treats a
   statement as unreachable after an `if`/`elif`/`else` whose every branch
   terminates, or a `match` statement whose every arm body terminates; an `if`
   without `else`, any falling branch or arm, loops, and calls remain
@@ -17,14 +32,14 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
   rule.
 
 - T-119 — Sanitized differential fuzz in CI. VERIFIED locally on 2026-11-27;
-  commit pending; the `sanitizers` job runs
+  committed in `d6d7b77`; the `sanitizers` job runs
   `tools/differential_fuzz.py --iterations 20 --seed 1` through
   `tools/clang-sanitize.sh` with ASan/UBSan and leak detection disabled; the
   exact local command agreed 20/20; workflow YAML parses; the full 768-test
   gate and sanitized native suite passed.
 
 - T-120 — Native memory reclamation design. DESIGN ACCEPTED on 2026-11-27;
-  docs-only; 130 links in 200 Markdown files resolve. ADR-0056 stages ownership
+  docs-only; committed in `d6d7b77`; 130 links in 200 Markdown files resolve. ADR-0056 stages ownership
   facts in typed IR, fresh-temporary reclamation, conservative escape analysis
   with stack/arena allocation for non-escaping locals, a separately measured
   choice between reference counting plus cycle collection and a precise tracing

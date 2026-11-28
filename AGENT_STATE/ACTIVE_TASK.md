@@ -1,5 +1,50 @@
 # Active Task
 
+## T-121 — Reclaim top-level native `print` display temporaries
+
+- Status: VERIFIED on 2026-11-27; commit `75fcc34`
+- Priority: P1 (memory management: fresh-temporary reclamation)
+- Dependencies: T-079, T-107, T-114, T-120, ADR-0054, ADR-0056
+
+### Implemented
+
+- `src/codegen_c.rs` adds `vantyx_print_owned(vantyx_str)`, which writes with
+  `fputs` and then frees the fresh rendering.
+- An exhaustive `display_owned(&IrType)` predicate selects the printer:
+  `Int`, `Float`, `List`, `Map`, `Struct`, and `Enum` are owned; `Str`, `Bool`,
+  and `Unit` are borrowed or static and keep `vantyx_print_text`.
+- Evaluation order, separators, per-line flushing, output bytes, and `R0013`
+  behavior are unchanged.
+- ADR-0054 is amended, `docs/memory_model.md` records the narrow reclamation,
+  ADR-0056 marks Stage 2 as partially implemented, and
+  `benchmarks/results/2026-11-27-print-temporaries.md` records the focused
+  measurement.
+
+### Evidence
+
+- `cargo test --test native print` passed 5 tests; the full native suite passed
+  163 tests with clang.
+- Nine alternating runs of a 200,000-line print workload: median peak RSS
+  19,268 KiB before, 8,296 KiB after (10,972 KiB lower, 56.9%); median wall
+  time 611.4 ms before and 607.1 ms after, reported as noise rather than a
+  speed claim.
+- Interpreter, baseline native, and patched native produced the same SHA-256
+  output (`e6174790...f16558b`).
+- Full gate passed on 2026-11-27: 770 tests (413 library unit + 15 CLI unit +
+  47 AI integration + 132 e2e + 163 native), GCC native 163, sanitized native
+  163, 100/100 differential fuzz on seed 1, sanitized differential fuzz 20/20,
+  all five examples, fuzz smoke, 13 skills, and 130 links in 201 Markdown
+  files; clippy, fmt, debug, and release builds clean.
+- A focused LeakSanitizer probe over 1,000 iterations of `print(i)`,
+  `print(float(i) * 1.5)`, and `print([i, i + 1])` reported no print-rendering
+  leaks; only the user-created list values still leaked (71,928 bytes), which
+  Stage 2 does not yet reclaim.
+
+### Remaining
+
+- Committed as `75fcc34`; independent subagent review remains blocked by
+  provider capacity (`Free usage limit reached`).
+
 ## T-118 — `L0003` recognizes all-terminating `if` and `match`
 
 - Status: VERIFIED locally on 2026-11-27; commit pending

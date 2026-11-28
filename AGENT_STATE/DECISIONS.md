@@ -4,6 +4,41 @@ Append-only record of engineering decisions made in autonomous sessions. Design
 rationale that affects semantics belongs in `docs/decisions/` as an ADR; this
 file records operational choices.
 
+## 2026-11-27 — Reclaim only statically owned top-level `print` renderings
+
+- `print` now selects `vantyx_print_owned` only when the static argument type is
+  `Int`, `Float`, `List`, `Map`, `Struct`, or `Enum`, because `display_value`
+  provably returns a fresh heap string for each. `Str` is borrowed from the
+  argument, and `Bool`/`Unit` return static literals, so those keep
+  `vantyx_print_text` and are never freed.
+- Do not extend this to `str(x)`, interpolation, `+` chains, or `trim(x)` by
+  syntactic shape: `str(Str)` returns its argument and `trim` can return its
+  input unchanged, so freeing those would be a double free or invalid free.
+  Those sites need an explicit ownership flag or a copy-on-return contract
+  before Stage 2 can reclaim them.
+- Keep the reclaim site local to the `print` rendering. User bindings,
+  container elements, call results, and values that can escape remain
+  unreclaimed in v0.1.
+
+## 2026-11-27 — Subagent retry failed; primary session continues
+
+- After the earlier six-child `Free usage limit reached` failure, a retry
+  started `qa-verifier` for independent T-118/T-119 verification,
+  `spec-sync-auditor` for documentation drift, and `memory-model-engineer` for
+  ADR-0056 review, plus `backend-engineer` for T-121. All four child sessions
+  then failed with `Free usage limit reached` and returned no report, command
+  result, or review. No independent result exists for T-118/T-119/T-120.
+- `backend-engineer` left one partial `src/codegen_c.rs` edit in the
+  `t121-print-owned-temporaries` worktree before failing: an ownership split
+  that reclaims `print` display temporaries only for statically owned types
+  (`Int`, `Float`, `List`, `Map`, `Struct`, `Enum`) while keeping borrowed
+  `Str` and static `Bool`/`Unit` renderings unfreed. The primary session
+  verified the ownership claim, completed the tests, and owns the final
+  integration; the worktree must not edit shared status files.
+- Do not describe a delegated review as running or complete unless the child
+  returns exact commands and evidence. The primary session's own tests are the
+  only evidence recorded for these tasks.
+
 ## 2026-11-27 — Native reclamation is staged, ownership-first
 
 - ADR-0056 accepts a five-stage native memory reclamation plan: ownership facts

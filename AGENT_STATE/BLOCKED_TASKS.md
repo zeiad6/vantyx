@@ -21,10 +21,15 @@
   tests and sanitizer runs remain the recorded evidence; retry independent
   verification when capacity returns.
 - Delegated T-118/T-119 implementation and the 2026-11-27 T-117 QA, spec-sync,
-  security, and divergence-hunt reviews — All six child sessions failed
+  security, and divergence-hunt reviews — The first six child sessions failed
   immediately with `Free usage limit reached` and produced no report or file
-  change. The primary session is executing T-118/T-119 directly; independent
-  review remains unavailable and is not claimed.
+  change. A later retry started `qa-verifier`, `spec-sync-auditor`,
+  `memory-model-engineer`, and `backend-engineer`, but all four also failed with
+  `Free usage limit reached` and returned no result. The backend child left a
+  partial T-121 `src/codegen_c.rs` edit in its worktree; the primary session
+  completed it, verified it with the 770-test gate, and recorded the evidence.
+  No independent review exists for T-118/T-119/T-120/T-121; independent review
+  is claimed only if a child returns exact commands and evidence.
 - Continuously available live cloud AI — The 2026-11-24 Gemini run succeeded
   and a 20:59Z re-verification passed all 21 checks, but an earlier request
   was rejected with HTTP 400 `User location is not supported` and one re-run

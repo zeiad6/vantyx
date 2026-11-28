@@ -1216,7 +1216,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-121 — Reclaim top-level native `print` display temporaries
 - Priority: P1 (memory management: fresh-temporary reclamation)
-- Status: VERIFIED on 2026-11-27
+- Status: VERIFIED on 2026-11-27; commit `75fcc34`
 - Description: Native `print` rendered every argument through `display_value` and passed the result to `vantyx_print_text`, which writes but never frees. For `Int`, `Float`, `List`, `Map`, `Struct`, and `Enum` arguments the rendering is a fresh heap string that is dead immediately after `fputs` copies it, so print-heavy programs retained one string per printed value until exit. Reclaim those renderings without freeing borrowed `Str` values or static `Bool`/`Unit` literals.
 - Acceptance: The static argument type selects the printer exhaustively. Owned renderings use `vantyx_print_owned`, which writes and frees; `Str`, `Bool`, and `Unit` keep `vantyx_print_text` and are never freed. Argument evaluation order, separators, per-line flushing, output bytes, and `R0013` output-failure behavior are unchanged. A differential test covers every supported print argument type, and an emitted-C test pins the ownership split so a future edit cannot introduce a double free or a use-after-free.
 - Dependencies: T-079 (two-phase print evaluation), T-107 (output-failure parity), T-114/ADR-0054 (nested display temporaries), T-120/ADR-0056 (staged reclamation), ADR-0052/ADR-0053 (single-buffer display).

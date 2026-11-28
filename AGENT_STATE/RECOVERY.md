@@ -13,18 +13,23 @@
 
 ## Last recorded repository state (2026-11-27)
 
-- T-118, T-119, and T-120 are verified locally and uncommitted. T-118 extends
-  `L0003` to all-terminating `if`/`elif`/`else` and `match` statements with
-  nine new unit tests and updated lint documentation. T-119 adds a bounded
-  sanitized differential-fuzz step to the CI `sanitizers` job; the exact local
-  command agreed 20/20. T-120 adds ADR-0056, a staged native memory
-  reclamation design with no runtime change. The full gate passed 768 tests
-  (413 library unit + 15 CLI unit + 47 AI integration + 132 e2e + 161 native),
-  GCC and sanitized native at 161 each, 100/100 ordinary differential fuzz on
-  seed 1, sanitized fuzz 20/20, examples, 13 skills, and 130 links in 200
-  Markdown files. Independent subagent review is running; the earlier six-child
-  delegation failed with `Free usage limit reached`, so no earlier independent
-  result exists.
+- T-118, T-119, and T-120 are committed as `d6d7b77`; T-121 is verified
+  locally on 2026-11-27 with the full 770-test gate and is committed as
+  `75fcc34`. T-118 extends `L0003` to all-terminating `if`/`elif`/`else` and
+  `match` statements with nine new unit tests and updated lint documentation.
+  T-119 adds a bounded sanitized differential-fuzz step to the CI `sanitizers`
+  job; the exact local command agreed 20/20. T-120 adds ADR-0056, a staged
+  native memory reclamation design with no runtime change. T-121 reclaims
+  top-level `print` renderings for statically owned types; nine alternating
+  runs measured median peak RSS 19,268 KiB → 8,296 KiB with identical output.
+  The T-121 gate passed 770 tests (413 library unit + 15 CLI unit + 47 AI
+  integration + 132 e2e + 163 native), GCC and sanitized native at 163 each,
+  100/100 ordinary differential fuzz on seed 1, sanitized fuzz 20/20, examples,
+  fuzz smoke, 13 skills, and 130 links in 201 Markdown files; clippy, fmt,
+  debug, and release builds were clean. The earlier T-118/T-119/T-120 gate
+  passed 768 tests with native at 161 each. The later four-child review retry
+  also failed with `Free usage limit reached`, so no independent subagent
+  result exists; the primary session's executed tests are the only evidence.
 - T-117 is verified locally on 2026-11-27 with the 759-test gate and committed
   as `4108974`; CI pending. `reverse(list: List[T]) -> List[T]` returns a new shallow-copied
   list with the elements in reverse order for any supported element type and
