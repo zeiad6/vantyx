@@ -4,7 +4,7 @@ Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
 - T-116 — Atomic file replacement (2026-11-27; verified locally; commit
-  pending; CI pending; 754-test gate; `write_file_atomic(path, text) -> Unit`
+  `3e22628`; CI pending; 754-test gate; `write_file_atomic(path, text) -> Unit`
   writes a hidden same-directory temporary with exclusive creation, writes and
   fsyncs it, renames it over the target, and removes the temporary on failure;
   readers see the old or complete new contents, never a partial file; symbolic

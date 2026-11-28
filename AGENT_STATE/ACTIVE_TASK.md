@@ -2,7 +2,7 @@
 
 ## T-116 — Atomic file replacement
 
-- Status: VERIFIED locally on 2026-11-27; commit pending; CI pending
+- Status: VERIFIED locally on 2026-11-27; commit `3e22628`; CI pending
 - Priority: P1 (standard library: file safety)
 - Dependencies: ADR-0026 (basic file I/O), T-097 (filesystem error wording)
 
@@ -42,7 +42,6 @@
 
 ### Remaining
 
-- Commit T-116 and record the hash in a status-sync commit.
 - Independent review remains unavailable (subagent free-usage limit).
 
 ### Scope limits

@@ -2,7 +2,7 @@
 
 - Date: 2026-11-27
 - Task: T-116 — Atomic file replacement
-- Status: VERIFIED locally on 2026-11-27; commit pending; CI pending
+- Status: VERIFIED locally on 2026-11-27; commit `3e22628`; CI pending
 - Priority: P1 (standard library: file safety)
 
 ## Objective
@@ -68,7 +68,6 @@ first-line errors, evaluation order, and link behavior.
 
 ## Remaining
 
-- Commit T-116 and record the hash in a status-sync commit.
 - Independent `qa-verifier` review remains unavailable because the subagent
   provider returned a free-usage limit error; no independent result is claimed.
 

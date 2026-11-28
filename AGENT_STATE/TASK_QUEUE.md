@@ -9,7 +9,7 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 ## Verified locally, commit pending CI
 
 - T-116 — Atomic file replacement. VERIFIED locally on 2026-11-27; commit
-  pending; CI pending. `write_file_atomic(path, text)` writes a hidden
+  `3e22628`; CI pending. `write_file_atomic(path, text)` writes a hidden
   same-directory temporary, fsyncs it, renames it over the target, and removes
   the temporary on failure; it replaces symbolic links rather than following
   them and does not preserve mode/owner/timestamps or fsync the directory.

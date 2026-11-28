@@ -13,8 +13,8 @@
 
 ## Last recorded repository state (2026-11-27)
 
-- T-116 is verified locally with the 754-test gate and is ready to commit; CI
-  pending. `write_file_atomic(path, text) -> Unit` writes a hidden
+- T-116 is verified locally with the 754-test gate and committed as `3e22628`;
+  CI pending. `write_file_atomic(path, text) -> Unit` writes a hidden
   same-directory temporary with exclusive creation, writes and fsyncs it,
   renames it over the target, and removes the temporary on failure. Readers see
   the old file or the complete new contents, never a partial file. Symbolic

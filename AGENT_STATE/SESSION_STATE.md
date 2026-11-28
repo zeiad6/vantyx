@@ -4,10 +4,10 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `b6f3f11` (T-115); T-116 is verified locally and ready to
-  commit. The remote remains at `a9a6d1a`; CI run 45936329476 green on it.
-  T-105 is pushed in `779783c` and passed run 45936065460. T-114 is committed
-  as `3617fe3` with CI pending.
+- Last commit: `3e22628` (T-116). The remote
+  remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in
+  `779783c` and passed run 45936065460. T-114 is committed as `3617fe3` with
+  CI pending.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -23,7 +23,7 @@
 ## Current task
 
 T-116 — Atomic file replacement. Status: VERIFIED locally on 2026-11-27;
-commit pending; CI pending.
+commit `3e22628`; CI pending.
 `write_file_atomic(path, text) -> Unit` creates or replaces a file by writing
 a hidden same-directory temporary with exclusive creation, flushing it with
 `fsync`, and renaming it over the target. The temporary is removed on failure;
