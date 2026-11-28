@@ -1,12 +1,13 @@
 # AI Roadmap
 
 Status: AI-0 and AI-1 complete; AI-2 compatible adapters implemented and the
-cloud path verified live on 2026-11-24, but local-model evidence remains
-blocked; AI-3 structured extraction and streamed text chat complete (streaming
-tool calls and cancellation open; cloud live evidence recorded); AI-4
-host-side embeddings, retrieval, citations, evaluation, and MMR diversity
-reranking complete
-Date: 2026-11-24
+cloud path verified live on 2026-11-24, with bounded provider retries and
+metadata-only agent traces added on 2026-11-28; local-model evidence remains
+blocked; AI-3 structured extraction
+and streamed text chat complete (streaming tool calls and cancellation open;
+cloud live evidence recorded); AI-4 host-side embeddings, retrieval, citations,
+evaluation, and MMR diversity reranking complete
+Date: 2026-11-28
 Related: `AI_ARCHITECTURE.md`, `AI_RESEARCH.md`, `AI_SECURITY.md`,
 `RESEARCH/HISTORICAL_REQUIREMENTS_AUDIT.md`
 
@@ -119,6 +120,10 @@ run end-to-end; security tests cover denied capabilities and redaction.
       need.
 - [x] Live tests, opt-in and documented (`tools/live_ai_check.py`); no keys
       in CI.
+- [x] Bounded, provider-neutral retries for chat, streaming, model listing, and
+      embeddings: default 2, hard max 8, deterministic exponential backoff,
+      integer-seconds `Retry-After` with a 4 s policy ceiling, wall-clock budget
+      checks, and a populated metric `retry_count` (ADR-0058).
 
 Exit gate: one real local model and one cloud provider complete a chat with
 recorded evidence; failure paths (401, 429, timeout) are tested. The cloud half
@@ -135,6 +140,8 @@ transient 503, so continuous cloud access is not claimed.
 - [x] Incremental SSE parser with size limits and UTF-8 carry across chunks.
 - [x] Streaming text deltas in the provider, HTTP transport, and CLI
       (`vantyx ai chat --stream`); loopback and HTTPS protocol tests.
+- [x] Retry-safe streaming: bounded retries before the first delta, and no
+      retry after output has been delivered (ADR-0058).
 - [ ] Streaming tool calls and interactive cancellation.
 - [x] JSON Schema subset validation.
 - [x] Typed extraction pipeline and `vantyx ai extract` command.
@@ -201,6 +208,10 @@ step that requires retrieved sources, generation, and evaluation together.
 - [x] Capability policy, path roots, host allowlists.
 - [x] Approval policy for write, shell, and network capabilities.
 - [x] Agent loop, cancellation flag, and step/tool/token/time limits.
+- [x] Metadata-only agent traces: per-step provider and tool events plus a
+      terminal error code on `AgentResult.trace` and `Agent::last_trace()`, with
+      no prompts, arguments, results, or messages copied into the trace and
+      bounded model-controlled labels (ADR-0060).
 - [ ] Agent persistence and resume.
 - [x] Tool-call error mapping and redacted metrics.
 - [x] Capability-denial and untrusted-output tests (a dedicated

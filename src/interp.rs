@@ -741,6 +741,42 @@ impl<'a> Interpreter<'a> {
                 self.bind(name, value, *mutable, binding_ty, *name_span)?;
                 Ok(Flow::Normal)
             }
+            StmtKind::LetPattern {
+                mutable,
+                pattern,
+                ty,
+                init,
+            } => {
+                let declared = match ty {
+                    Some(expr) => Some(self.resolve_runtime_type(expr)?),
+                    None => None,
+                };
+                let value = match &init.kind {
+                    ExprKind::Try { expr: operand } => match self.eval_try(operand, init.span)? {
+                        TryOutcome::Value(value) => value,
+                        TryOutcome::Propagate(value) => return Ok(Flow::Return(value)),
+                    },
+                    _ => self.eval_expr(init)?,
+                };
+                if let Some(ty) = &declared {
+                    self.validate(&value, ty, init.span, " in a binding pattern")?;
+                }
+                let binding_ty = match &declared {
+                    Some(ty) => ty.clone(),
+                    None => self
+                        .model
+                        .expr_types
+                        .get(&init.id)
+                        .cloned()
+                        .unwrap_or(Type::Any),
+                };
+                let mut bindings = Vec::new();
+                self.collect_let_bindings(pattern, &value, &binding_ty, &mut bindings)?;
+                for (name, bound, ty, span) in bindings {
+                    self.bind(&name, bound, *mutable, ty, span)?;
+                }
+                Ok(Flow::Normal)
+            }
             StmtKind::Assign { target, op, value } => {
                 match op {
                     None => {
@@ -915,8 +951,14 @@ impl<'a> Interpreter<'a> {
         span: Span,
     ) -> Result<Flow, RuntimeError> {
         let value = self.eval_expr(scrutinee)?;
+        let scrutinee_ty = self
+            .model
+            .expr_types
+            .get(&scrutinee.id)
+            .cloned()
+            .unwrap_or(Type::Any);
         for arm in arms {
-            let Some(bindings) = self.pattern_bindings(&arm.pattern, &value) else {
+            let Some(bindings) = self.pattern_bindings(&arm.pattern, &value, &scrutinee_ty) else {
                 continue;
             };
             let MatchArmBody::Block(block) = &arm.body else {
@@ -962,8 +1004,14 @@ impl<'a> Interpreter<'a> {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         let value = self.eval_expr(scrutinee)?;
+        let scrutinee_ty = self
+            .model
+            .expr_types
+            .get(&scrutinee.id)
+            .cloned()
+            .unwrap_or(Type::Any);
         for arm in arms {
-            let Some(bindings) = self.pattern_bindings(&arm.pattern, &value) else {
+            let Some(bindings) = self.pattern_bindings(&arm.pattern, &value, &scrutinee_ty) else {
                 continue;
             };
             let MatchArmBody::Expr(body) = &arm.body else {
@@ -1008,6 +1056,7 @@ impl<'a> Interpreter<'a> {
         &self,
         pattern: &Pattern,
         value: &Value,
+        ty: &Type,
     ) -> Option<Vec<(String, Value, Type)>> {
         match pattern {
             Pattern::Wildcard { .. } => Some(Vec::new()),
@@ -1059,7 +1108,38 @@ impl<'a> Interpreter<'a> {
                         }
                         PatternArg::Wildcard { .. } => {}
                         PatternArg::Nested { pattern, .. } => {
-                            let nested = self.pattern_bindings(pattern, &slot.value)?;
+                            let nested = self.pattern_bindings(pattern, &slot.value, &slot.ty)?;
+                            bindings.extend(nested);
+                        }
+                    }
+                }
+                Some(bindings)
+            }
+            Pattern::Tuple { elements, .. } => {
+                let Value::Tuple(values) = value else {
+                    return None;
+                };
+                if values.len() != elements.len() {
+                    return None;
+                }
+                let element_types = match ty {
+                    Type::Tuple(types) if types.len() == elements.len() => Some(types),
+                    _ => None,
+                };
+                let mut bindings = Vec::new();
+                for (index, element) in elements.iter().enumerate() {
+                    let element_ty = element_types
+                        .and_then(|types| types.get(index))
+                        .cloned()
+                        .unwrap_or(Type::Any);
+                    match element {
+                        PatternArg::Bind { name, .. } => {
+                            bindings.push((name.clone(), values[index].clone(), element_ty));
+                        }
+                        PatternArg::Wildcard { .. } => {}
+                        PatternArg::Nested { pattern, .. } => {
+                            let nested =
+                                self.pattern_bindings(pattern, &values[index], &element_ty)?;
                             bindings.extend(nested);
                         }
                     }
@@ -1068,7 +1148,7 @@ impl<'a> Interpreter<'a> {
             }
             Pattern::Or { alternatives, .. } => alternatives
                 .iter()
-                .find_map(|pattern| self.pattern_bindings(pattern, value)),
+                .find_map(|pattern| self.pattern_bindings(pattern, value, ty)),
         }
     }
 
@@ -1084,6 +1164,58 @@ impl<'a> Interpreter<'a> {
         match value {
             Value::Bool(condition) => Ok(condition),
             other => Err(self.type_error(" as a condition", "`Bool`", &other, expr.span)),
+        }
+    }
+
+    /// Collects the bindings of an irrefutable `let` pattern. A non-tuple value
+    /// or a mismatched arity can still reach here through an `Any` initializer,
+    /// so the runtime re-checks the shape and reports `R0005`.
+    fn collect_let_bindings(
+        &self,
+        pattern: &LetPattern,
+        value: &Value,
+        ty: &Type,
+        out: &mut Vec<(String, Value, Type, Span)>,
+    ) -> Result<(), RuntimeError> {
+        match pattern {
+            LetPattern::Name { name, name_span } => {
+                out.push((name.clone(), value.clone(), ty.clone(), *name_span));
+                Ok(())
+            }
+            LetPattern::Wildcard { .. } => Ok(()),
+            LetPattern::Tuple { elements, span } => {
+                let Value::Tuple(values) = value else {
+                    return Err(self.type_error(
+                        " in a binding pattern",
+                        &format!("a {}-element tuple", elements.len()),
+                        value,
+                        *span,
+                    ));
+                };
+                if values.len() != elements.len() {
+                    return Err(self.rt(
+                        "R0005",
+                        format!(
+                            "type mismatch in a binding pattern: expected a {}-element tuple, found `{}`",
+                            elements.len(),
+                            value.display_nested()
+                        ),
+                        *span,
+                    ));
+                }
+                let element_types = match ty {
+                    Type::Tuple(types) if types.len() == elements.len() => Some(types),
+                    _ => None,
+                };
+                for (index, element) in elements.iter().enumerate() {
+                    let element_ty = element_types
+                        .and_then(|types| types.get(index))
+                        .cloned()
+                        .unwrap_or(Type::Any);
+                    self.collect_let_bindings(element, &values[index], &element_ty, out)?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -1130,6 +1262,11 @@ impl<'a> Interpreter<'a> {
                             index,
                         })
                     }
+                    Value::Tuple(_) => Err(self.rt(
+                        "R0010",
+                        "tuples are immutable and their elements cannot be assigned",
+                        target.span,
+                    )),
                     other => Err(self.type_error(
                         " in field assignment",
                         "a struct value",
@@ -1362,6 +1499,13 @@ impl<'a> Interpreter<'a> {
                         )
                     })
             }
+            ExprKind::Tuple(elements) => {
+                let mut values = Vec::with_capacity(elements.len());
+                for element in elements {
+                    values.push(self.eval_expr(element)?);
+                }
+                Ok(Value::Tuple(values))
+            }
             ExprKind::List(elements) => {
                 let mut values = Vec::with_capacity(elements.len());
                 for element in elements {
@@ -1542,9 +1686,25 @@ impl<'a> Interpreter<'a> {
                                 )
                             })
                     }
+                    Value::Tuple(elements) => match name.parse::<usize>() {
+                        Ok(index) if index < elements.len() => Ok(elements[index].clone()),
+                        Ok(index) => Err(self.rt(
+                            "R0003",
+                            format!(
+                                "tuple index {index} is out of bounds for a {}-element tuple",
+                                elements.len()
+                            ),
+                            expr.span,
+                        )),
+                        Err(_) => Err(self.rt(
+                            "R0010",
+                            format!("tuple has no field `{name}`; use a numeric index such as `.0`"),
+                            expr.span,
+                        )),
+                    },
                     other => Err(self.type_error(
                         " in field access",
-                        "a struct value",
+                        "a struct or tuple value",
                         &other,
                         expr.span,
                     )),

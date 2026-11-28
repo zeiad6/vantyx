@@ -1,9 +1,9 @@
 # AI Architecture
 
-Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented and the cloud path verified live on 2026-11-24 (local-model verification still blocked); AI-3 structured output and streamed text chat complete (streaming tool calls and cancellation pending); AI-4 host-side embeddings and retrieval complete (a cloud embedding model was exercised on 2026-11-24; local embedding models pending); offline GGUF/Safetensors inspection and Safetensors shard-index aggregation with SHA-256 provenance implemented (no weight loading); bounded JSONL dataset validation with optional schema validation, field/type summaries, and streamed SHA-256 implemented; deterministic train/held-out dataset splitting, label-stratified splitting, and exact duplicate-record removal implemented
-Date: 2026-11-26
+Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented and the cloud path verified live on 2026-11-24 (local-model verification still blocked), with bounded provider retries and metadata-only agent traces added on 2026-11-28; AI-3 structured output and streamed text chat complete (streaming tool calls and cancellation pending); AI-4 host-side embeddings and retrieval complete (a cloud embedding model was exercised on 2026-11-24; local embedding models pending); offline GGUF/Safetensors inspection and Safetensors shard-index aggregation with SHA-256 provenance implemented (no weight loading); bounded JSONL dataset validation with optional schema validation, field/type summaries, and streamed SHA-256 implemented; deterministic train/held-out dataset splitting, label-stratified splitting, and exact duplicate-record removal implemented
+Date: 2026-11-28
 Related: `AI_RESEARCH.md`, `AI_SECURITY.md`, `AI_ROADMAP.md`, ADR-0007,
-ADR-0014, ADR-0015, ADR-0017, ADR-0018, ADR-0024, ADR-0025
+ADR-0014, ADR-0015, ADR-0017, ADR-0018, ADR-0024, ADR-0025, ADR-0058
 
 ## Position
 
@@ -75,6 +75,7 @@ Rust API while language-level integration remains blocked.
 | `ai/agent.rs` | Bounded plan/act loop, cancellation, state | Run without step/token/time limits |
 | `ai/budget.rs` | Deterministic limits and errors | Silently truncate or overspend |
 | `ai/metrics.rs` | Opt-in JSONL metrics, redaction | Capture prompts by default |
+| `ai/retry.rs` | Provider-neutral bounded retries, `Retry-After`, streaming safety | Retry non-retryable errors or after emitted deltas |
 | `ai/config.rs` | Environment/file configuration and secret lookup | Write secrets to disk or logs |
 
 ## Core types (conceptual)
@@ -319,7 +320,8 @@ The whole dataset is held in memory under a 64 MiB input cap and a
 - Explicit `--allow-network`.
 - API key from an environment variable or the OS keyring; never a project file.
 - Host allowlist and HTTPS-only for non-loopback endpoints.
-- Bounded timeout, response size, and retries with jitter/backoff.
+- Bounded timeout, response size, and retries with deterministic exponential
+  backoff; `Retry-After` is honored in integer seconds up to a hard ceiling.
 - No prompt/response logging by default.
 - Provider errors are mapped to stable Vantyx codes.
 
@@ -438,6 +440,13 @@ query     → embed → cosine + BM25 → reciprocal-rank fusion → cited top-k
 - Tool results are untrusted text and are labelled as such.
 - The agent loop enforces max steps, max tool calls, token budget, wall-clock
   deadline, and cancellation.
+- Every run records a bounded, metadata-only trace: each provider response's
+  tool-call count and finish reason, each tool name with `ok` or an error code,
+  and the terminal stop code. `AgentResult.trace` exposes a successful run and
+  `Agent::last_trace()` also exposes a failed run. Prompts, tool arguments, tool
+  results, and messages are never copied into the trace. Model- or
+  provider-supplied labels are truncated to 128 characters and codes to 64, so
+  an adversarial response cannot grow the trace without bound (ADR-0060).
 - No shell tool is enabled by default. A shell tool, if ever added, requires an
   explicit capability and approval.
 
@@ -445,7 +454,8 @@ query     → embed → cosine + BM25 → reciprocal-rank fusion → cited top-k
 
 - Metrics are off by default.
 - When enabled, record provider, model, latency, token counts, finish reason,
-  error code, retry count, cache hit, and tool name.
+  error code, retry count, cache hit, and tool name. `retry_count` is populated
+  by the retry decorator; extraction accumulates retries across repair attempts.
 - Prompt and response payloads are never recorded unless a separate
   `capture_payloads` opt-in is set; that mode prints a warning.
 - JSONL is the first sink; OpenTelemetry is a later adapter.
@@ -455,21 +465,54 @@ query     → embed → cosine + BM25 → reciprocal-rank fusion → cited top-k
 | Failure | Behavior |
 | --- | --- |
 | Network disabled | `AI_E_NETWORK_DISABLED` with the exact flag to enable |
-| Endpoint unreachable | `AI_E_CONNECT`, marked retryable; no automatic retry loop yet |
-| HTTP 401/403 | `AI_E_AUTH`; never echo the key |
-| HTTP 429 | `AI_E_RATE_LIMIT`, marked retryable; `Retry-After` handling is not implemented yet |
-| Timeout | `AI_E_TIMEOUT`; cancel the request |
+| Endpoint unreachable | `AI_E_CONNECT`; not automatically retried, with a reachability hint |
+| HTTP 401/403 | `AI_E_AUTH`; never echo the key and never retry |
+| HTTP 429 | `AI_E_RATE_LIMIT`; retried under the bounded policy, honoring `Retry-After` |
+| HTTP 500–599 | `AI_E_PROVIDER`; retried under the bounded policy, honoring `Retry-After` |
+| Timeout | `AI_E_TIMEOUT`; retryable under the bounded policy |
 | Unsupported parameter | `AI_E_UNSUPPORTED` naming the parameter and provider |
 | Invalid JSON | `AI_E_JSON` with byte offset |
 | Schema mismatch | `AI_E_SCHEMA` with the failing path |
-| Budget exhausted | `AI_E_BUDGET` naming the limit |
+| Budget exhausted | `AI_E_BUDGET` naming the limit; retries stop |
 | Tool denied | `AI_E_CAPABILITY` naming the missing capability |
+| Agent step limit | `AI_E_STEPS` with partial state |
 
 On the HTTPS path, system `curl` exit code 28 (operation timeout) maps to
 retryable `AI_E_TIMEOUT`; other transport failures such as exit 7 remain
 `AI_E_CONNECT`. Both buffered and streaming requests share this mapping
 (T-068).
-| Agent step limit | `AI_E_STEPS` with partial state |
+
+## Provider retries
+
+`ai/retry.rs` provides a provider-neutral `RetryingProvider` decorator and a
+`RetryPolicy`. The CLI wraps the OpenAI-compatible adapter once, so chat,
+streaming chat, model listing, embeddings, and RAG embedding batches share the
+same rules.
+
+- Default 2 retries after the initial attempt; hard ceiling 8. `--retries 0`
+  disables automatic retries.
+- Backoff is 250 ms, 500 ms, 1 s, 2 s, then capped at 4 s. No jitter is added;
+  the behavior is deterministic and testable.
+- Only `AiError::retryable` errors are retried. Authentication, configuration,
+  validation, capability, schema, budget, cancellation, and format errors return
+  immediately. `AI_E_CONNECT` is not retried.
+- `Retry-After` is parsed only in integer seconds, capped at 60 s. If the
+  requested delay exceeds the 4 s policy ceiling, the retry stops rather than
+  retrying earlier than the server requested. HTTP-date values fall back to
+  exponential backoff.
+- A streaming call is retried only before the first text delta. After any delta,
+  the error is returned so output is never duplicated.
+- For chat, streaming, and embedding calls the decorator checks the caller's
+  wall-clock budget before and after each backoff. Token budgets are checked by
+  the provider before each attempt and recorded only on success. Model listing
+  has no budget parameter but is still bounded by the retry policy.
+- `Provider::last_retry_count()` and the metric `retry_count` field report
+  retries from the most recent call; structured extraction accumulates them
+  across repair attempts.
+- Configuration: `VANTYX_AI_RETRIES` or `--retries <n>`; values above 8 are
+  rejected by the CLI and clamped by the environment parser.
+
+See [ADR-0058](../decisions/ADR-0058-bounded-provider-retries.md).
 
 ## Testing strategy
 
@@ -483,6 +526,12 @@ retryable `AI_E_TIMEOUT`; other transport failures such as exit 7 remain
   test, HTTP content-length/chunked/close-delimited tests, and an HTTP/HTTPS
   smoke script; no provider streams through an unverified path.
 - A loopback HTTP test server for the OpenAI-compatible adapter; no internet.
+- Retry tests cover 429/5xx recovery, exhausted limits, non-retryable 401,
+  `Retry-After` parsing and ceiling behavior, disabled retries, wall-clock
+  budget stops, model-list and embedding retries, and a partial stream that must
+  not be retried.
+- Agent tests cover tool execution, denial, invalid arguments, step limits,
+  cancellation, and metadata-only traces that exclude prompts and tool payloads.
 - Security tests for denied capabilities, secret redaction, oversized responses,
   timeouts, and prompt-injection labels.
 - No test requires a real model or API key. Live tests are opt-in and documented.

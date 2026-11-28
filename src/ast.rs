@@ -115,6 +115,14 @@ pub enum StmtKind {
         ty: Option<TypeExpr>,
         init: Expr,
     },
+    /// Destructuring binding such as `let (a, (b, c)) = value`. Simple
+    /// bindings use `Let`; this form always starts with a tuple pattern.
+    LetPattern {
+        mutable: bool,
+        pattern: LetPattern,
+        ty: Option<TypeExpr>,
+        init: Expr,
+    },
     Assign {
         target: Expr,
         op: Option<BinOp>,
@@ -165,6 +173,9 @@ pub enum ExprKind {
     Var(String),
     List(Vec<Expr>),
     Map(Vec<(Expr, Expr)>),
+    /// Fixed-arity tuple value. Parenthesized expressions remain ordinary
+    /// expressions; only a top-level comma creates a tuple.
+    Tuple(Vec<Expr>),
     Unary {
         op: UnOp,
         expr: Box<Expr>,
@@ -246,6 +257,11 @@ pub enum Pattern {
         fields: Vec<PatternArg>,
         span: Span,
     },
+    /// Structural tuple pattern with one element pattern per position.
+    Tuple {
+        elements: Vec<PatternArg>,
+        span: Span,
+    },
     Or {
         alternatives: Vec<Pattern>,
         span: Span,
@@ -276,6 +292,7 @@ impl Pattern {
             | Pattern::Literal { span, .. }
             | Pattern::Range { span, .. }
             | Pattern::Variant { span, .. }
+            | Pattern::Tuple { span, .. }
             | Pattern::Or { span, .. } => *span,
         }
     }
@@ -293,6 +310,32 @@ impl PatternArg {
         match self {
             PatternArg::Bind { name_span, .. } => *name_span,
             PatternArg::Wildcard { span } | PatternArg::Nested { span, .. } => *span,
+        }
+    }
+}
+
+/// Irrefutable binding shape allowed after `let`/`var`. Tuple destructuring is
+/// always total for a tuple of the same arity; wildcard positions are ignored.
+#[derive(Debug, Clone)]
+pub enum LetPattern {
+    Name {
+        name: String,
+        name_span: Span,
+    },
+    Wildcard {
+        span: Span,
+    },
+    Tuple {
+        elements: Vec<LetPattern>,
+        span: Span,
+    },
+}
+
+impl LetPattern {
+    pub fn span(&self) -> Span {
+        match self {
+            LetPattern::Name { name_span, .. } => *name_span,
+            LetPattern::Wildcard { span } | LetPattern::Tuple { span, .. } => *span,
         }
     }
 }
@@ -385,13 +428,20 @@ pub struct TypeExpr {
 
 #[derive(Debug, Clone)]
 pub enum TypeExprKind {
-    Name { name: String, args: Vec<TypeExpr> },
+    Name {
+        name: String,
+        args: Vec<TypeExpr>,
+    },
+    /// Tuple type written with parentheses. A single element requires a
+    /// trailing comma; `()` resolves to `Unit`.
+    Tuple(Vec<TypeExpr>),
 }
 
 impl TypeExpr {
     pub fn name(&self) -> &str {
         match &self.kind {
             TypeExprKind::Name { name, .. } => name,
+            TypeExprKind::Tuple(_) => "tuple",
         }
     }
 }

@@ -3801,3 +3801,187 @@ fn try_requires_matching_annotated_return_type() {
         run.stderr
     );
 }
+
+#[test]
+fn tuples_construct_access_and_display() {
+    let run = run_file(
+        "tuples-basic",
+        "fn main():\n\
+         \x20   let pair = (1, \"two\")\n\
+         \x20   print(pair)\n\
+         \x20   print(pair.0)\n\
+         \x20   print(pair.1)\n\
+         \x20   let nested = (1, (2, 3))\n\
+         \x20   print(nested.1.1)\n\
+         \x20   print((1,))\n\
+         \x20   print(type(pair))\n\
+         \x20   print((1, 2) == (1, 2))\n\
+         \x20   print((1, 2) == (2, 1))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "(1, \"two\")\n1\ntwo\n3\n(1,)\nTuple\ntrue\nfalse\n"
+    );
+}
+
+#[test]
+fn tuple_destructuring_and_patterns_work() {
+    let run = run_file(
+        "tuples-patterns",
+        "enum Token:\n    Number(value: Int)\n    End\n\n\
+         fn describe(pair: (Int, Token)) -> Str:\n    match pair:\n\
+         \x20       (0, End()):\n            return \"zero-end\"\n\
+         \x20       (n, End()):\n            return \"n-end\"\n\
+         \x20       (n, Number(v)):\n            return \"{n}:{v}\"\n\n\
+         fn main():\n\
+         \x20   let (a, b) = (1, \"x\")\n\
+         \x20   print(a, b)\n\
+         \x20   let (first, (second, third)) = (1, (2, 3))\n\
+         \x20   print(first + second + third)\n\
+         \x20   print(describe((0, End())))\n\
+         \x20   print(describe((5, Number(7))))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "1 x\n6\nzero-end\n5:7\n");
+}
+
+#[test]
+fn tuple_static_errors_are_rejected() {
+    for (name, source, code, message) in [
+        (
+            "tuple-arity",
+            "fn main():\n    let pair: (Int, Int) = (1, 2, 3)\n",
+            "E0301",
+            "tuple literal has 3 element(s)",
+        ),
+        (
+            "tuple-index",
+            "fn main():\n    let pair = (1, 2)\n    print(pair.2)\n",
+            "E0304",
+            "has no element at index 2",
+        ),
+        (
+            "tuple-immutable",
+            "fn main():\n    let pair = (1, 2)\n    pair.0 = 3\n",
+            "E0306",
+            "tuples are immutable",
+        ),
+        (
+            "tuple-destructure",
+            "fn main():\n    let (a, b) = 5\n    print(a, b)\n",
+            "E0301",
+            "cannot destructure a value of type `Int`",
+        ),
+        (
+            "tuple-exhaustive",
+            "fn main():\n    let pair = (1, 2)\n    match pair:\n        (0, _):\n            print(\"zero\")\n",
+            "E0316",
+            "non-exhaustive match on `(Int, Int)`",
+        ),
+    ] {
+        let run = check_file(name, source);
+        assert_eq!(run.code, 1, "{name}: {}", run.stderr);
+        assert!(
+            run.stderr.contains(&format!("error[{code}]")),
+            "{name}: {}",
+            run.stderr
+        );
+        assert!(run.stderr.contains(message), "{name}: {}", run.stderr);
+    }
+}
+
+#[test]
+fn tuple_any_boundary_is_checked_at_runtime() {
+    let run = run_file(
+        "tuples-any-shape",
+        "fn main():\n    let value: Any = 5\n    let (a, b) = value\n    print(a, b)\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0005]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("expected a 2-element tuple"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn lint_tracks_destructured_bindings() {
+    let run = lint_file(
+        "lint-tuple-bindings",
+        "fn main():\n\
+         \x20   let (used, unused) = (1, 2)\n\
+         \x20   print(used)\n\
+         \x20   var (read_only, ignored) = (3, 4)\n\
+         \x20   print(read_only)\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert!(
+        run.stderr.contains("unused binding `unused`"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("unused binding `ignored`"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr
+            .contains("`var` binding `read_only` is never reassigned"),
+        "{}",
+        run.stderr
+    );
+    assert!(!run.stderr.contains("error["), "{}", run.stderr);
+}
+
+#[test]
+fn tuple_pattern_arity_error_does_not_cascade_to_unreachable_arm() {
+    let run = check_file(
+        "tuple-arity-cascade",
+        "fn main():\n    let pair = (1, 2)\n    match pair:\n\
+         \x20       (a,):\n            print(a)\n\
+         \x20       (_, _):\n            print(\"two\")\n",
+    );
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("error[E0301]"), "{}", run.stderr);
+    assert!(!run.stderr.contains("W0003"), "{}", run.stderr);
+}
+
+#[test]
+fn tuple_patterns_on_any_do_not_make_later_arms_unreachable() {
+    let run = run_file(
+        "tuple-any-coverage",
+        "fn main():\n    let x: Any = (1, 2)\n    match x:\n\
+         \x20       (a,):\n            print(\"one\", a)\n\
+         \x20       (a, b):\n            print(\"two\", a, b)\n\
+         \x20       _:\n            print(\"other\")\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "two 1 2\n");
+    assert!(!run.stderr.contains("W0003"), "{}", run.stderr);
+}
+
+#[test]
+fn tuple_match_expressions_and_or_patterns_work() {
+    let run = run_file(
+        "tuples-match-expressions",
+        "fn label(pair: (Int, Int)) -> Str:\n\
+         \x20   return match pair:\n\
+         \x20       (0, x) | (x, 0): \"axis {x}\"\n\
+         \x20       _: \"other\"\n\n\
+         fn make(n: Int) -> (Int, Int):\n\
+         \x20   return match n:\n\
+         \x20       0: (0, 0)\n\
+         \x20       _: (n, n + 1)\n\n\
+         fn main():\n\
+         \x20   print(label((0, 5)))\n\
+         \x20   print(label((3, 0)))\n\
+         \x20   print(label((2, 3)))\n\
+         \x20   print(make(4))\n\
+         \x20   print(make(4).1)\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, "axis 5\naxis 3\nother\n(4, 5)\n5\n");
+}

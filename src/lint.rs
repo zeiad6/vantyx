@@ -13,8 +13,8 @@
 //! - `L0004`: a function parameter is never read.
 
 use crate::ast::{
-    Block, Expr, ExprKind, FnDecl, Item, MatchArm, MatchArmBody, Pattern, PatternArg, Program,
-    Stmt, StmtKind, StrPart,
+    Block, Expr, ExprKind, FnDecl, Item, LetPattern, MatchArm, MatchArmBody, Pattern, PatternArg,
+    Program, Stmt, StmtKind, StrPart,
 };
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::span::Span;
@@ -70,25 +70,28 @@ impl Linter {
         // Top-level `let`/`var` declarations are globals and may be read from
         // any function, including functions declared before them.
         for item in &program.items {
-            if let Item::Stmt(Stmt {
-                kind:
+            if let Item::Stmt(stmt) = item {
+                match &stmt.kind {
                     StmtKind::Let {
                         mutable,
                         name,
                         name_span,
                         ..
-                    },
-                ..
-            }) = item
-            {
-                self.declare(name, *name_span, *mutable, true, false);
+                    } => self.declare(name, *name_span, *mutable, true, false),
+                    StmtKind::LetPattern {
+                        mutable, pattern, ..
+                    } => self.declare_let_pattern(pattern, *mutable),
+                    _ => {}
+                }
             }
         }
         for item in &program.items {
             match item {
                 Item::Fn(function) => self.function(function),
                 Item::Stmt(stmt) => {
-                    if let StmtKind::Let { init, .. } = &stmt.kind {
+                    if let StmtKind::Let { init, .. } | StmtKind::LetPattern { init, .. } =
+                        &stmt.kind
+                    {
                         // The binding was declared above; walk only the
                         // initializer so it is not declared twice.
                         self.expr(init);
@@ -239,6 +242,15 @@ impl Linter {
                 self.expr(init);
                 self.declare(name, *name_span, *mutable, true, false);
             }
+            StmtKind::LetPattern {
+                mutable,
+                pattern,
+                init,
+                ..
+            } => {
+                self.expr(init);
+                self.declare_let_pattern(pattern, *mutable);
+            }
             StmtKind::Assign { target, op, value } => {
                 self.assign_target(target, op.is_some());
                 self.expr(value);
@@ -322,7 +334,7 @@ impl Linter {
                 }
             }
             ExprKind::Var(name) => self.read(name),
-            ExprKind::List(items) => {
+            ExprKind::List(items) | ExprKind::Tuple(items) => {
                 for item in items {
                     self.expr(item);
                 }
@@ -375,7 +387,10 @@ impl Linter {
     fn pattern(&mut self, pattern: &Pattern) {
         match pattern {
             Pattern::Wildcard { .. } | Pattern::Literal { .. } | Pattern::Range { .. } => {}
-            Pattern::Variant { fields, .. } => {
+            Pattern::Variant { fields, .. }
+            | Pattern::Tuple {
+                elements: fields, ..
+            } => {
                 for field in fields {
                     self.pattern_arg(field);
                 }
@@ -383,6 +398,22 @@ impl Linter {
             Pattern::Or { alternatives, .. } => {
                 for alternative in alternatives {
                     self.pattern(alternative);
+                }
+            }
+        }
+    }
+
+    /// Declares every name bound by an irrefutable `let` pattern. Wildcards
+    /// are skipped, and tuple elements share the binding's mutability.
+    fn declare_let_pattern(&mut self, pattern: &LetPattern, mutable: bool) {
+        match pattern {
+            LetPattern::Name { name, name_span } => {
+                self.declare(name, *name_span, mutable, true, false);
+            }
+            LetPattern::Wildcard { .. } => {}
+            LetPattern::Tuple { elements, .. } => {
+                for element in elements {
+                    self.declare_let_pattern(element, mutable);
                 }
             }
         }

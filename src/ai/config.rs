@@ -6,6 +6,7 @@
 
 use super::http::{DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT, NetworkPolicy};
 use super::provider::{AI_E_CONFIG, AiError};
+use super::retry::{DEFAULT_MAX_RETRIES, MAX_RETRIES};
 use std::env;
 use std::fmt;
 use std::time::Duration;
@@ -24,6 +25,8 @@ pub struct AiConfig {
     pub allow_network: bool,
     pub timeout: Duration,
     pub max_response_bytes: usize,
+    /// Automatic retries after the first attempt. Zero disables retries.
+    pub retry_count: u32,
 }
 
 impl Default for AiConfig {
@@ -36,6 +39,7 @@ impl Default for AiConfig {
             allow_network: false,
             timeout: DEFAULT_TIMEOUT,
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
+            retry_count: DEFAULT_MAX_RETRIES,
         }
     }
 }
@@ -51,6 +55,7 @@ impl fmt::Debug for AiConfig {
             .field("allow_network", &self.allow_network)
             .field("timeout", &self.timeout)
             .field("max_response_bytes", &self.max_response_bytes)
+            .field("retry_count", &self.retry_count)
             .finish()
     }
 }
@@ -97,6 +102,11 @@ impl AiConfig {
             config.max_response_bytes = usize::try_from(bytes)
                 .unwrap_or(usize::MAX)
                 .clamp(1024, 64 * 1024 * 1024);
+        }
+        if let Some(value) = lookup("VANTYX_AI_RETRIES")
+            && let Ok(retries) = value.trim().parse::<u32>()
+        {
+            config.retry_count = retries.min(MAX_RETRIES);
         }
         config
     }
@@ -163,6 +173,7 @@ mod tests {
         assert_eq!(config.provider, "mock");
         assert_eq!(config.endpoint, DEFAULT_ENDPOINT);
         assert!(!config.allow_network);
+        assert_eq!(config.retry_count, DEFAULT_MAX_RETRIES);
         assert!(!format!("{config:?}").contains("sk-"));
     }
 
@@ -176,6 +187,7 @@ mod tests {
             ("VANTYX_AI_ALLOW_NETWORK", "yes"),
             ("VANTYX_AI_TIMEOUT_MS", "2500"),
             ("VANTYX_AI_MAX_RESPONSE_BYTES", "4096"),
+            ("VANTYX_AI_RETRIES", "1"),
         ]));
         assert_eq!(config.provider, "openai");
         assert_eq!(config.model, "qwen");
@@ -183,6 +195,7 @@ mod tests {
         assert!(config.allow_network);
         assert_eq!(config.timeout, Duration::from_millis(2500));
         assert_eq!(config.max_response_bytes, 4096);
+        assert_eq!(config.retry_count, 1);
     }
 
     #[test]
@@ -190,9 +203,11 @@ mod tests {
         let config = AiConfig::from_lookup(lookup(&[
             ("VANTYX_AI_TIMEOUT_MS", "nope"),
             ("VANTYX_AI_MAX_RESPONSE_BYTES", "0"),
+            ("VANTYX_AI_RETRIES", "nope"),
         ]));
         assert_eq!(config.timeout, DEFAULT_TIMEOUT);
         assert_eq!(config.max_response_bytes, DEFAULT_MAX_RESPONSE_BYTES);
+        assert_eq!(config.retry_count, DEFAULT_MAX_RETRIES);
     }
 
     #[test]
@@ -200,9 +215,17 @@ mod tests {
         let config = AiConfig::from_lookup(lookup(&[
             ("VANTYX_AI_TIMEOUT_MS", "999999999"),
             ("VANTYX_AI_MAX_RESPONSE_BYTES", "999999999"),
+            ("VANTYX_AI_RETRIES", "999"),
         ]));
         assert_eq!(config.timeout, Duration::from_secs(3600));
         assert_eq!(config.max_response_bytes, 64 * 1024 * 1024);
+        assert_eq!(config.retry_count, MAX_RETRIES);
+    }
+
+    #[test]
+    fn zero_retries_disables_automatic_retries() {
+        let config = AiConfig::from_lookup(lookup(&[("VANTYX_AI_RETRIES", "0")]));
+        assert_eq!(config.retry_count, 0);
     }
 
     #[test]

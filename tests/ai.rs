@@ -9,7 +9,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use vantyx::ai::{
     ChatRequest, EmbeddingRequest, HttpTransport, Message, NetworkPolicy, OpenAiProvider, Provider,
     ProviderCapabilities,
@@ -141,6 +141,118 @@ fn temp_path(name: &str) -> PathBuf {
         "vantyx-ai-test-{}-{stamp}-{name}",
         std::process::id()
     ))
+}
+
+struct StubResponse {
+    status: u16,
+    content_type: &'static str,
+    headers: Vec<(&'static str, &'static str)>,
+    body: String,
+}
+
+impl StubResponse {
+    fn json(status: u16, body: impl Into<String>) -> Self {
+        Self {
+            status,
+            content_type: "application/json",
+            headers: Vec::new(),
+            body: body.into(),
+        }
+    }
+
+    fn sse(body: impl Into<String>) -> Self {
+        Self {
+            status: 200,
+            content_type: "text/event-stream",
+            headers: Vec::new(),
+            body: body.into(),
+        }
+    }
+
+    fn header(mut self, name: &'static str, value: &'static str) -> Self {
+        self.headers.push((name, value));
+        self
+    }
+}
+
+/// Serves a fixed script of responses over loopback. The listener is
+/// non-blocking so a test can assert that a client made fewer requests than
+/// scripted without hanging the test thread.
+fn serve_openai_script(responses: Vec<StubResponse>) -> (String, thread::JoinHandle<Vec<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let handle = thread::spawn(move || {
+        let mut requests = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        for response in responses {
+            loop {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream.set_nonblocking(false).unwrap();
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(5)))
+                            .unwrap();
+                        let request = read_http_request(&mut stream);
+                        let reason = match response.status {
+                            200 => "OK",
+                            401 => "Unauthorized",
+                            429 => "Too Many Requests",
+                            500 => "Internal Server Error",
+                            503 => "Service Unavailable",
+                            _ => "Status",
+                        };
+                        let mut head = format!(
+                            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+                            response.status,
+                            reason,
+                            response.content_type,
+                            response.body.len()
+                        );
+                        for (name, value) in &response.headers {
+                            head.push_str(&format!("{name}: {value}\r\n"));
+                        }
+                        head.push_str("\r\n");
+                        stream.write_all(head.as_bytes()).unwrap();
+                        stream.write_all(response.body.as_bytes()).unwrap();
+                        stream.flush().unwrap();
+                        requests.push(request);
+                        break;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if Instant::now() >= deadline {
+                            return requests;
+                        }
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => return requests,
+                }
+            }
+        }
+        requests
+    });
+    (format!("http://{address}/v1"), handle)
+}
+
+fn read_http_request(stream: &mut std::net::TcpStream) -> String {
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut request = String::new();
+    let mut content_length = 0;
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        if line == "\r\n" || line.is_empty() {
+            break;
+        }
+        if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            content_length = value.trim().parse().unwrap_or(0);
+        }
+        request.push_str(&line);
+    }
+    let mut body = vec![0_u8; content_length];
+    reader.read_exact(&mut body).unwrap();
+    request.push_str(&String::from_utf8_lossy(&body));
+    request
 }
 
 fn push_model_string(output: &mut Vec<u8>, value: &str) {
@@ -1419,6 +1531,328 @@ fn streamed_chat_reports_provider_error_frames() {
     assert_eq!(run.status, 1);
     assert!(run.stderr.contains("provider error"), "{}", run.stderr);
     handle.join().unwrap();
+}
+
+const CHAT_OK_BODY: &str = r#"{"id":"chatcmpl-1","model":"demo","choices":[{"message":{"role":"assistant","content":"recovered"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":1,"total_tokens":6}}"#;
+
+#[test]
+fn chat_retries_a_429_and_records_the_retry_count() {
+    let metrics = temp_path("retry-chat-metrics.jsonl");
+    let (endpoint, handle) = serve_openai_script(vec![
+        StubResponse::json(429, r#"{"error":{"message":"slow down"}}"#).header("Retry-After", "0"),
+        StubResponse::json(200, CHAT_OK_BODY),
+    ]);
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--model",
+            "demo",
+            "--retries",
+            "1",
+            "--metrics",
+            metrics.to_str().unwrap(),
+            "--json",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let response = vantyx::ai::json::parse(run.stdout.trim()).unwrap();
+    assert_eq!(
+        response.get("text").and_then(|value| value.as_str()),
+        Some("recovered")
+    );
+    let requests = handle.join().unwrap();
+    assert_eq!(requests.len(), 2, "one failed attempt plus one retry");
+    let metrics_body = fs::read_to_string(&metrics).unwrap();
+    let event = vantyx::ai::json::parse(metrics_body.lines().next().unwrap()).unwrap();
+    assert_eq!(
+        event.get("ok").and_then(|value| value.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        event.get("retry_count").and_then(|value| value.as_u64()),
+        Some(1)
+    );
+}
+
+#[test]
+fn chat_stops_at_the_retry_limit_and_reports_it() {
+    let metrics = temp_path("retry-exhausted-metrics.jsonl");
+    let (endpoint, handle) = serve_openai_script(vec![
+        StubResponse::json(429, r#"{"error":{"message":"slow down"}}"#).header("Retry-After", "0"),
+        StubResponse::json(429, r#"{"error":{"message":"still busy"}}"#).header("Retry-After", "0"),
+    ]);
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--model",
+            "demo",
+            "--retries",
+            "1",
+            "--metrics",
+            metrics.to_str().unwrap(),
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 1);
+    assert!(run.stderr.contains("rate limit"), "{}", run.stderr);
+    let requests = handle.join().unwrap();
+    assert_eq!(requests.len(), 2);
+    let metrics_body = fs::read_to_string(&metrics).unwrap();
+    let event = vantyx::ai::json::parse(metrics_body.lines().next().unwrap()).unwrap();
+    assert_eq!(
+        event.get("ok").and_then(|value| value.as_bool()),
+        Some(false)
+    );
+    assert_eq!(
+        event.get("retry_count").and_then(|value| value.as_u64()),
+        Some(1)
+    );
+}
+
+#[test]
+fn chat_does_not_retry_authentication_failures() {
+    let (endpoint, handle) = serve_openai_script(vec![StubResponse::json(
+        401,
+        r#"{"error":{"message":"bad key"}}"#,
+    )]);
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--model",
+            "demo",
+            "--retries",
+            "3",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 1);
+    assert!(
+        run.stderr.contains("authentication failed"),
+        "{}",
+        run.stderr
+    );
+    let requests = handle.join().unwrap();
+    assert_eq!(requests.len(), 1, "401 must not be retried");
+}
+
+#[test]
+fn chat_does_not_retry_when_retries_are_disabled() {
+    let (endpoint, handle) = serve_openai_script(vec![
+        StubResponse::json(429, r#"{"error":{"message":"slow down"}}"#).header("Retry-After", "0"),
+        StubResponse::json(200, CHAT_OK_BODY),
+    ]);
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--model",
+            "demo",
+            "--retries",
+            "0",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 1);
+    assert!(run.stderr.contains("rate limit"), "{}", run.stderr);
+    let requests = handle.join().unwrap();
+    assert_eq!(requests.len(), 1);
+}
+
+#[test]
+fn chat_stops_when_retry_after_exceeds_the_backoff_ceiling() {
+    let (endpoint, handle) = serve_openai_script(vec![
+        StubResponse::json(429, r#"{"error":{"message":"slow down"}}"#).header("Retry-After", "30"),
+        StubResponse::json(200, CHAT_OK_BODY),
+    ]);
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--model",
+            "demo",
+            "--retries",
+            "2",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 1);
+    assert!(run.stderr.contains("rate limit"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("requested a retry after 30000 ms"),
+        "{}",
+        run.stderr
+    );
+    let requests = handle.join().unwrap();
+    assert_eq!(
+        requests.len(),
+        1,
+        "a delay above the ceiling must stop retries, not shorten them"
+    );
+}
+
+#[test]
+fn models_retries_a_transient_failure() {
+    let (endpoint, handle) = serve_openai_script(vec![
+        StubResponse::json(503, r#"{"error":{"message":"warming up"}}"#).header("Retry-After", "0"),
+        StubResponse::json(200, r#"{"data":[{"id":"model-a"}]}"#),
+    ]);
+    let run = vantyx(
+        &[
+            "ai",
+            "models",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--retries",
+            "1",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    assert_eq!(run.stdout.trim(), "model-a");
+    assert_eq!(handle.join().unwrap().len(), 2);
+}
+
+#[test]
+fn embed_retries_a_rate_limit() {
+    let (endpoint, handle) = serve_openai_script(vec![
+        StubResponse::json(429, r#"{"error":{"message":"slow down"}}"#).header("Retry-After", "0"),
+        StubResponse::json(
+            200,
+            r#"{"model":"demo","data":[{"index":0,"embedding":[0.25,0.5]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#,
+        ),
+    ]);
+    let run = vantyx(
+        &[
+            "ai",
+            "embed",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--model",
+            "demo",
+            "--retries",
+            "1",
+            "--json",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let value = vantyx::ai::json::parse(run.stdout.trim()).unwrap();
+    assert_eq!(
+        value.get("dimensions").and_then(|value| value.as_u64()),
+        Some(2)
+    );
+    assert_eq!(handle.join().unwrap().len(), 2);
+}
+
+#[test]
+fn streaming_does_not_retry_after_a_partial_delta() {
+    let (endpoint, handle) = serve_openai_script(vec![
+        StubResponse::sse(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\ndata: {\"error\":{\"message\":\"stream failed\"}}\n\n",
+        ),
+        StubResponse::sse(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"never\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        ),
+    ]);
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "openai",
+            "--endpoint",
+            &endpoint,
+            "--model",
+            "demo",
+            "--retries",
+            "2",
+            "--stream",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 1);
+    assert!(run.stdout.contains("partial"), "{}", run.stdout);
+    assert!(!run.stdout.contains("never"), "{}", run.stdout);
+    assert!(run.stderr.contains("provider error"), "{}", run.stderr);
+    assert_eq!(handle.join().unwrap().len(), 1);
+}
+
+#[test]
+fn invalid_retry_counts_are_rejected() {
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "mock",
+            "--retries",
+            "9",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 64);
+    assert!(run.stderr.contains("0 to 8"), "{}", run.stderr);
+
+    let run = vantyx(
+        &[
+            "ai",
+            "chat",
+            "--provider",
+            "mock",
+            "--retries",
+            "nope",
+            "hello",
+        ],
+        None,
+        &[],
+    );
+    assert_eq!(run.status, 64);
+    assert!(run.stderr.contains("0 to 8"), "{}", run.stderr);
 }
 
 #[test]

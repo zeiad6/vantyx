@@ -67,6 +67,9 @@ Options:
   --api-key-env <name>    Environment variable holding the API key
   --allow-network         Allow remote HTTPS (loopback HTTP is local)
   --timeout-ms <n>        Request timeout in milliseconds
+  --retries <n>           Automatic retries after the first attempt, 0 to 8
+                          (default: env or 2); streaming retries only before
+                          the first text delta
   --max-tokens <n>        Completion token limit
   --temperature <n>       Sampling temperature, 0 to 2
   --dimensions <n>        Embedding dimensions, 1 to 4096
@@ -108,7 +111,7 @@ Options:
 Environment:
   VANTYX_AI_PROVIDER, VANTYX_AI_MODEL, VANTYX_AI_ENDPOINT,
   VANTYX_AI_API_KEY_ENV, VANTYX_AI_ALLOW_NETWORK,
-  VANTYX_AI_TIMEOUT_MS, VANTYX_AI_MAX_RESPONSE_BYTES
+  VANTYX_AI_TIMEOUT_MS, VANTYX_AI_MAX_RESPONSE_BYTES, VANTYX_AI_RETRIES
 
 No model is bundled or downloaded. Local endpoints need Ollama, llama.cpp,
 LM Studio, or another compatible server already running.
@@ -122,6 +125,7 @@ struct Options {
     api_key_env: Option<String>,
     allow_network: bool,
     timeout_ms: Option<u64>,
+    retries: Option<u32>,
     max_tokens: Option<u32>,
     temperature: Option<f64>,
     dimensions: Option<usize>,
@@ -282,7 +286,7 @@ fn doctor(args: &[String]) -> i32 {
         }
         "openai" => {
             let endpoint = config.endpoint.clone();
-            let openai = match build_openai(&config, &model) {
+            let openai = match build_openai_boxed(&config, &model) {
                 Ok(openai) => openai,
                 Err(error) => return report_error(&error),
             };
@@ -353,7 +357,7 @@ fn models(args: &[String]) -> i32 {
             return 64;
         }
     }
-    let openai = match build_openai(&config, &model) {
+    let openai = match build_openai_boxed(&config, &model) {
         Ok(openai) => openai,
         Err(error) => return report_error(&error),
     };
@@ -462,7 +466,8 @@ fn chat(args: &[String]) -> i32 {
                     response.usage.completion_tokens,
                     response.usage.total_tokens,
                 )
-                .finish_reason(response.finish_reason.as_str());
+                .finish_reason(response.finish_reason.as_str())
+                .retries(provider.last_retry_count());
             if let Err(error) = metrics.record(&event) {
                 eprintln!("warning: {error}");
             }
@@ -470,7 +475,8 @@ fn chat(args: &[String]) -> i32 {
         }
         Err(error) => {
             let event = MetricEvent::new(provider.id(), &model, "chat")
-                .failure(started.elapsed().as_millis() as u64, error.code.clone());
+                .failure(started.elapsed().as_millis() as u64, error.code.clone())
+                .retries(provider.last_retry_count());
             if let Err(metrics_error) = metrics.record(&event) {
                 eprintln!("warning: {metrics_error}");
             }
@@ -531,8 +537,8 @@ fn extract_command(args: &[String]) -> i32 {
             Box::new(MockProvider::new("mock", responses))
         }
         "echo" => Box::new(EchoProvider::new()),
-        "openai" => match build_openai(&config, &model) {
-            Ok(openai) => Box::new(openai),
+        "openai" => match build_openai_boxed(&config, &model) {
+            Ok(openai) => openai,
             Err(error) => return report_error(&error),
         },
         other => {
@@ -574,7 +580,8 @@ fn extract_command(args: &[String]) -> i32 {
                     result.usage.completion_tokens,
                     result.usage.total_tokens,
                 )
-                .finish_reason(result.finish_reason.as_str());
+                .finish_reason(result.finish_reason.as_str())
+                .retries(result.retries);
             if let Err(error) = metrics.record(&event) {
                 eprintln!("warning: {error}");
             }
@@ -582,7 +589,8 @@ fn extract_command(args: &[String]) -> i32 {
         }
         Err(error) => {
             let event = MetricEvent::new(provider.id(), &model, "extract")
-                .failure(started.elapsed().as_millis() as u64, error.code.clone());
+                .failure(started.elapsed().as_millis() as u64, error.code.clone())
+                .retries(provider.last_retry_count());
             if let Err(metrics_error) = metrics.record(&event) {
                 eprintln!("warning: {metrics_error}");
             }
@@ -637,8 +645,8 @@ fn embed(args: &[String]) -> i32 {
                 Err(error) => return report_error(&error),
             }
         }
-        "openai" => match build_openai(&config, &model) {
-            Ok(openai) => Box::new(openai),
+        "openai" => match build_openai_boxed(&config, &model) {
+            Ok(openai) => openai,
             Err(error) => return report_error(&error),
         },
         "echo" => {
@@ -707,7 +715,8 @@ fn embed(args: &[String]) -> i32 {
             }
             let event = MetricEvent::new(provider.id(), &model, "embed")
                 .success(started.elapsed().as_millis() as u64)
-                .usage(response.usage.prompt_tokens, 0, response.usage.total_tokens);
+                .usage(response.usage.prompt_tokens, 0, response.usage.total_tokens)
+                .retries(provider.last_retry_count());
             if let Err(error) = metrics.record(&event) {
                 eprintln!("warning: {error}");
             }
@@ -715,7 +724,8 @@ fn embed(args: &[String]) -> i32 {
         }
         Err(error) => {
             let event = MetricEvent::new(provider.id(), &model, "embed")
-                .failure(started.elapsed().as_millis() as u64, error.code.clone());
+                .failure(started.elapsed().as_millis() as u64, error.code.clone())
+                .retries(provider.last_retry_count());
             if let Err(metrics_error) = metrics.record(&event) {
                 eprintln!("warning: {metrics_error}");
             }
@@ -1512,7 +1522,7 @@ fn build_embedding_provider(
     match provider {
         "mock" | "hash" => HashEmbeddingProvider::new(dimensions)
             .map(|provider| Box::new(provider) as Box<dyn Provider>),
-        "openai" => Ok(Box::new(build_openai(config, model)?)),
+        "openai" => build_openai_boxed(config, model),
         other => Err(ai::AiError::new(
             ai::provider::AI_E_CONFIG,
             format!("unknown embedding provider `{other}`; expected mock, hash, or openai"),
@@ -2368,6 +2378,9 @@ fn resolve_config(options: &Options) -> AiConfig {
     if let Some(timeout_ms) = options.timeout_ms {
         config.timeout = Duration::from_millis(timeout_ms);
     }
+    if let Some(retries) = options.retries {
+        config.retry_count = retries;
+    }
     config
 }
 
@@ -2385,7 +2398,7 @@ fn build_provider(
             ))],
         ))),
         "echo" => Ok(Box::new(EchoProvider::new())),
-        "openai" => Ok(Box::new(build_openai(config, model)?)),
+        "openai" => build_openai_boxed(config, model),
         other => Err(ai::AiError::new(
             ai::provider::AI_E_CONFIG,
             format!(
@@ -2405,6 +2418,17 @@ fn build_openai(config: &AiConfig, _model: &str) -> Result<OpenAiProvider, ai::A
         api_key,
         Box::new(transport),
     ))
+}
+
+/// Wraps the OpenAI-compatible adapter in the bounded, provider-neutral retry
+/// decorator. `--retries 0` still uses the decorator so metrics consistently
+/// report a retry count of zero.
+fn build_openai_boxed(config: &AiConfig, model: &str) -> Result<Box<dyn Provider>, ai::AiError> {
+    let provider = build_openai(config, model)?;
+    Ok(Box::new(ai::RetryingProvider::new(
+        Box::new(provider),
+        ai::RetryPolicy::new(config.retry_count),
+    )))
 }
 
 fn capabilities(capabilities: &ProviderCapabilities) -> String {
@@ -2451,6 +2475,12 @@ fn capabilities(capabilities: &ProviderCapabilities) -> String {
 
 fn report_error(error: &ai::AiError) -> i32 {
     eprintln!("error: {error}");
+    if let Some(delay) = error.retry_after {
+        eprintln!(
+            "note: provider requested a retry after {} ms",
+            delay.as_millis()
+        );
+    }
     if error.retryable {
         eprintln!("note: this failure is retryable");
     }
@@ -2654,6 +2684,21 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
                         .ok()
                         .filter(|value| *value > 0)
                         .ok_or_else(|| "--timeout-ms requires a positive integer".to_string())?,
+                );
+            }
+            "--retries" => {
+                let value = take_value(flag, inline, args, &mut index)?;
+                options.retries = Some(
+                    value
+                        .parse::<u32>()
+                        .ok()
+                        .filter(|value| *value <= ai::MAX_RETRIES)
+                        .ok_or_else(|| {
+                            format!(
+                                "--retries requires an integer from 0 to {}",
+                                ai::MAX_RETRIES
+                            )
+                        })?,
                 );
             }
             "--max-tokens" => {

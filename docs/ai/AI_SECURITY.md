@@ -1,7 +1,7 @@
 # AI Security Model
 
-Status: AI-1 controls, embedding request/cache controls, and local RAG ingestion/index controls are implemented; later-phase controls are design only
-Date: 2026-11-24
+Status: AI-1 controls, embedding request/cache controls, local RAG ingestion/index controls, bounded provider retries, and bounded metadata-only agent traces are implemented; later-phase controls are design only
+Date: 2026-11-28
 Related: `SECURITY.md`, `AI_ARCHITECTURE.md`, `docs/security-audit-2026-11-22.md`
 
 ## Security position
@@ -52,12 +52,23 @@ privilege, and honest documentation of residual risk.
   cancellation flag.
 - API keys are read only from a named environment variable; errors, metrics,
   and CLI output redact secrets and never include prompts or responses.
-- Metrics are opt-in and contain no payloads.
+- Provider retries are bounded and provider-neutral: default 2, hard ceiling 8,
+  deterministic exponential backoff capped at 4 s, and only errors marked
+  retryable are retried. `Retry-After` is honored in integer seconds; a delay
+  above the policy ceiling stops retries instead of shortening the wait.
+  Authentication, validation, cancellation, and budget errors are never
+  retried. A stream is retried only before its first text delta, so partial
+  output cannot be duplicated.
+- Metrics are opt-in and contain no payloads. Agent traces are metadata-only:
+  step numbers, provider tool-call counts and finish reasons, tool names with
+  `ok` or an error code, and terminal stop codes. They exclude prompts, tool
+  arguments, tool results, and messages, so they can be logged without copying
+  user content. Model-controlled labels are truncated to 128 characters and
+  codes to 64 before entering a trace (ADR-0060).
 
 ## Not yet enforced (planned)
 
 - Keyring-backed credential storage.
-- `Retry-After` handling and automatic bounded retries.
 - A concurrency limiter and backpressure.
 - OS/process sandboxing for tools.
 - Model download checksums, signatures, and license gates.
@@ -78,7 +89,7 @@ privilege, and honest documentation of residual risk.
 | T-AI-05 | Shell execution | Model runs `rm -rf` | Shell tool disabled by default; explicit capability and approval; no shell interpolation | An approved shell is powerful by design |
 | T-AI-06 | Secret leakage | API key appears in logs or errors | Env/keyring only, redaction, no payload logging by default, error sanitization | Process inspection by the same user |
 | T-AI-07 | Data exfiltration via prompts | Secrets pasted into a cloud prompt | Local-first default, explicit provider choice, payload preview, no automatic context upload | User can still choose to send data |
-| T-AI-08 | Unbounded agent loop | Model retries forever | Max steps, max tool calls, token/time budgets, cancellation | A long but bounded run can still cost money |
+| T-AI-08 | Unbounded agent loop | Model retries forever | Max steps, max tool calls, token/time budgets, cancellation, bounded provider retries (max 8) | A long but bounded run can still cost money |
 | T-AI-09 | Resource exhaustion | 1 GB response or 10k concurrent requests | Response-size cap, timeouts, concurrency limit, backpressure | Local model may still consume host memory |
 | T-AI-10 | Malicious model file | Crafted GGUF exploits the loader | No automatic download; checksum/size; trusted source; never execute model files as code | A loader bug remains possible |
 | T-AI-11 | Tool-result manipulation | Retrieved text claims a successful action | Tool results are data; state changes only through validated tools; log the call and result | Model may misreport what happened |
@@ -91,6 +102,7 @@ privilege, and honest documentation of residual risk.
 | T-AI-18 | Tampered retrieval index | An attacker edits vectors, ids, or line spans | Strict schema/version/range/finite checks; atomic save; 0600 mode | Local writers with the same user can still alter files |
 | T-AI-19 | Citation spoofing / grounding overclaim | A chunk is presented as proof of an answer it does not support | Hits expose source and line ranges; no generation or grounding claim is made | Future grounded generation will need citation verification |
 | T-AI-20 | Ingestion denial of service | A huge tree, pathological line, or enormous query exhausts memory | File/count/byte/chunk/query limits; pathological-line splitting; bounded top-k | Large permitted corpora still consume proportional time and memory |
+| T-AI-21 | Trace leakage | An agent trace copies a prompt, tool argument, or secret into logs | Metadata-only events; no payload text; bounded model-controlled labels; traces stay in-process unless the caller persists them (ADR-0060) | Tool names and error codes are metadata a caller may still retain |
 
 ## Capability model
 
@@ -229,7 +241,9 @@ target platform.
 | Tool calls per step | 4 | loop |
 | Tool calls per run | 16 | registry |
 | Concurrent requests | 4 | semaphore/pool |
-| Retries | 2 | adapter |
+| Retries | 2 (hard max 8) | provider decorator |
+| Retry delay | 4 s ceiling | retry policy |
+| `Retry-After` | integer seconds, 60 s parse cap | retry policy |
 | Repair retries | 1 | structured output |
 | Schema depth | 32 | validator |
 | JSON depth | 128 | parser |
@@ -243,6 +257,9 @@ stable error naming the limit.
 - Path traversal and symlink escape tests.
 - Secret redaction tests for errors, metrics, and diagnostics.
 - Timeout, oversized response, and malformed SSE tests.
+- Retry tests: 429/5xx recovery, exhausted limits, non-retryable 401,
+  `Retry-After` ceiling behavior, disabled retries, wall-clock budget stops, and
+  no retry after a streamed delta.
 - Prompt-injection fixture: retrieved text requests a tool; assert the policy
   still denies it.
 - Agent loop termination tests.

@@ -55,6 +55,8 @@ Reserved for future use: `trait impl as async await nil pub mut`.
 - `Unit` — the result of statements and functions that return no value.
 - `List[T]` — ordered sequence with reference semantics.
 - `Map[K, V]` — insertion-ordered mapping with reference semantics.
+- `(T, U, ...)` — fixed-arity structural tuple; `(T,)` is a one-element
+  tuple, and `()` is `Unit`, not a zero-element tuple.
 - `Any` — gradual dynamic type; operations are checked at runtime.
 - Struct names declared with `struct` are nominal types.
 - Enum names declared with `enum` are nominal types. Two enums are distinct
@@ -67,13 +69,14 @@ Annotations are optional:
 let count = 10          # Int
 let ratio: Float = 1.5
 var names: List[Str] = ["Ada", "Grace"]
+let pair: (Int, Str) = (1, "one")
 fn add(a: Int, b: Int) -> Int:
     return a + b
 ```
 
 Unannotated function parameters have type `Any`. An unannotated return type is inferred from `return` expressions when they agree; otherwise it is `Any` and runtime checks apply. A mismatch between static types is a compile error, never a silent coercion. There are no implicit numeric conversions; use `float(x)` or `int(x)`.
 
-`List[T]` and `Map[K, V]` are invariant at annotated boundaries except that `T` may flow to `Any`. `Any` accepts any value and defers checking to runtime.
+`List[T]` and `Map[K, V]` are invariant at annotated boundaries except that `T` may flow to `Any`. Tuples are covariant because they are immutable: a `(Int, Str)` value is assignable to `(Any, Any)`, but not to `(Str, Int)`. `Any` accepts any value and defers checking to runtime.
 
 ### 2.3 Gradual guarantee
 If a value has static type `T` (not `Any`), then every runtime operation on it either behaves according to `T` or terminates with a runtime type error. The runtime never performs an unchecked cast. Dynamic values are validated at annotated function boundaries, annotated bindings, returns, struct fields, and enum payloads.
@@ -94,6 +97,47 @@ recursive type only when the same container is revisited under the same
 expected type; a revisit under a different type is rejected rather than
 silently accepted. See
 [ADR-0057](decisions/ADR-0057-container-element-contracts.md).
+
+### 2.4 Tuples
+```vantyx
+let pair = (1, "one")          # (Int, Str)
+let single = (1,)              # (Int,)
+let nested = (1, (2, 3))       # (Int, (Int, Int))
+let typed: (Int, Str) = (4, "four")
+let first = pair.0
+let second = pair.1
+let inner = nested.1.0         # nested index access needs no parentheses
+```
+
+- A tuple literal is written with parentheses and at least two elements, or
+  one element with a trailing comma: `(a, b)` and `(a,)`. Parentheses around a
+  single expression without a comma are grouping, not a tuple. `()` is not a
+  value; use a `Unit`-returning call.
+- A tuple type uses the same shape in type position: `(Int, Str)`, `(Int,)`,
+  and nested `(Int, (Bool, Str))`. The empty type `()` resolves to `Unit`.
+  Trailing commas are accepted in literals, types, patterns, and `let`
+  destructuring patterns.
+- Tuples are structural and immutable. Elements are read by zero-based numeric
+  index with `.0`, `.1`, and so on; the index must be an integer literal.
+  Assignment to a tuple element is `E0306`, and assigning to an immutable
+  `let` binding is still `E0203`. A struct is the right choice for mutable
+  named fields.
+- Two tuples are equal when they have the same arity and every element is
+  equal. Tuples compare structurally with `==`/`!=`; they are not comparable
+  with `<`, `<=`, `>`, or `>=`.
+- `type(tuple)` reports `"Tuple"`. Display uses parentheses, quotes nested
+  strings, and adds the trailing comma for one-element tuples:
+  `(1, "one")` and `(1,)`.
+- Conformance is checked element by element at annotated boundaries, and a
+  successful check tightens nested container contracts recursively. An `Any`
+  initializer that is not a tuple of the required arity raises `R0005` at
+  runtime when destructured.
+- Tuples are fixed-arity and homogeneous only by position; there is no
+  variadic tuple, tuple spread, or named tuple field syntax. Tuples are not
+  iterable and cannot be indexed with `[]`.
+- The native backend rejects tuple types, literals, destructuring, and
+  patterns with `E0401`; run tuple programs with `vantyx run`. See
+  [ADR-0059](decisions/ADR-0059-tuple-types-and-destructuring.md).
 
 ## 3. Declarations
 
@@ -176,6 +220,23 @@ y = 3
 - A binding must be initialized at declaration.
 - Assigning to a `let` binding is `E0203`.
 - Shadowing is allowed in an inner block; duplicate names in the same block are `E0202`.
+- Tuple destructuring binds every element in one declaration:
+
+  ```vantyx
+  let (a, (b, c)) = (1, (2, 3))
+  var (x, _) = (4, 5)
+  x = 6
+  ```
+
+  The initializer must have a tuple type of the same arity, or `Any` (checked
+  at runtime with `R0005`). Each name is bound with the declared mutability,
+  `_` ignores a position, and nested tuples may be destructured directly.
+  An optional annotation, `let (a, b): (Int, Str) = ...`, checks the
+  initializer against that tuple type and gives each name the annotated
+  element type; an `Any` initializer is then checked at runtime.
+  Destructuring is not available in function parameters or `for` bindings.
+  A single parenthesized name such as `(a)` needs a trailing comma to form a
+  one-element tuple pattern.
 
 ### 4.2 Assignment
 Targets: variables, fields (`p.x = v`), and indexes (`xs[0] = v`).
@@ -242,14 +303,21 @@ match shape:
         print("small shape with size {size}")
 ```
 
-- The scrutinee must have an enum, `Int`, `Str`, `Bool`, or `Any` type.
+- The scrutinee must have an enum, `Int`, `Str`, `Bool`, tuple, or `Any` type.
 - Arms are indented blocks. Patterns are `_`, an integer/boolean/string
-  literal, an integer range, `Variant`, `Variant(pattern, ...)`, or a top-level
-  alternation of those forms separated by `|`; `_` may ignore a payload
-  position. A payload position may recursively contain a literal, range, or
-  variant pattern, such as `Node(Leaf(value), _)`. A bare payload identifier is
-  a binding; write `Empty()` to match a zero-payload nested variant. See
-  [ADR-0019](decisions/ADR-0019-nested-patterns.md).
+  literal, an integer range, `Variant`, `Variant(pattern, ...)`,
+  `(pattern, ...)`, or a top-level alternation of those forms separated by
+  `|`; `_` may ignore a payload or tuple position. A payload or tuple position
+  may recursively contain a literal, range, variant, or nested tuple pattern,
+  such as `Node(Leaf(value), _)` or `(0, (a, b))`. A bare identifier in a
+  payload or tuple position is a binding; write `Empty()` to match a
+  zero-payload nested variant. See
+  [ADR-0019](decisions/ADR-0019-nested-patterns.md) and
+  [ADR-0059](decisions/ADR-0059-tuple-types-and-destructuring.md).
+- A tuple pattern must have the same arity as the matched tuple type
+  (`E0301`); a tuple pattern on a non-tuple, non-`Any` value is `E0301`.
+  Tuple patterns are checked against fixed-arity tuples only; there is no
+  rest pattern.
 - Integer range patterns use `low..high` (half-open: `low <= x < high`) or
   `low..=high` (inclusive: `low <= x <= high`). Both bounds are integer
   literals and may be negative. A range requires an `Int` or `Any` scrutinee
@@ -286,6 +354,12 @@ match shape:
   pattern matrix: `Leaf(value)` plus `Node(Leaf(left), _)` plus `Node(_, _)`
   can be exhaustive, while `Node(Leaf(value), _)` alone is not. A
   non-exhaustive match is `E0316`.
+- A tuple type has exactly one constructor of fixed arity, so a tuple pattern
+  whose positions all bind, ignore, or are themselves irrefutable covers the
+  whole tuple. A tuple pattern containing a literal or range is refutable and
+  must be completed by further arms or a final `_`; otherwise the match is
+  `E0316`. For example, `(0, _)` plus `(n, _)` is exhaustive, while `(0, _)`
+  alone is not.
 - A `Bool` match must cover both `true` and `false` or end with `_` (`E0316`).
   An `Int` or `Str` match is open-ended and must end with `_` (`E0316`), even
   when range patterns cover large intervals. A nested `Int`/`Str` payload
@@ -297,13 +371,13 @@ match shape:
   emits `W0004`. If no arm matches at runtime, the interpreter raises `R0014`.
 - A variant pattern must belong to the matched enum (`E0315`); unknown
   variants and non-enum scrutinees are errors (`E0315`, `E0314`).
-- Nested payload patterns may be up to 64 levels deep (`E0112` beyond that).
-  Or-patterns are supported only at the top level of an arm; alternatives may
-  contain nested payload patterns, but an or-pattern cannot itself appear
-  inside a payload position.
+- Nested payload and tuple patterns may be up to 64 levels deep (`E0112`
+  beyond that). Or-patterns are supported only at the top level of an arm;
+  alternatives may contain nested payload patterns, but an or-pattern cannot
+  itself appear inside a payload or tuple position.
 - Unreachable arms (after an unguarded `_`, a duplicate unguarded variant, or
-  a duplicate unguarded literal) produce `W0003`. A variant arm is only
-  considered complete when every payload position is irrefutable; duplicate
+  a duplicate unguarded literal) produce `W0003`. A variant or tuple arm is
+  only considered complete when every position is irrefutable; duplicate
   partial nested patterns are not reported. Repeated guarded arms do not warn
   because their guards may still select them.
 - A match statement whose arms all return satisfies the function's return-path
@@ -354,8 +428,12 @@ Arguments are evaluated left to right. Arity and statically known types are chec
 ### 5.7 Field access
 `value.field` requires a struct type; unknown fields are `E0304`. On `Any`, the runtime checks the actual value.
 
-### 5.8 List and map literals
+Tuple elements use the same postfix syntax with a numeric index: `pair.0`, `pair.1`, and `pair.0.1` for nested tuples. An out-of-range index is `E0304` statically and `R0003` on a dynamic value; a non-numeric field on a tuple is `E0304`. Tuple elements are immutable (`E0306`; runtime `R0010` through an `Any` alias).
+
+### 5.8 List, map, and tuple literals
 Elements are checked left to right. If all element types unify, the literal has `List[T]`; otherwise `List[Any]`. An expected type from an annotation propagates into the literal. An empty list literal also adopts an expected type from a builtin position when the other arguments determine it: `join`'s `List[Str]`, the needle/value element type of `contains` or `push`, and the key type of `remove`. Otherwise it remains `List[Any]`. Map keys must unify and values must unify; otherwise `Map[Any, Any]`.
+
+Tuple literals infer one type per position, and an expected tuple type propagates into each element. A tuple literal whose arity differs from the expected tuple type is `E0301`. Elements are evaluated left to right.
 
 ### 5.9 Match expressions
 ```vantyx
@@ -718,7 +796,7 @@ and 8 MiB of total module source. The entry file counts toward these limits.
 
 Runtime errors print `error[Rxxxx]`, a source span, a message, and a call stack, then exit with status 2. Compile errors exit with status 1. Usage errors exit with status 64.
 
-Dynamic match failures use `R0014` ("no match arm matched"). `R0005` remains the general dynamic type-boundary error, and `R0010` reports internal or unsupported runtime forms. `R0016` reports an invalid builtin argument value: an empty `replace` pattern, a malformed glob pattern (empty, unclosed or empty class, descending range), or a glob pattern with more than 1,024 components. `R0017` is a defensive error for a `?` operand that is not a two-variant one-field enum or is used outside a supported statement position; the checker normally rejects these cases first. File and directory I/O failures use `R0015`; this includes missing paths, permission errors, directories opened for reading, wrong file/directory kinds, non-regular copy sources, cross-device renames, non-empty directories, regular files blocking recursive creation, refused destructive recursive-removal roots, paths that cannot be removed recursively, non-UTF-8 entry names, invalid UTF-8 contents, NUL bytes, the 64 MiB read limit, glob listing or `**` `lstat` failures, glob result or depth caps, invalid or existing recursive-copy targets, recursive-copy self-containment, inner symbolic links, special files, and recursive-copy entry or depth caps. Output failures use `R0013`; the message includes the host error text and OS error number (for example `failed to write output: No space left on device (os error 28)`), and the location is the `print` call that attempted the write.
+Dynamic match failures use `R0014` ("no match arm matched"). `R0005` remains the general dynamic type-boundary error; it also reports a destructuring binding whose `Any` initializer is not a tuple of the required arity or shape. `R0010` reports internal or unsupported runtime forms, including an attempt to assign through a tuple element reached through an `Any` alias. `R0016` reports an invalid builtin argument value: an empty `replace` pattern, a malformed glob pattern (empty, unclosed or empty class, descending range), or a glob pattern with more than 1,024 components. `R0017` is a defensive error for a `?` operand that is not a two-variant one-field enum or is used outside a supported statement position; the checker normally rejects these cases first. File and directory I/O failures use `R0015`; this includes missing paths, permission errors, directories opened for reading, wrong file/directory kinds, non-regular copy sources, cross-device renames, non-empty directories, regular files blocking recursive creation, refused destructive recursive-removal roots, paths that cannot be removed recursively, non-UTF-8 entry names, invalid UTF-8 contents, NUL bytes, the 64 MiB read limit, glob listing or `**` `lstat` failures, glob result or depth caps, invalid or existing recursive-copy targets, recursive-copy self-containment, inner symbolic links, special files, and recursive-copy entry or depth caps. Output failures use `R0013`; the message includes the host error text and OS error number (for example `failed to write output: No space left on device (os error 28)`), and the location is the `print` call that attempted the write.
 
 ## 10. Safety guarantees (v0.1)
 
@@ -769,11 +847,11 @@ Supported: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]` and `Map[K, V]` for 
 
 Enum layout: each enum is a heap-allocated tagged struct with a union of per-variant payload structs; variant declaration order defines the tag. Construction, payload binding, wildcard arms, nested payload patterns, top-level or-patterns, display, equality, and `type` match the interpreter. Nested patterns lower to short-circuit tag and literal tests; every binding is declared from its recorded payload path, and a guard sees all nested bindings. Or-patterns test alternatives in order and initialize the shared binding set from the matched alternative. Integer ranges lower to checked `>=`/`<` or `<=` comparisons. Enum values are never freed in v0.1, like native strings, structs, lists, and maps. See ADR-0012, ADR-0020, ADR-0021, and ADR-0022.
 
-Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, unsupported `for` iterables, unannotated value-returning functions, and dynamically typed file, atomic-write, directory, glob, recursive-copy, rename/copy, metadata, text, or path arguments. String index assignment is rejected with `E0306`. Unsupported programs must be run with `vantyx run`.
+Rejected with `E0401`: `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, tuple types, tuple literals, tuple destructuring, tuple patterns, `match` on `Any`, unsupported `for` iterables, unannotated value-returning functions, and dynamically typed file, atomic-write, directory, glob, recursive-copy, rename/copy, metadata, text, or path arguments. String index assignment is rejected with `E0306`. Unsupported programs must be run with `vantyx run`.
 
 ## 12. Explicitly not implemented yet
 
-Generic enums, explicit discriminants, traits, generics, closures, iterators, a built-in generic `Result[T, E]`, async/concurrency, FFI, package manager, formatter, LSP. Nominal result-enum propagation with `?` is implemented in both engines for `let` initializers, plain assignments, and expression statements (ADR-0038); there is no built-in `Result` type, general expression-position propagation, or error conversion. Basic file I/O is implemented in the interpreter and native backend (ADR-0026), single-level directory listing, creation, and removal (ADR-0027), recursive creation and removal (ADR-0031), rename plus byte-preserving regular-file copy (ADR-0029), metadata probes (ADR-0032), lexical glob expansion (ADR-0033), and recursive directory copy (ADR-0034), but recursive move, metadata objects or preservation, streaming I/O, atomic copies or streaming atomic writes, and recoverable I/O errors are not. Basic UTF-8 text splitting, joining, trimming, affix tests, and literal replacement are implemented in both engines (ADR-0028), but regular expressions, case conversion, normalization, locale handling, and grapheme-cluster APIs are not. Lexical POSIX-style path join/parent/name/stem/extension/absolute helpers are implemented in both engines (ADR-0030), and `glob` performs lexical pattern expansion in both engines (ADR-0033), but there is no `Path` type, normalization, `..` confinement, or Windows path support. Nested payload patterns (T-048/T-049), top-level or-patterns (T-047/T-050), and integer range patterns (T-051) are implemented in the interpreter and native backend. See `TASKS.md`.
+Generic enums, explicit discriminants, traits, generics, closures, iterators, a built-in generic `Result[T, E]`, async/concurrency, FFI, package manager, formatter, LSP. Nominal result-enum propagation with `?` is implemented in both engines for `let` initializers, plain assignments, and expression statements (ADR-0038); there is no built-in `Result` type, general expression-position propagation, or error conversion. Basic file I/O is implemented in the interpreter and native backend (ADR-0026), single-level directory listing, creation, and removal (ADR-0027), recursive creation and removal (ADR-0031), rename plus byte-preserving regular-file copy (ADR-0029), metadata probes (ADR-0032), lexical glob expansion (ADR-0033), and recursive directory copy (ADR-0034), but recursive move, metadata objects or preservation, streaming I/O, atomic copies or streaming atomic writes, and recoverable I/O errors are not. Basic UTF-8 text splitting, joining, trimming, affix tests, and literal replacement are implemented in both engines (ADR-0028), but regular expressions, case conversion, normalization, locale handling, and grapheme-cluster APIs are not. Lexical POSIX-style path join/parent/name/stem/extension/absolute helpers are implemented in both engines (ADR-0030), and `glob` performs lexical pattern expansion in both engines (ADR-0033), but there is no `Path` type, normalization, `..` confinement, or Windows path support. Nested payload patterns (T-048/T-049), top-level or-patterns (T-047/T-050), and integer range patterns (T-051) are implemented in the interpreter and native backend. Tuple types, literals, element access, `let` destructuring, and tuple patterns are implemented in the interpreter (ADR-0059), but the native backend rejects them with `E0401`; there is no tuple mutation, tuple iteration, tuple spread, named tuple fields, or tuple destructuring in function parameters or `for` bindings. See `TASKS.md`.
 
 ## 13. Interactive REPL (tooling)
 
@@ -800,4 +878,4 @@ See [ADR-0013](decisions/ADR-0013-repl-line-editing.md).
   whose every arm body terminates.
 - `L0004`: a function parameter is never read.
 
-Names starting with `_` are treated as intentionally unused. Loop variables and `match` payload bindings are not reported in this first pass. An unused parameter is reported as `L0004`, distinct from the `L0001` used for locals. `L0003` is deliberately local and conservative: it recognizes all-terminating `if`/`elif`/`else` and `match` statements, but it does not analyze `while`/`for` conditions or perform interprocedural analysis. An `if` without an `else`, one falling branch, or one falling `match` arm keeps the following statement reachable, and a `match` with no arms is not proven terminating. A program with only lint findings exits `0`; compilation errors exit `1`. See [linting.md](linting.md) and [ADR-0037](decisions/ADR-0037-static-lints.md).
+Names starting with `_` are treated as intentionally unused. Loop variables and `match` payload bindings are not reported in this first pass. Names bound by tuple destructuring are tracked like ordinary `let`/`var` bindings and participate in `L0001` and `L0002`. An unused parameter is reported as `L0004`, distinct from the `L0001` used for locals. `L0003` is deliberately local and conservative: it recognizes all-terminating `if`/`elif`/`else` and `match` statements, but it does not analyze `while`/`for` conditions or perform interprocedural analysis. An `if` without an `else`, one falling branch, or one falling `match` arm keeps the following statement reachable, and a `match` with no arms is not proven terminating. A program with only lint findings exits `0`; compilation errors exit `1`. See [linting.md](linting.md) and [ADR-0037](decisions/ADR-0037-static-lints.md).

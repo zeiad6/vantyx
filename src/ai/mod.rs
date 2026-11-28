@@ -30,12 +30,15 @@ pub mod openai;
 pub mod provider;
 pub mod rag;
 pub mod redact;
+pub mod retry;
 pub mod schema;
 pub mod sse;
 pub mod tokens;
 pub mod tools;
 
-pub use agent::{Agent, AgentConfig, AgentResult};
+pub use agent::{
+    Agent, AgentConfig, AgentResult, AgentTraceEvent, AgentTraceKind, AgentTraceOutcome,
+};
 pub use bm25::{Bm25Hit, Bm25Index};
 pub use budget::Budget;
 pub use config::AiConfig;
@@ -76,6 +79,10 @@ pub use rag::{
     Chunk, ChunkOptions, DEFAULT_MMR_LAMBDA, Document, EvalQuery, EvalReport, IncrementalPlan,
     IngestOptions, RagIndex, RetrievalHit, ReuseStats, SearchMode, chunk_document,
     collect_documents, embed_chunks, embed_query, evaluate, parse_eval_queries,
+};
+pub use retry::{
+    DEFAULT_MAX_RETRIES, MAX_RETRIES, RetryPolicy, RetryingProvider, retry_after_from_header,
+    retry_call,
 };
 pub use schema::{SchemaError, validate as validate_schema};
 pub use sse::{SseEvent, SseParser};

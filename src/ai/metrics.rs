@@ -79,6 +79,13 @@ impl MetricEvent {
         self
     }
 
+    /// Records how many automatic retries the operation performed. This is a
+    /// count only; prompts and responses remain excluded.
+    pub fn retries(mut self, retry_count: u32) -> Self {
+        self.retry_count = retry_count;
+        self
+    }
+
     pub fn to_json(&self) -> Json {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)

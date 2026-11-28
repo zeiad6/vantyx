@@ -618,6 +618,13 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let StmtKind::Let { name, ty, init, .. } = &stmt.kind else {
+                if matches!(&stmt.kind, StmtKind::LetPattern { .. }) {
+                    return Err(IrError::unsupported(
+                        "native tuple destructuring is not supported",
+                        stmt.span,
+                        "bind each element separately (`let first = pair.0`) or run this program with `vantyx run`",
+                    ));
+                }
                 continue;
             };
             let declared = match ty {
@@ -826,6 +833,11 @@ impl<'a> Builder<'a> {
                 let value = self.native_type(value, span, "map value")?;
                 Ok(IrType::Map(Box::new(key), Box::new(value)))
             }
+            Type::Tuple(_) => Err(IrError::unsupported(
+                format!("{context} has a tuple type, which the native backend cannot represent"),
+                span,
+                "use a struct with named fields, or run this program with `vantyx run`",
+            )),
         }
     }
 
@@ -901,6 +913,11 @@ impl<'a> Builder<'a> {
                 });
                 Ok(prelude)
             }
+            StmtKind::LetPattern { .. } => Err(IrError::unsupported(
+                "native tuple destructuring is not supported",
+                stmt.span,
+                "bind each element separately (`let first = pair.0`) or run this program with `vantyx run`",
+            )),
             StmtKind::Assign { target, op, value } => {
                 if op.is_none()
                     && let ExprKind::Try { expr: operand } = &value.kind
@@ -1648,6 +1665,11 @@ impl<'a> Builder<'a> {
                     fields: lowered,
                 })
             }
+            Pattern::Tuple { span, .. } => Err(IrError::unsupported(
+                "native tuple patterns are not supported",
+                *span,
+                "match on a struct or enum instead, or run this program with `vantyx run`",
+            )),
             Pattern::Or { alternatives, span } => {
                 let mut lowered = Vec::with_capacity(alternatives.len());
                 let mut expected_signature: Option<Vec<(String, IrType)>> = None;
@@ -1927,6 +1949,11 @@ impl<'a> Builder<'a> {
     fn lower_expr(&mut self, expr: &Expr) -> Result<IrExpr, IrError> {
         let ty = self.expr_type(expr)?;
         match &expr.kind {
+            ExprKind::Tuple(_) => Err(IrError::unsupported(
+                "native tuple values are not supported",
+                expr.span,
+                "use a struct with named fields, or run this program with `vantyx run`",
+            )),
             ExprKind::Int(value) => Ok(IrExpr {
                 kind: IrExprKind::Int(*value),
                 ty: IrType::Int,

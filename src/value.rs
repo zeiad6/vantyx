@@ -24,6 +24,9 @@ pub enum Value {
     /// Insertion-ordered map represented as a flat vector of pairs.
     /// Lookup is linear; v0.1 favors simplicity and determinism over speed.
     Map(Rc<MapValue>),
+    /// Immutable fixed-arity tuple. Element values may still reference mutable
+    /// collections or structs.
+    Tuple(Vec<Value>),
     Struct(Rc<RefCell<StructValue>>),
     /// Enum values are immutable: the variant and payload slots never change
     /// after construction. Payload values may still reference mutable
@@ -173,6 +176,7 @@ impl Value {
             Value::Str(_) => "Str".to_string(),
             Value::List(_) => "List".to_string(),
             Value::Map(_) => "Map".to_string(),
+            Value::Tuple(_) => "Tuple".to_string(),
             Value::Struct(value) => value.borrow().type_name.clone(),
             Value::Enum(value) => value.enum_name.clone(),
         }
@@ -309,6 +313,19 @@ fn format_value(
             out.push('}');
             seen.remove(&id);
         }
+        Value::Tuple(elements) => {
+            out.push('(');
+            for (index, element) in elements.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                format_value(element, false, depth + 1, seen, out);
+            }
+            if elements.len() == 1 {
+                out.push(',');
+            }
+            out.push(')');
+        }
         Value::Struct(instance) => {
             let id = container_id(instance);
             let borrowed = instance.borrow();
@@ -430,6 +447,12 @@ fn values_equal(a: &Value, b: &Value, depth: usize, seen: &mut HashSet<(usize, u
             seen.remove(&pair);
             equal
         }
+        (Value::Tuple(x), Value::Tuple(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .zip(y.iter())
+                    .all(|(a, b)| values_equal(a, b, depth + 1, seen))
+        }
         (Value::Struct(x), Value::Struct(y)) => {
             if Rc::ptr_eq(x, y) {
                 return true;
@@ -517,6 +540,13 @@ fn value_conforms(
             seen.remove(&key);
             ok
         }
+        (Value::Tuple(elements), Type::Tuple(types)) => {
+            elements.len() == types.len()
+                && elements
+                    .iter()
+                    .zip(types.iter())
+                    .all(|(element, ty)| value_conforms(element, ty, depth + 1, seen))
+        }
         (Value::Struct(instance), Type::Struct(name)) => instance.borrow().type_name == *name,
         (Value::Enum(value), Type::Enum(name)) => value.enum_name == *name,
         _ => false,
@@ -565,6 +595,11 @@ fn tighten_value(value: &Value, ty: &Type, depth: usize, seen: &mut HashSet<(usi
                 tighten_value(item, value_ty, depth + 1, seen);
             }
             seen.remove(&key);
+        }
+        (Value::Tuple(elements), Type::Tuple(types)) => {
+            for (element, ty) in elements.iter().zip(types.iter()) {
+                tighten_value(element, ty, depth + 1, seen);
+            }
         }
         (Value::Struct(instance), Type::Struct(_)) => {
             let id = container_id(instance);
@@ -803,5 +838,43 @@ mod tests {
         assert!(value.conforms_to(&Type::Enum("Flag".into())));
         assert!(!value.conforms_to(&Type::Enum("Other".into())));
         assert_eq!(value.type_name(), "Flag");
+    }
+
+    #[test]
+    fn tuples_display_with_nested_string_quoting() {
+        let value = Value::Tuple(vec![
+            Value::Int(1),
+            Value::str("x"),
+            Value::Tuple(vec![Value::Bool(true)]),
+        ]);
+        assert_eq!(value.display(), "(1, \"x\", (true,))");
+        assert_eq!(Value::Tuple(vec![Value::Int(1)]).display(), "(1,)");
+        assert_eq!(Value::Tuple(Vec::new()).display(), "()");
+        assert_eq!(value.type_name(), "Tuple");
+    }
+
+    #[test]
+    fn tuples_compare_structurally_and_never_with_other_kinds() {
+        let make = |n: i64| Value::Tuple(vec![Value::Int(n), Value::str("x")]);
+        assert!(make(1).equals(&make(1)));
+        assert!(!make(1).equals(&make(2)));
+        assert!(!make(1).equals(&Value::list(vec![Value::Int(1), Value::str("x")])));
+        assert!(!Value::Tuple(vec![Value::Int(1)]).equals(&Value::Tuple(Vec::new())));
+    }
+
+    #[test]
+    fn tuple_conformance_and_tightening_are_element_wise() {
+        let inner = Value::list(vec![Value::Int(1)]);
+        let value = Value::Tuple(vec![inner.clone(), Value::str("x")]);
+        let ty = Type::Tuple(vec![Type::List(Box::new(Type::Int)), Type::Str]);
+        assert!(value.conforms_to(&ty));
+        assert!(!value.conforms_to(&Type::Tuple(vec![
+            Type::List(Box::new(Type::Str)),
+            Type::Str
+        ])));
+        assert!(!value.conforms_to(&Type::Tuple(vec![Type::List(Box::new(Type::Int))])));
+        assert_eq!(inner.list_elem_ty(), Some(Type::Any));
+        value.tighten(&ty);
+        assert_eq!(inner.list_elem_ty(), Some(Type::Int));
     }
 }

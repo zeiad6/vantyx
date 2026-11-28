@@ -595,6 +595,27 @@ impl<'a> Parser<'a> {
 
     fn parse_let(&mut self, mutable: bool) -> Result<Stmt, ()> {
         let start = self.advance().span;
+        if self.check(&TokenKind::LParen) {
+            let pattern = self.parse_let_pattern()?;
+            let ty = if self.eat(&TokenKind::Colon) {
+                Some(self.parse_type()?)
+            } else {
+                None
+            };
+            self.expect(TokenKind::Eq, " in a binding declaration")?;
+            let init = self.parse_expr()?;
+            let span = start.merge(init.span);
+            self.expect_stmt_end()?;
+            return Ok(Stmt {
+                kind: StmtKind::LetPattern {
+                    mutable,
+                    pattern,
+                    ty,
+                    init,
+                },
+                span,
+            });
+        }
         let (name, name_span) = self.expect_ident("a variable name")?;
         let ty = if self.eat(&TokenKind::Colon) {
             Some(self.parse_type()?)
@@ -615,6 +636,83 @@ impl<'a> Parser<'a> {
             },
             span,
         })
+    }
+
+    /// Parses `(a, (b, c), _)` after `let`/`var`. A parenthesized single name
+    /// is not destructuring; it requires a trailing comma to form a one-tuple.
+    fn parse_let_pattern(&mut self) -> Result<LetPattern, ()> {
+        let open = self.expect(TokenKind::LParen, " to start a binding pattern")?;
+        let mut elements = Vec::new();
+        let mut trailing_comma = false;
+        if !self.check(&TokenKind::RParen) {
+            loop {
+                let element = self.parse_let_pattern_element()?;
+                elements.push(element);
+                if self.eat(&TokenKind::Comma) {
+                    trailing_comma = true;
+                    if self.check(&TokenKind::RParen) {
+                        break;
+                    }
+                    trailing_comma = false;
+                } else {
+                    break;
+                }
+            }
+        }
+        let close = self.expect(TokenKind::RParen, " to close a binding pattern")?;
+        if elements.is_empty() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0101",
+                    "a binding pattern must have at least one element",
+                    open.span.merge(close.span),
+                )
+                .with_help("use a name, or a tuple such as `(a, b)`"),
+            );
+            return Err(());
+        }
+        if elements.len() == 1 && !trailing_comma {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0101",
+                    "a parenthesized binding needs a trailing comma to form a one-tuple",
+                    open.span.merge(close.span),
+                )
+                .with_help("write `let name = ...` for a single binding, or `let (name,) = ...`"),
+            );
+            return Err(());
+        }
+        Ok(LetPattern::Tuple {
+            elements,
+            span: open.span.merge(close.span),
+        })
+    }
+
+    fn parse_let_pattern_element(&mut self) -> Result<LetPattern, ()> {
+        let span = self.peek().span;
+        match self.peek().kind.clone() {
+            TokenKind::LParen => self.parse_let_pattern(),
+            TokenKind::Ident(name) if name == "_" => {
+                self.advance();
+                Ok(LetPattern::Wildcard { span })
+            }
+            TokenKind::Ident(name) => {
+                self.advance();
+                Ok(LetPattern::Name {
+                    name,
+                    name_span: span,
+                })
+            }
+            _ => {
+                let message = format!(
+                    "expected a binding name, `_`, or a nested tuple pattern, found {}",
+                    self.peek().kind.describe()
+                );
+                self.diagnostics
+                    .push(Diagnostic::error("E0101", message, span));
+                Err(())
+            }
+        }
     }
 
     fn parse_if(&mut self) -> Result<Stmt, ()> {
@@ -832,6 +930,7 @@ impl<'a> Parser<'a> {
             return Ok(Pattern::Wildcard { span: start });
         }
         match self.peek().kind.clone() {
+            TokenKind::LParen => return self.parse_tuple_pattern(),
             TokenKind::Int(value) => {
                 self.advance();
                 if self.check(&TokenKind::DotDot) || self.check(&TokenKind::DotDotEq) {
@@ -932,49 +1031,7 @@ impl<'a> Parser<'a> {
         if self.eat(&TokenKind::LParen) {
             if !self.check(&TokenKind::RParen) {
                 loop {
-                    let field_start = self.peek().span;
-                    match self.peek().kind.clone() {
-                        TokenKind::Ident(field_name) if field_name == "_" => {
-                            self.advance();
-                            fields.push(PatternArg::Wildcard { span: field_start });
-                        }
-                        TokenKind::Ident(_) if matches!(self.peek_kind_n(1), TokenKind::LParen) => {
-                            let pattern = self.parse_pattern_atom()?;
-                            fields.push(PatternArg::Nested {
-                                span: pattern.span(),
-                                pattern: Box::new(pattern),
-                            });
-                        }
-                        TokenKind::Ident(field_name) => {
-                            self.advance();
-                            fields.push(PatternArg::Bind {
-                                name: field_name,
-                                name_span: field_start,
-                            });
-                        }
-                        TokenKind::Int(_)
-                        | TokenKind::True
-                        | TokenKind::False
-                        | TokenKind::Str(_)
-                        | TokenKind::Minus
-                        | TokenKind::Float(_) => {
-                            let pattern = self.parse_pattern_atom()?;
-                            fields.push(PatternArg::Nested {
-                                span: pattern.span(),
-                                pattern: Box::new(pattern),
-                            });
-                        }
-                        _ => {
-                            let span = self.peek().span;
-                            let message = format!(
-                                "expected a binding, `_`, or a nested pattern, found {}",
-                                self.peek().kind.describe()
-                            );
-                            self.diagnostics
-                                .push(Diagnostic::error("E0101", message, span));
-                            return Err(());
-                        }
-                    }
+                    fields.push(self.parse_pattern_arg()?);
                     if self.eat(&TokenKind::Comma) {
                         if self.check(&TokenKind::RParen) {
                             break;
@@ -992,6 +1049,102 @@ impl<'a> Parser<'a> {
             name_span,
             fields,
             span,
+        })
+    }
+
+    /// Parses one element of a tuple pattern or enum payload pattern. A bare
+    /// identifier binds, `_` ignores, and anything else is a nested pattern
+    /// (literal, range, variant, or another tuple).
+    fn parse_pattern_arg(&mut self) -> Result<PatternArg, ()> {
+        let span = self.peek().span;
+        match self.peek().kind.clone() {
+            TokenKind::Ident(name) if name == "_" => {
+                self.advance();
+                Ok(PatternArg::Wildcard { span })
+            }
+            TokenKind::Ident(name) => {
+                if matches!(self.peek_kind_n(1), TokenKind::LParen) {
+                    let pattern = self.parse_pattern()?;
+                    Ok(PatternArg::Nested {
+                        span: pattern.span(),
+                        pattern: Box::new(pattern),
+                    })
+                } else {
+                    self.advance();
+                    Ok(PatternArg::Bind {
+                        name,
+                        name_span: span,
+                    })
+                }
+            }
+            TokenKind::LParen
+            | TokenKind::Int(_)
+            | TokenKind::True
+            | TokenKind::False
+            | TokenKind::Str(_)
+            | TokenKind::Minus
+            | TokenKind::Float(_) => {
+                let pattern = self.parse_pattern()?;
+                Ok(PatternArg::Nested {
+                    span: pattern.span(),
+                    pattern: Box::new(pattern),
+                })
+            }
+            _ => {
+                let message = format!(
+                    "expected a binding, `_`, or a nested pattern, found {}",
+                    self.peek().kind.describe()
+                );
+                self.diagnostics
+                    .push(Diagnostic::error("E0101", message, span));
+                Err(())
+            }
+        }
+    }
+
+    fn parse_tuple_pattern(&mut self) -> Result<Pattern, ()> {
+        let open = self.expect(TokenKind::LParen, " to start a tuple pattern")?;
+        if self.check(&TokenKind::RParen) {
+            let close = self.advance();
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0101",
+                    "an empty tuple pattern is not supported",
+                    open.span.merge(close.span),
+                )
+                .with_help("match on `Unit` with `_`, or write a tuple such as `(a, b)`"),
+            );
+            return Err(());
+        }
+        let mut elements = Vec::new();
+        let mut trailing_comma = false;
+        loop {
+            elements.push(self.parse_pattern_arg()?);
+            if self.eat(&TokenKind::Comma) {
+                trailing_comma = true;
+                if self.check(&TokenKind::RParen) {
+                    break;
+                }
+                trailing_comma = false;
+            } else {
+                break;
+            }
+        }
+        let close = self.expect(TokenKind::RParen, " to close the tuple pattern")?;
+        if elements.len() == 1 && !trailing_comma {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0101",
+                    "a parenthesized pattern needs a trailing comma to form a one-tuple",
+                    open.span.merge(close.span),
+                )
+                .with_help("remove the parentheses, or write `(pattern,)`"),
+            );
+            return Err(());
+        }
+        Ok(Pattern::Tuple {
+            elements,
+            span: open.span.merge(close.span),
         })
     }
 
@@ -1275,10 +1428,37 @@ impl<'a> Parser<'a> {
             }
             TokenKind::LParen => {
                 self.advance();
-                let mut inner = self.parse_expr()?;
-                let close = self.expect(TokenKind::RParen, " to close the expression")?;
-                inner.span = token.span.merge(close.span);
-                inner
+                if self.check(&TokenKind::RParen) {
+                    let close = self.advance();
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E0101",
+                            "empty parentheses are not a value",
+                            token.span.merge(close.span),
+                        )
+                        .with_help(
+                            "call a function that returns `Unit`, or write a tuple such as `(1, 2)`",
+                        ),
+                    );
+                    return Err(());
+                }
+                let first = self.parse_expr()?;
+                if !self.check(&TokenKind::Comma) {
+                    let close = self.expect(TokenKind::RParen, " to close the expression")?;
+                    let mut inner = first;
+                    inner.span = token.span.merge(close.span);
+                    inner
+                } else {
+                    let mut elements = vec![first];
+                    while self.eat(&TokenKind::Comma) {
+                        if self.check(&TokenKind::RParen) {
+                            break;
+                        }
+                        elements.push(self.parse_expr()?);
+                    }
+                    let close = self.expect(TokenKind::RParen, " to close the tuple")?;
+                    self.new_expr(ExprKind::Tuple(elements), token.span.merge(close.span))
+                }
             }
             TokenKind::LBracket => self.parse_list_literal()?,
             TokenKind::LBrace => self.parse_map_literal()?,
@@ -1375,7 +1555,13 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::Dot => {
                     self.advance();
-                    let (name, name_span) = self.expect_ident("a field name")?;
+                    let (name, name_span) = match self.peek().kind.clone() {
+                        TokenKind::Int(index) if index >= 0 => {
+                            let token = self.advance();
+                            (index.to_string(), token.span)
+                        }
+                        _ => self.expect_ident("a field name")?,
+                    };
                     let span = expr.span.merge(name_span);
                     expr = self.new_expr(
                         ExprKind::Field {
@@ -1501,6 +1687,35 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_inner(&mut self) -> Result<TypeExpr, ()> {
+        if self.check(&TokenKind::LParen) {
+            let open = self.advance();
+            if self.check(&TokenKind::RParen) {
+                let close = self.advance();
+                return Ok(TypeExpr {
+                    kind: TypeExprKind::Tuple(Vec::new()),
+                    span: open.span.merge(close.span),
+                });
+            }
+            let first = self.parse_type()?;
+            if !self.check(&TokenKind::Comma) {
+                let close = self.expect(TokenKind::RParen, " to close the type")?;
+                let mut inner = first;
+                inner.span = open.span.merge(close.span);
+                return Ok(inner);
+            }
+            let mut elements = vec![first];
+            while self.eat(&TokenKind::Comma) {
+                if self.check(&TokenKind::RParen) {
+                    break;
+                }
+                elements.push(self.parse_type()?);
+            }
+            let close = self.expect(TokenKind::RParen, " to close the tuple type")?;
+            return Ok(TypeExpr {
+                kind: TypeExprKind::Tuple(elements),
+                span: open.span.merge(close.span),
+            });
+        }
         let (name, name_span) = self.expect_ident("a type")?;
         let mut span = name_span;
         let mut args = Vec::new();
@@ -1750,7 +1965,9 @@ fn expr_depth(kind: &ExprKind) -> usize {
                 StrPart::Expr(expr) => Some(expr.depth),
             }))
         }
-        ExprKind::List(elements) => 1 + max_child(&mut elements.iter().map(|e| e.depth)),
+        ExprKind::List(elements) | ExprKind::Tuple(elements) => {
+            1 + max_child(&mut elements.iter().map(|e| e.depth))
+        }
         ExprKind::Map(entries) => {
             1 + max_child(
                 &mut entries
@@ -2353,5 +2570,94 @@ mod tests {
         ));
         assert_eq!(span.start, alternatives[0].span().start);
         assert_eq!(span.end, alternatives[2].span().end);
+    }
+
+    #[test]
+    fn parses_tuple_literals_and_keeps_parentheses_grouping() {
+        let program = parse_ok("let a = (1, 2)\nlet b = (1,)\nlet c = (1)\n");
+        let init = |index: usize| {
+            let Item::Stmt(stmt) = &program.items[index] else {
+                panic!()
+            };
+            let StmtKind::Let { init, .. } = &stmt.kind else {
+                panic!()
+            };
+            &init.kind
+        };
+        assert!(matches!(init(0), ExprKind::Tuple(elements) if elements.len() == 2));
+        assert!(matches!(init(1), ExprKind::Tuple(elements) if elements.len() == 1));
+        assert!(matches!(init(2), ExprKind::Int(1)));
+    }
+
+    #[test]
+    fn parses_nested_tuple_index_access() {
+        let program = parse_ok("let value = pair.0.1\n");
+        let Item::Stmt(stmt) = &program.items[0] else {
+            panic!()
+        };
+        let StmtKind::Let { init, .. } = &stmt.kind else {
+            panic!()
+        };
+        let ExprKind::Field { base, name, .. } = &init.kind else {
+            panic!()
+        };
+        assert_eq!(name, "1");
+        let ExprKind::Field { name, .. } = &base.kind else {
+            panic!()
+        };
+        assert_eq!(name, "0");
+    }
+
+    #[test]
+    fn parses_tuple_types_and_destructuring_bindings() {
+        let program = parse_ok("let pair: (Int, Str) = (1, \"a\")\nlet (a, (b, c)) = pair\n");
+        let Item::Stmt(stmt) = &program.items[0] else {
+            panic!()
+        };
+        let StmtKind::Let { ty, .. } = &stmt.kind else {
+            panic!()
+        };
+        let ty = ty.as_ref().expect("annotation");
+        assert!(matches!(ty.kind, TypeExprKind::Tuple(ref items) if items.len() == 2));
+        let Item::Stmt(stmt) = &program.items[1] else {
+            panic!()
+        };
+        let StmtKind::LetPattern { pattern, .. } = &stmt.kind else {
+            panic!()
+        };
+        let LetPattern::Tuple { elements, .. } = pattern else {
+            panic!()
+        };
+        assert_eq!(elements.len(), 2);
+        assert!(matches!(elements[0], LetPattern::Name { .. }));
+        assert!(matches!(elements[1], LetPattern::Tuple { .. }));
+    }
+
+    #[test]
+    fn parses_tuple_patterns_with_one_element_trailing_comma() {
+        let program = parse_ok("let result = match pair:\n    (1,): 1\n    (_, _): 2\n");
+        let Item::Stmt(stmt) = &program.items[0] else {
+            panic!()
+        };
+        let StmtKind::Let { init, .. } = &stmt.kind else {
+            panic!()
+        };
+        let ExprKind::Match { arms, .. } = &init.kind else {
+            panic!()
+        };
+        assert!(
+            matches!(arms[0].pattern, Pattern::Tuple { ref elements, .. } if elements.len() == 1)
+        );
+        assert!(
+            matches!(arms[1].pattern, Pattern::Tuple { ref elements, .. } if elements.len() == 2)
+        );
+    }
+
+    #[test]
+    fn rejects_empty_tuple_expressions_and_binding_patterns() {
+        let diagnostics = parse_err("let x = ()\n");
+        assert!(diagnostics.items.iter().any(|d| d.code == "E0101"));
+        let diagnostics = parse_err("let (x) = (1,)\n");
+        assert!(diagnostics.items.iter().any(|d| d.code == "E0101"));
     }
 }

@@ -4,6 +4,7 @@ use super::budget::Budget;
 use super::embedding::Vector;
 use super::json::Json;
 use std::fmt;
+use std::time::Duration;
 
 pub const AI_E_CONFIG: &str = "AI_E_CONFIG";
 pub const AI_E_INVALID_REQUEST: &str = "AI_E_INVALID_REQUEST";
@@ -37,6 +38,9 @@ pub struct AiError {
     pub code: String,
     pub message: String,
     pub retryable: bool,
+    /// A provider-requested delay from `Retry-After`. It is advisory: the retry
+    /// policy may stop rather than retry earlier than the server requested.
+    pub retry_after: Option<Duration>,
 }
 
 impl AiError {
@@ -45,6 +49,7 @@ impl AiError {
             code: code.into(),
             message: message.into(),
             retryable: false,
+            retry_after: None,
         }
     }
 
@@ -53,7 +58,14 @@ impl AiError {
             code: code.into(),
             message: message.into(),
             retryable: true,
+            retry_after: None,
         }
+    }
+
+    /// Attaches a provider-requested delay. Only retryable errors act on it.
+    pub fn with_retry_after(mut self, delay: Option<Duration>) -> Self {
+        self.retry_after = delay;
+        self
     }
 
     pub fn unsupported(parameter: &str, provider: &str) -> Self {
@@ -637,6 +649,18 @@ impl ProviderCapabilities {
 pub trait Provider {
     fn id(&self) -> &str;
     fn capabilities(&self) -> ProviderCapabilities;
+
+    /// Lists models exposed by the provider endpoint. Providers without model
+    /// discovery return a stable `AI_E_UNSUPPORTED` error by default.
+    fn models(&self) -> Result<Vec<String>, AiError> {
+        Err(AiError::unsupported("model listing", self.id()))
+    }
+
+    /// Number of automatic retries performed by the most recent provider call.
+    /// Direct providers and providers without a retry policy report zero.
+    fn last_retry_count(&self) -> u32 {
+        0
+    }
 
     /// Sends a chat request. Providers that only support embeddings return a
     /// stable `AI_E_UNSUPPORTED` error by default.

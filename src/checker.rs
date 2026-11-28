@@ -211,12 +211,14 @@ enum CoverPattern {
     Wild,
     Literal(LiteralPattern),
     Variant(String, Vec<CoverPattern>),
+    Tuple(Vec<CoverPattern>),
     Opaque,
 }
 
 struct Constructor {
     name: String,
     bool_value: Option<bool>,
+    tuple: bool,
     field_types: Vec<Type>,
 }
 
@@ -247,6 +249,16 @@ fn cover_alternatives(pattern: &Pattern) -> Vec<CoverPattern> {
             }
             vec![CoverPattern::Variant(name.clone(), converted)]
         }
+        Pattern::Tuple { elements, .. } => {
+            let mut converted = Vec::with_capacity(elements.len());
+            for element in elements {
+                converted.push(match element {
+                    PatternArg::Bind { .. } | PatternArg::Wildcard { .. } => CoverPattern::Wild,
+                    PatternArg::Nested { pattern, .. } => cover_single(pattern),
+                });
+            }
+            vec![CoverPattern::Tuple(converted)]
+        }
         Pattern::Or { alternatives, .. } => {
             alternatives.iter().flat_map(cover_alternatives).collect()
         }
@@ -272,7 +284,7 @@ struct MatchCoverage<'a> {
     strict: bool,
     covered: HashSet<String>,
     covered_literals: HashSet<String>,
-    wildcard_seen: bool,
+    covered_all: bool,
 }
 
 struct Checker<'a> {
@@ -762,6 +774,59 @@ impl<'a> Checker<'a> {
         self.scopes.pop();
     }
 
+    /// Declares the bindings of a `let`/`var` destructuring pattern. Tuple
+    /// arity is checked against the initializer type; a dynamic `Any`
+    /// initializer defers the shape check to runtime.
+    fn check_let_pattern(&mut self, pattern: &LetPattern, ty: &Type, mutable: bool) {
+        match pattern {
+            LetPattern::Name { name, name_span } => {
+                self.declare(name, ty.clone(), mutable, *name_span);
+            }
+            LetPattern::Wildcard { .. } => {}
+            LetPattern::Tuple { elements, span } => match ty {
+                Type::Tuple(types) if types.len() == elements.len() => {
+                    for (element, element_ty) in elements.iter().zip(types.iter()) {
+                        self.check_let_pattern(element, element_ty, mutable);
+                    }
+                }
+                Type::Tuple(_) => {
+                    self.diagnostics.push(
+                            Diagnostic::error(
+                                "E0301",
+                                format!(
+                                    "binding pattern has {} element(s), but the initializer has type `{ty}`",
+                                    elements.len()
+                                ),
+                                *span,
+                            )
+                            .with_help("bind every tuple element, or use `_` to ignore one"),
+                        );
+                    for element in elements {
+                        self.check_let_pattern(element, &Type::Any, mutable);
+                    }
+                }
+                Type::Any => {
+                    for element in elements {
+                        self.check_let_pattern(element, &Type::Any, mutable);
+                    }
+                }
+                other => {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E0301",
+                            format!("cannot destructure a value of type `{other}`"),
+                            *span,
+                        )
+                        .with_help("the initializer must be a tuple of the same arity"),
+                    );
+                    for element in elements {
+                        self.check_let_pattern(element, &Type::Any, mutable);
+                    }
+                }
+            },
+        }
+    }
+
     fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
             StmtKind::Let {
@@ -783,6 +848,20 @@ impl<'a> Checker<'a> {
                 }
                 let binding_ty = expected.unwrap_or(init_ty);
                 self.declare(name, binding_ty, *mutable, *name_span);
+            }
+            StmtKind::LetPattern {
+                mutable,
+                pattern,
+                ty,
+                init,
+            } => {
+                let expected = ty.as_ref().map(|t| self.resolve_type(t));
+                let init_ty = self.check_statement_expr(init, expected.as_ref());
+                if let Some(expected) = &expected {
+                    self.expect(&init_ty, expected, init.span, " in a binding pattern");
+                }
+                let binding_ty = expected.unwrap_or(init_ty);
+                self.check_let_pattern(pattern, &binding_ty, *mutable);
             }
             StmtKind::Assign { target, op, value } => {
                 let target_ty = self.check_lvalue(target);
@@ -933,7 +1012,7 @@ impl<'a> Checker<'a> {
         let scrutinee_ty = self.check_expr(scrutinee, None);
         let enum_info = match &scrutinee_ty {
             Type::Enum(name) => self.enums.get(name).cloned(),
-            Type::Any | Type::Int | Type::Str | Type::Bool => None,
+            Type::Any | Type::Int | Type::Str | Type::Bool | Type::Tuple(_) => None,
             other => {
                 self.diagnostics.push(
                     Diagnostic::error(
@@ -941,14 +1020,16 @@ impl<'a> Checker<'a> {
                         format!("cannot match on a value of type `{other}`"),
                         scrutinee.span,
                     )
-                    .with_help("match requires an enum, `Int`, `Str`, `Bool`, or `Any` value"),
+                    .with_help(
+                        "match requires an enum, `Int`, `Str`, `Bool`, tuple, or `Any` value",
+                    ),
                 );
                 None
             }
         };
         let strict = matches!(
             scrutinee_ty,
-            Type::Enum(_) | Type::Any | Type::Int | Type::Str | Type::Bool
+            Type::Enum(_) | Type::Any | Type::Int | Type::Str | Type::Bool | Type::Tuple(_)
         );
         let warn_any = matches!(scrutinee_ty, Type::Any);
 
@@ -958,7 +1039,7 @@ impl<'a> Checker<'a> {
             strict,
             covered: HashSet::new(),
             covered_literals: HashSet::new(),
-            wildcard_seen: false,
+            covered_all: false,
         };
         let mut arm_types = Vec::new();
         let mut unguarded_patterns = Vec::new();
@@ -1084,6 +1165,16 @@ impl<'a> Checker<'a> {
                         .with_help("add a final `_` arm; literal matches are open-ended"),
                     );
                 }
+                Type::Tuple(_) => {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E0316",
+                            format!("non-exhaustive match on `{scrutinee_ty}`"),
+                            scrutinee.span,
+                        )
+                        .with_help("cover every tuple element shape, or add a final `_` arm"),
+                    );
+                }
                 Type::Any if warn_any => {
                     self.diagnostics.push(
                         Diagnostic::warning(
@@ -1134,28 +1225,28 @@ impl<'a> Checker<'a> {
         let strict = coverage.strict;
         match pattern {
             Pattern::Wildcard { span } => {
-                if coverage.wildcard_seen {
+                if coverage.covered_all {
                     self.diagnostics.push(
                         Diagnostic::warning(
                             "W0003",
-                            "unreachable pattern: a previous `_` arm covers every value",
+                            "unreachable pattern: an earlier pattern already covers every value",
                             *span,
                         )
-                        .with_help("remove this arm or move it before the `_` arm"),
+                        .with_help("remove this pattern or move it earlier"),
                     );
                 } else if counts {
-                    coverage.wildcard_seen = true;
+                    coverage.covered_all = true;
                 }
             }
             Pattern::Literal { value, span } => {
-                if coverage.wildcard_seen {
+                if coverage.covered_all {
                     self.diagnostics.push(
                         Diagnostic::warning(
                             "W0003",
-                            "unreachable pattern: a previous `_` arm covers every value",
+                            "unreachable pattern: an earlier pattern already covers every value",
                             *span,
                         )
-                        .with_help("remove this arm or move it before the `_` arm"),
+                        .with_help("remove this pattern or move it earlier"),
                     );
                 }
                 let compatible = match (value, scrutinee) {
@@ -1211,14 +1302,14 @@ impl<'a> Checker<'a> {
                 inclusive,
                 span,
             } => {
-                if coverage.wildcard_seen {
+                if coverage.covered_all {
                     self.diagnostics.push(
                         Diagnostic::warning(
                             "W0003",
-                            "unreachable pattern: a previous `_` arm covers every value",
+                            "unreachable pattern: an earlier pattern already covers every value",
                             *span,
                         )
-                        .with_help("remove this arm or move it before the `_` arm"),
+                        .with_help("remove this pattern or move it earlier"),
                     );
                 }
                 if !matches!(scrutinee, Type::Any | Type::Int) {
@@ -1256,14 +1347,14 @@ impl<'a> Checker<'a> {
                 fields,
                 ..
             } => {
-                if coverage.wildcard_seen {
+                if coverage.covered_all {
                     self.diagnostics.push(
                         Diagnostic::warning(
                             "W0003",
-                            "unreachable pattern: a previous `_` arm covers every value",
+                            "unreachable pattern: an earlier pattern already covers every value",
                             *name_span,
                         )
-                        .with_help("remove this arm or move it before the `_` arm"),
+                        .with_help("remove this pattern or move it earlier"),
                     );
                 }
 
@@ -1374,27 +1465,67 @@ impl<'a> Checker<'a> {
                         .and_then(|variant| variant.fields.get(index))
                         .map(|field| field.ty.clone())
                         .unwrap_or(Type::Any);
-                    match field {
-                        PatternArg::Bind { name, name_span } => {
-                            self.declare(name, ty, false, *name_span);
+                    self.check_pattern_arg(field, &ty);
+                }
+            }
+            Pattern::Tuple { elements, span } => {
+                if coverage.covered_all {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            "W0003",
+                            "unreachable pattern: an earlier pattern already covers every value",
+                            *span,
+                        )
+                        .with_help("remove this pattern or move it earlier"),
+                    );
+                }
+                let mut shape_valid = false;
+                match scrutinee {
+                    Type::Tuple(types) => {
+                        if types.len() != elements.len() {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E0301",
+                                    format!(
+                                        "tuple pattern has {} element(s), but the matched value has type `{scrutinee}`",
+                                        elements.len()
+                                    ),
+                                    *span,
+                                )
+                                .with_help("match every tuple element, using `_` to ignore one"),
+                            );
+                        } else {
+                            shape_valid = true;
                         }
-                        PatternArg::Wildcard { .. } => {}
-                        PatternArg::Nested { pattern, .. } => {
-                            let nested_info = match &ty {
-                                Type::Enum(name) => self.enums.get(name).cloned(),
-                                _ => None,
-                            };
-                            let mut nested_coverage = MatchCoverage {
-                                scrutinee: &ty,
-                                enum_info: nested_info.as_ref(),
-                                strict: true,
-                                covered: HashSet::new(),
-                                covered_literals: HashSet::new(),
-                                wildcard_seen: false,
-                            };
-                            self.check_pattern(pattern, &mut nested_coverage, false);
+                        for (index, element) in elements.iter().enumerate() {
+                            let ty = types.get(index).cloned().unwrap_or(Type::Any);
+                            self.check_pattern_arg(element, &ty);
                         }
                     }
+                    Type::Any => {
+                        // A fixed-arity tuple pattern never covers every
+                        // dynamic value: the value may not be a tuple, or may
+                        // have a different arity. Arms after it stay reachable.
+                        for element in elements {
+                            self.check_pattern_arg(element, &Type::Any);
+                        }
+                    }
+                    other => {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E0301",
+                                format!("tuple pattern cannot match a value of type `{other}`"),
+                                *span,
+                            )
+                            .with_help("match a tuple value, or use a literal or variant pattern"),
+                        );
+                        for element in elements {
+                            self.check_pattern_arg(element, &Type::Any);
+                        }
+                    }
+                }
+                if counts && shape_valid && self.tuple_pattern_covers(elements) {
+                    coverage.covered_all = true;
                 }
             }
             Pattern::Or { alternatives, .. } => {
@@ -1435,7 +1566,7 @@ impl<'a> Checker<'a> {
         if counts {
             coverage.covered = seen.covered;
             coverage.covered_literals = seen.covered_literals;
-            coverage.wildcard_seen = seen.wildcard_seen;
+            coverage.covered_all = seen.covered_all;
         }
         for (name, ty, span) in expected.unwrap_or_default() {
             self.declare(&name, ty, false, span);
@@ -1502,6 +1633,43 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Checks one positional pattern element against its known type and
+    /// declares any bindings it introduces. Shared by enum payloads and
+    /// tuple patterns.
+    fn check_pattern_arg(&mut self, arg: &PatternArg, ty: &Type) {
+        match arg {
+            PatternArg::Bind { name, name_span } => {
+                self.declare(name, ty.clone(), false, *name_span);
+            }
+            PatternArg::Wildcard { .. } => {}
+            PatternArg::Nested { pattern, .. } => {
+                let nested_info = match ty {
+                    Type::Enum(name) => self.enums.get(name).cloned(),
+                    _ => None,
+                };
+                let mut nested_coverage = MatchCoverage {
+                    scrutinee: ty,
+                    enum_info: nested_info.as_ref(),
+                    strict: true,
+                    covered: HashSet::new(),
+                    covered_literals: HashSet::new(),
+                    covered_all: false,
+                };
+                self.check_pattern(pattern, &mut nested_coverage, false);
+            }
+        }
+    }
+
+    /// Whether a tuple pattern is irrefutable: every element binds or ignores,
+    /// or is itself irrefutable. A tuple of a fixed arity is the only
+    /// constructor, so such a pattern covers the whole tuple type.
+    fn tuple_pattern_covers(&self, elements: &[PatternArg]) -> bool {
+        elements.iter().all(|element| match element {
+            PatternArg::Bind { .. } | PatternArg::Wildcard { .. } => true,
+            PatternArg::Nested { pattern, .. } => self.pattern_is_irrefutable(pattern),
+        })
+    }
+
     /// Whether a variant pattern completely covers its own variant, meaning
     /// every payload position is irrefutable for that field's type. Partial
     /// nested patterns such as `Node(Leaf(x))` do not mark `Node` covered.
@@ -1522,6 +1690,7 @@ impl<'a> Checker<'a> {
             Pattern::Or { alternatives, .. } => alternatives
                 .iter()
                 .any(|alternative| self.pattern_is_irrefutable(alternative)),
+            Pattern::Tuple { elements, .. } => self.tuple_pattern_covers(elements),
             Pattern::Variant { name, fields, .. } => {
                 let Some((owner, _)) = self.find_variant(name) else {
                     return false;
@@ -1596,6 +1765,11 @@ impl<'a> Checker<'a> {
                         next.extend_from_slice(&row[1..]);
                         specialized.push(next);
                     }
+                    Some(CoverPattern::Tuple(fields)) if constructor.tuple => {
+                        let mut next = fields.clone();
+                        next.extend_from_slice(&row[1..]);
+                        specialized.push(next);
+                    }
                     _ => {}
                 }
             }
@@ -1614,17 +1788,20 @@ impl<'a> Checker<'a> {
                 Constructor {
                     name: String::new(),
                     bool_value: Some(true),
+                    tuple: false,
                     field_types: Vec::new(),
                 },
                 Constructor {
                     name: String::new(),
                     bool_value: Some(false),
+                    tuple: false,
                     field_types: Vec::new(),
                 },
             ]),
             Type::Unit => Some(vec![Constructor {
                 name: String::new(),
                 bool_value: None,
+                tuple: false,
                 field_types: Vec::new(),
             }]),
             Type::Enum(name) => self.enums.get(name).map(|info| {
@@ -1633,6 +1810,7 @@ impl<'a> Checker<'a> {
                     .map(|variant| Constructor {
                         name: variant.name.clone(),
                         bool_value: None,
+                        tuple: false,
                         field_types: variant
                             .fields
                             .iter()
@@ -1641,6 +1819,12 @@ impl<'a> Checker<'a> {
                     })
                     .collect()
             }),
+            Type::Tuple(elements) => Some(vec![Constructor {
+                name: String::new(),
+                bool_value: None,
+                tuple: true,
+                field_types: elements.clone(),
+            }]),
             _ => None,
         }
     }
@@ -1694,6 +1878,36 @@ impl<'a> Checker<'a> {
                             ));
                             Type::Any
                         }),
+                    Type::Tuple(elements) => {
+                        let element = name
+                            .parse::<usize>()
+                            .ok()
+                            .and_then(|index| elements.get(index))
+                            .cloned();
+                        match element {
+                            Some(element) => {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        "E0306",
+                                        "tuples are immutable and their elements cannot be assigned",
+                                        target.span,
+                                    )
+                                    .with_help(
+                                        "build a new tuple instead, or use a struct for mutable fields",
+                                    ),
+                                );
+                                element
+                            }
+                            None => {
+                                self.diagnostics.push(Diagnostic::error(
+                                    "E0304",
+                                    format!("tuple `{base_ty}` has no element `{name}`"),
+                                    target.span,
+                                ));
+                                Type::Any
+                            }
+                        }
+                    }
                     Type::Any => Type::Any,
                     other => {
                         self.diagnostics.push(Diagnostic::error(
@@ -1888,6 +2102,41 @@ impl<'a> Checker<'a> {
                     Box::new(expected_key.or(key_ty).unwrap_or(Type::Any)),
                     Box::new(expected_value.or(value_ty).unwrap_or(Type::Any)),
                 )
+            }
+            ExprKind::Tuple(elements) => {
+                let expected_elements = match expected {
+                    Some(Type::Tuple(types)) if types.len() == elements.len() => Some(types),
+                    _ => None,
+                };
+                if let Some(expected_ty) = expected
+                    && let Type::Tuple(types) = expected_ty
+                    && types.len() != elements.len()
+                {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E0301",
+                            format!(
+                                "tuple literal has {} element(s), but expected `{expected_ty}`",
+                                elements.len()
+                            ),
+                            expr.span,
+                        )
+                        .with_help("write a tuple with the expected number of elements"),
+                    );
+                }
+                let mut types = Vec::with_capacity(elements.len());
+                for (index, element) in elements.iter().enumerate() {
+                    let expected_element = expected_elements.and_then(|types| types.get(index));
+                    let ty = self.check_expr(element, expected_element);
+                    if let Some(expected_element) = expected_element {
+                        self.expect(&ty, expected_element, element.span, " in tuple element");
+                    }
+                    // Adopt the expected element type, as list and map
+                    // literals do, so an enclosing parameter, return, or
+                    // binding check does not report the same mismatch twice.
+                    types.push(expected_element.cloned().unwrap_or(ty));
+                }
+                Type::Tuple(types)
             }
             ExprKind::Try { expr: inner } => {
                 if !try_allowed {
@@ -2130,6 +2379,36 @@ impl<'a> Checker<'a> {
                             ));
                             Type::Any
                         }),
+                    Type::Tuple(elements) => match name.parse::<usize>() {
+                        Ok(index) if index < elements.len() => elements[index].clone(),
+                        Ok(index) => {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E0304",
+                                    format!("tuple `{base_ty}` has no element at index {index}"),
+                                    expr.span,
+                                )
+                                .with_help(format!(
+                                    "the valid indices are 0 through {}",
+                                    elements.len().saturating_sub(1)
+                                )),
+                            );
+                            Type::Any
+                        }
+                        Err(_) => {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E0304",
+                                    format!("tuple `{base_ty}` has no field `{name}`"),
+                                    expr.span,
+                                )
+                                .with_help(
+                                    "tuple elements are accessed by numeric index, such as `.0`",
+                                ),
+                            );
+                            Type::Any
+                        }
+                    },
                     Type::Any => Type::Any,
                     Type::Enum(name) => {
                         self.diagnostics.push(
@@ -2149,7 +2428,7 @@ impl<'a> Checker<'a> {
                                 format!("type `{other}` has no fields"),
                                 expr.span,
                             )
-                            .with_help("field access requires a struct value"),
+                            .with_help("field access requires a struct or tuple value"),
                         );
                         Type::Any
                     }
@@ -3322,6 +3601,27 @@ mod tests {
     fn rejects_type_mismatch() {
         let diagnostics = check_errors("let x: Int = \"hello\"\n");
         assert!(diagnostics.items.iter().any(|d| d.code == "E0301"));
+    }
+
+    #[test]
+    fn tuple_element_mismatch_is_reported_once() {
+        for source in [
+            "fn f(p: (Int, Str)):\n    print(p)\n\nfn main():\n    f((1, 2))\n",
+            "fn main():\n    let (a, b): (Int, Str) = (1, 2)\n    print(a)\n",
+        ] {
+            let diagnostics = check_errors(source);
+            let mismatches: Vec<_> = diagnostics
+                .items
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "E0301")
+                .collect();
+            assert_eq!(mismatches.len(), 1, "{:?}", diagnostics.items);
+            assert!(
+                mismatches[0].message.contains("tuple element"),
+                "{:?}",
+                mismatches[0]
+            );
+        }
     }
 
     #[test]

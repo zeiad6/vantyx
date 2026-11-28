@@ -134,8 +134,10 @@ Other limits:
   half remains blocked.
 - `vantyx ai chat` does not expose a live tool-calling loop; tool-calling is
   covered by offline library and agent tests.
-- The CLI reports retryable errors but does not run an automatic retry loop;
-  the harness performs bounded retries.
+- The CLI now runs automatic bounded retries (default 2, hard maximum 8,
+  ADR-0058) for retryable provider failures. The observations above predate that
+  change, so a single 429 was reported immediately at the time. The live harness
+  keeps its own bounded loop for checks that need a fresh process per attempt.
 - Observed first-byte latency was 1,976 ms in the 19:26Z run and 14,958 ms in
   the 20:59Z run; these are single observations, not a throughput benchmark.
 - Gemini 2.5 chat models returned a deprecation/404 response for some names, and

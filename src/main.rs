@@ -418,16 +418,30 @@ fn collect_names(state: &mut ReplState, program: &vantyx::ast::Program, offset: 
                     state.names.push(variant.name.clone());
                 }
             }
-            Item::Stmt(stmt) if stmt.span.start >= offset => {
-                if let StmtKind::Let { name, .. } = &stmt.kind {
-                    state.names.push(name.clone());
+            Item::Stmt(stmt) if stmt.span.start >= offset => match &stmt.kind {
+                StmtKind::Let { name, .. } => state.names.push(name.clone()),
+                StmtKind::LetPattern { pattern, .. } => {
+                    collect_let_pattern_names(pattern, &mut state.names);
                 }
-            }
+                _ => {}
+            },
             _ => {}
         }
     }
     state.names.sort();
     state.names.dedup();
+}
+
+fn collect_let_pattern_names(pattern: &vantyx::ast::LetPattern, names: &mut Vec<String>) {
+    match pattern {
+        vantyx::ast::LetPattern::Name { name, .. } => names.push(name.clone()),
+        vantyx::ast::LetPattern::Wildcard { .. } => {}
+        vantyx::ast::LetPattern::Tuple { elements, .. } => {
+            for element in elements {
+                collect_let_pattern_names(element, names);
+            }
+        }
+    }
 }
 
 fn handle_meta(command: &str, state: &ReplState, editor: &Editor, out: &mut dyn Write) {

@@ -28,6 +28,8 @@ pub struct Extraction {
     pub value: Json,
     /// Total provider calls, including the initial call and repairs.
     pub attempts: u32,
+    /// Automatic provider retries accumulated across every attempt.
+    pub retries: u32,
     pub model: String,
     pub finish_reason: FinishReason,
     /// Usage accumulated across every attempt.
@@ -40,6 +42,7 @@ impl Extraction {
         Json::object([
             ("value", self.value.clone()),
             ("attempts", Json::from(u64::from(self.attempts))),
+            ("retries", Json::from(u64::from(self.retries))),
             ("model", Json::from(self.model.clone())),
             (
                 "finish_reason",
@@ -116,10 +119,12 @@ pub fn extract(
     request.validate()?;
 
     let mut usage = Usage::default();
+    let mut retries: u32 = 0;
     let mut last_error = None;
     for attempt in 0..=max_repair_attempts {
         budget.check_time()?;
         let response = provider.chat(&request, budget)?;
+        retries = retries.saturating_add(provider.last_retry_count());
         usage.prompt_tokens = usage
             .prompt_tokens
             .saturating_add(response.usage.prompt_tokens);
@@ -165,6 +170,7 @@ pub fn extract(
                 return Ok(Extraction {
                     value: parsed,
                     attempts: attempt as u32 + 1,
+                    retries,
                     model: response.model,
                     finish_reason: response.finish_reason,
                     usage,

@@ -7,10 +7,13 @@ Vantyx uses **gradual typing**: static checking where types are known, runtime v
 ```
 Int, Float, Bool, Str, Unit, Any
 List[T], Map[K, V]
+(T, U, ...), (T,)
 Struct(Name), Enum(Name)
 ```
 
 `Any` is the top dynamic type. It is not a union; it means "unknown until runtime". Operations on `Any` are compiled to checked dynamic operations.
+
+A tuple type is structural and fixed-arity. `(T,)` is a one-element tuple; the empty type `()` resolves to `Unit`, and a zero-element tuple value does not exist. Tuples are immutable, so they are covariant: `(Int, Str)` is assignable to `(Any, Any)` and to `(Int, Any)`, but not to `(Str, Int)` or to a tuple of a different arity.
 
 ## Inference rules (v0.1)
 
@@ -29,12 +32,15 @@ Struct(Name), Enum(Name)
 - Integer range patterns require an `Int` or `Any` scrutinee (`E0301`); an empty range is `E0318`. Ranges are refutable and never contribute exhaustiveness, so `Int` matches still require `_`. See [ADR-0022](decisions/ADR-0022-range-patterns.md).
 - Nested payload patterns are checked recursively against their field types. Bindings from every nesting level join the arm scope, and duplicate names are `E0202`. Exhaustiveness uses a pattern matrix over finite constructors: every variant and every nested payload shape must be covered, or a `_` arm must be present. See [ADR-0019](decisions/ADR-0019-nested-patterns.md).
 - Match-expression arms must agree on one type; otherwise `E0301`.
-- Indexing: `List[T] → T`, `Str → Str`, `Map[K,V] → V`.
-- Field access requires a struct type; on `Any` it is dynamic. Enum values have no fields; use `match`.
+- Tuple literals infer one type per position and adopt an expected tuple type element by element. A mismatched arity is `E0301`. Tuple element access `.N` yields the `N`-th element type; an out-of-range or non-numeric field is `E0304`.
+- `let`/`var` destructuring requires a tuple initializer of the same arity, or `Any`. Each name receives its element type, and nested tuple patterns destructure recursively. A non-tuple initializer is `E0301`; an `Any` initializer is checked at runtime and raises `R0005` on a shape mismatch.
+- Tuple patterns are checked position by position against the matched tuple type. A tuple type has one fixed-arity constructor, so an all-binding/all-wildcard tuple pattern is irrefutable; a tuple pattern containing a literal or range is refutable and must be covered by later arms or `_` (`E0316`). See [ADR-0059](decisions/ADR-0059-tuple-types-and-destructuring.md).
+- Indexing: `List[T] → T`, `Str → Str`, `Map[K,V] → V`. Tuples use `.N`, not `[]`.
+- Field access requires a struct or tuple type; on `Any` it is dynamic. Enum values have no fields; use `match`.
 
 ## Soundness boundary
 
-Static types are trusted. At every boundary where an `Any` value enters a typed position (annotated binding, parameter, return, struct field, or enum payload), the runtime validates the value. Therefore a well-typed program cannot observe a value of the wrong type without a runtime error. Conformance tracks both container identity and the expected type, so a cyclic value cannot satisfy a mismatched recursive type merely by being revisited; a revisit under a different expected type is rejected.
+Static types are trusted. At every boundary where an `Any` value enters a typed position (annotated binding, parameter, return, struct field, or enum payload), the runtime validates the value. Therefore a well-typed program cannot observe a value of the wrong type without a runtime error. Conformance tracks both container identity and the expected type, so a cyclic value cannot satisfy a mismatched recursive type merely by being revisited; a revisit under a different expected type is rejected. Tuple conformance is element-wise and recursive: a `(List[Int], Str)` check validates both the tuple arity and each element, and a successful check tightens nested container contracts.
 
 Lists and maps also carry element, key, and value contracts. A successful validation strengthens an `Any` contract to the validated type, recursively through nested containers, structs, and enum payloads. The contract is permanent: mutations through any alias, including an `Any` or `List[Any]` alias, are checked against it, and `push`, list index assignment, and map key/value assignment raise `R0005` on a mismatch. `List[Any]` and `Map[Any, Any]` that never crossed a typed boundary remain fully dynamic. Because strengthening is one-way, a write that the dynamic alias's static type permits can be rejected after another alias validated the container; that is a runtime type error, not silent corruption. See [ADR-0057](decisions/ADR-0057-container-element-contracts.md).
 
@@ -45,10 +51,11 @@ Lists and maps also carry element, key, and value contracts. A successful valida
 - Function parameters are immutable bindings.
 - Struct fields and collection contents are mutable through any binding; this is documented reference semantics. A typed container's element, key, and value contract still applies to writes through dynamic aliases (ADR-0057).
 - Enum values are immutable: variant and payload slots cannot be reassigned. Payload values that are references keep their normal mutability and aliasing.
+- Tuple values are immutable: element slots cannot be reassigned (`E0306`; runtime `R0010` through `Any`). Element values that are references keep their normal mutability and aliasing, and `var` only permits rebinding the whole tuple.
 
 ## Native subset
 
-The native backend only accepts statically known types it can represent: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]`, `Map[K, V]`, nominal structs, and nominal enums. `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, `match` on `Any`, and unannotated value-returning functions are rejected with `E0401` rather than dynamically checked. List/string indexing, map indexing, key iteration, and `match` over closed enums and scalar literals or integer ranges with nested payload patterns, top-level or-patterns, and optional guards are supported for the static subset. Gradual programs that need `Any` must run under the interpreter. See [ADR-0020](decisions/ADR-0020-native-nested-patterns.md) and [ADR-0021](decisions/ADR-0021-native-or-patterns.md).
+The native backend only accepts statically known types it can represent: `Unit`, `Int`, `Float`, `Bool`, `Str`, `List[T]`, `Map[K, V]`, nominal structs, and nominal enums. `Any`, `List[Any]`, `Map[Any, *]`, `Any` enum payloads, tuple types and tuple constructs, `match` on `Any`, and unannotated value-returning functions are rejected with `E0401` rather than dynamically checked. List/string indexing, map indexing, key iteration, and `match` over closed enums and scalar literals or integer ranges with nested payload patterns, top-level or-patterns, and optional guards are supported for the static subset. Gradual programs that need `Any` must run under the interpreter. See [ADR-0020](decisions/ADR-0020-native-nested-patterns.md) and [ADR-0021](decisions/ADR-0021-native-or-patterns.md).
 
 ## Planned
 

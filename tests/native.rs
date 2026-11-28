@@ -5839,3 +5839,41 @@ fn file_error_headlines_match_interpreter() {
         "error[R0015]: directory `.` contains a name that is not valid UTF-8"
     );
 }
+
+#[test]
+fn tuple_constructs_are_rejected_with_e0401() {
+    for (name, source) in [
+        (
+            "tuple-literal-unsupported",
+            "fn main():\n    let pair = (1, 2)\n    print(pair.0)\n",
+        ),
+        (
+            "tuple-annotation-unsupported",
+            "fn main():\n    let pair: (Int, Int) = (1, 2)\n    print(pair.0)\n",
+        ),
+        (
+            "tuple-destructure-unsupported",
+            "fn main():\n    let (a, b) = (1, 2)\n    print(a, b)\n",
+        ),
+        (
+            "tuple-parameter-unsupported",
+            "fn first(pair: (Int, Int)) -> Int:\n    return pair.0\n\nfn main():\n    print(first((1, 2)))\n",
+        ),
+        (
+            "tuple-return-unsupported",
+            "fn pair() -> (Int, Int):\n    return (1, 2)\n\nfn main():\n    print(pair())\n",
+        ),
+        (
+            "tuple-global-destructure-unsupported",
+            "let (a, b) = (1, 2)\n\nfn main():\n    print(a, b)\n",
+        ),
+    ] {
+        let Some(engines) = run_engines(name, source) else {
+            return;
+        };
+        assert_eq!(engines.build.status.code(), Some(1), "{name}");
+        let stderr = String::from_utf8_lossy(&engines.build.stderr);
+        assert!(stderr.contains("error[E0401]"), "{name}: {stderr}");
+        assert!(stderr.contains("tuple"), "{name}: {stderr}");
+    }
+}

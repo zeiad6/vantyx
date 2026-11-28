@@ -15,6 +15,7 @@ use super::provider::{
     Message, Provider, ProviderCapabilities, ResponseFormat, Role, ToolCall, Usage,
 };
 use super::redact;
+use super::retry::retry_after_from_header;
 use super::sse::{SseEvent, SseParser};
 use super::tokens::{
     check_context_limit, estimate_embedding_tokens, estimate_request_tokens, estimate_tokens,
@@ -110,17 +111,26 @@ impl OpenAiProvider {
     }
 
     fn status_error(&self, response: &HttpResponse) -> AiError {
-        self.status_error_body(response.status, &response.body)
+        self.status_error_body_with_retry_after(
+            response.status,
+            &response.body,
+            retry_after_from_header(response.header("retry-after")),
+        )
     }
 
-    fn status_error_body(&self, status: u16, body: &str) -> AiError {
+    fn status_error_body_with_retry_after(
+        &self,
+        status: u16,
+        body: &str,
+        retry_after: Option<Duration>,
+    ) -> AiError {
         let detail = redact::sanitize(&provider_detail(body), &self.secrets(), 512);
         let suffix = if detail.is_empty() {
             String::new()
         } else {
             format!(": {detail}")
         };
-        match status {
+        let error = match status {
             401 | 403 => AiError::new(
                 AI_E_AUTH,
                 format!("provider authentication failed (HTTP {status}){suffix}"),
@@ -143,6 +153,11 @@ impl OpenAiProvider {
                 AI_E_PROVIDER,
                 format!("provider returned HTTP {status}{suffix}"),
             ),
+        };
+        if error.retryable {
+            error.with_retry_after(retry_after)
+        } else {
+            error
         }
     }
 
@@ -306,6 +321,10 @@ impl Provider for OpenAiProvider {
         self.capabilities
     }
 
+    fn models(&self) -> Result<Vec<String>, AiError> {
+        OpenAiProvider::models(self)
+    }
+
     fn chat(&self, request: &ChatRequest, budget: &mut Budget) -> Result<ChatResponse, AiError> {
         request.validate()?;
         self.check_capabilities(request)?;
@@ -427,13 +446,20 @@ impl Provider for OpenAiProvider {
 
         let status = Cell::new(0_u16);
         let failed = Cell::new(false);
+        let retry_after = Cell::new(None);
         let mut error_body = String::new();
         let mut parser = SseParser::default();
         let secrets = self.secrets();
         let mut state = ChatStreamState::new(&request.model, on_delta, &secrets);
-        let mut on_start = |response_status: u16, _headers: &[(String, String)]| {
+        let mut on_start = |response_status: u16, headers: &[(String, String)]| {
             status.set(response_status);
             failed.set(!(200..300).contains(&response_status));
+            retry_after.set(
+                headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("retry-after"))
+                    .and_then(|(_, value)| retry_after_from_header(Some(value))),
+            );
             Ok(())
         };
         let mut on_chunk = |chunk: &[u8]| {
@@ -469,7 +495,11 @@ impl Provider for OpenAiProvider {
             &mut handlers,
         )?;
         if failed.get() {
-            return Err(self.status_error_body(status.get(), &error_body));
+            return Err(self.status_error_body_with_retry_after(
+                status.get(),
+                &error_body,
+                retry_after.get(),
+            ));
         }
         let events = parser.finish().map_err(|error| {
             AiError::new(
@@ -1390,6 +1420,24 @@ mod tests {
         let error = provider.chat(&request, &mut budget).unwrap_err();
         assert_eq!(error.code, AI_E_RATE_LIMIT);
         assert!(error.retryable);
+    }
+
+    #[test]
+    fn attaches_retry_after_only_to_retryable_statuses() {
+        let provider = make_provider(200, response_body());
+        let delay = Some(Duration::from_secs(3));
+
+        let error = provider.status_error_body_with_retry_after(429, "", delay);
+        assert_eq!(error.code, AI_E_RATE_LIMIT);
+        assert_eq!(error.retry_after, delay);
+
+        let error = provider.status_error_body_with_retry_after(503, "", delay);
+        assert_eq!(error.code, AI_E_PROVIDER);
+        assert_eq!(error.retry_after, delay);
+
+        let error = provider.status_error_body_with_retry_after(401, "", delay);
+        assert_eq!(error.code, AI_E_AUTH);
+        assert_eq!(error.retry_after, None);
     }
 
     #[test]

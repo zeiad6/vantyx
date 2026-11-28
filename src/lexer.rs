@@ -445,6 +445,12 @@ impl<'a> Lexer<'a> {
     fn lex_number(&mut self) {
         let start = self.pos;
         let mut is_float = false;
+        // After a field-access dot the digits are a tuple index, so `.0.1`
+        // must lex as `.0` then `.1` rather than as the float `0.1`.
+        let after_dot = matches!(
+            self.tokens.last().map(|token| &token.kind),
+            Some(TokenKind::Dot)
+        );
 
         if self.peek() == Some('0')
             && let Some(prefix) = self.peek_n(1)
@@ -505,7 +511,8 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        if self.peek() == Some('.')
+        if !after_dot
+            && self.peek() == Some('.')
             && let Some(next) = self.peek_n(1)
             && next.is_ascii_digit()
         {
@@ -520,7 +527,8 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        if matches!(self.peek(), Some('e') | Some('E')) && self.looks_like_exponent() {
+        if !after_dot && matches!(self.peek(), Some('e') | Some('E')) && self.looks_like_exponent()
+        {
             is_float = true;
             self.bump(); // e/E
             if matches!(self.peek(), Some('+') | Some('-')) {
@@ -866,6 +874,38 @@ mod tests {
                 TokenKind::Int(255),
                 TokenKind::Int(5),
                 TokenKind::Int(1000),
+                TokenKind::Newline,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_nested_tuple_indices_as_separate_dots() {
+        let got = kinds("pair.0.1\n");
+        assert_eq!(
+            got,
+            vec![
+                TokenKind::Ident("pair".into()),
+                TokenKind::Dot,
+                TokenKind::Int(0),
+                TokenKind::Dot,
+                TokenKind::Int(1),
+                TokenKind::Newline,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn still_lexes_floats_after_ordinary_numbers() {
+        let got = kinds("2.5 3.0e2 1.25\n");
+        assert_eq!(
+            got,
+            vec![
+                TokenKind::Float(2.5),
+                TokenKind::Float(300.0),
+                TokenKind::Float(1.25),
                 TokenKind::Newline,
                 TokenKind::Eof,
             ]
