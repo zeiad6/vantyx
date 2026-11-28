@@ -2063,6 +2063,21 @@ impl<'a> Interpreter<'a> {
                     )),
                 }
             }
+            "remove" => {
+                self.arity(name, &args, 2, 2, span)?;
+                match &args[0] {
+                    Value::Map(entries) => {
+                        let mut entries = entries.borrow_mut();
+                        let Some(index) = entries.iter().position(|(key, _)| key.equals(&args[1]))
+                        else {
+                            return Ok(Value::Bool(false));
+                        };
+                        entries.remove(index);
+                        Ok(Value::Bool(true))
+                    }
+                    other => Err(self.type_error(" in `remove`", "`Map`", other, span)),
+                }
+            }
             "sorted" => {
                 self.arity(name, &args, 1, 1, span)?;
                 let Value::List(items) = &args[0] else {

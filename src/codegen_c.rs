@@ -1344,20 +1344,28 @@ impl<'a> Emitter<'a> {
                     unreachable!("ForMap carries a Map type");
                 };
                 let key_ctype = self.ctype(key);
+                let key_desc = self.desc_name(key);
                 let local_name = self.local(name);
                 let map_text = self.expr(map);
                 let map_name = self.fresh("iter_map");
+                let keys_name = self.fresh("iter_keys");
                 let len_name = self.fresh("len");
                 let index_name = self.fresh("idx");
                 self.line(&format!("VantyxMap* {map_name} = {map_text};"));
-                self.line(&format!("int64_t {len_name} = {map_name}->len;"));
+                // Snapshot the keys at loop start, matching the interpreter.
+                // Reading the live entry array would skip entries when the
+                // body removes an earlier key, because removal compacts the
+                // key/value buffers.
+                self.line(&format!(
+                    "VantyxList* {keys_name} = vantyx_map_keys({map_name}, sizeof({key_ctype}), &{key_desc});"
+                ));
+                self.line(&format!("int64_t {len_name} = {keys_name}->len;"));
                 self.line(&format!(
                     "for (int64_t {index_name} = 0; {index_name} < {len_name}; {index_name}++) {{"
                 ));
                 self.indent += 1;
-                self.line(&format!("if ({index_name} >= {map_name}->len) break;"));
                 self.line(&format!(
-                    "{key_ctype} {local_name} = *(({key_ctype}*)vantyx_map_key_unchecked({map_name}, {index_name}));"
+                    "{key_ctype} {local_name} = *(({key_ctype}*)vantyx_list_slot_unchecked({keys_name}, {index_name}));"
                 ));
                 self.line("{");
                 self.indent += 1;
@@ -2222,6 +2230,19 @@ impl<'a> Emitter<'a> {
                 }
                 _ => unreachable!("IR rejected contains on this type"),
             },
+            "remove" => {
+                let IrType::Map(_, _) = &args[0].ty else {
+                    unreachable!("IR rejected remove on this type");
+                };
+                let map_text = self.expr(&args[0]);
+                let key_text = self.expr(&args[1]);
+                let map_name = self.fresh("map");
+                let key_name = self.fresh("key");
+                let key_ctype = self.ctype(&args[1].ty);
+                format!(
+                    "({{ VantyxMap* {map_name} = {map_text}; {key_ctype} {key_name} = {key_text}; vantyx_map_remove({map_name}, &{key_name}); }})"
+                )
+            }
             "sorted" => {
                 let IrType::List(inner) = &args[0].ty else {
                     unreachable!("IR rejected sorted on this type");
@@ -5578,6 +5599,27 @@ static void vantyx_map_set_raw(VantyxMap* map, const void* key, const void* valu
 
 static void* vantyx_map_key_unchecked(VantyxMap* map, int64_t index) {
     return (char*)map->keys + index * map->key_size;
+}
+
+static bool vantyx_map_remove(VantyxMap* map, const void* key) {
+    int64_t index = vantyx_map_find(map, key);
+    if (index < 0) return false;
+    int64_t remaining = map->len - index - 1;
+    if (remaining > 0) {
+        memmove((char*)map->keys + index * map->key_size,
+                (char*)map->keys + (index + 1) * map->key_size,
+                (size_t)(remaining * map->key_size));
+        memmove((char*)map->values + index * map->value_size,
+                (char*)map->values + (index + 1) * map->value_size,
+                (size_t)(remaining * map->value_size));
+    }
+    map->len--;
+    if (map->hashed && map->index_cap > 0) {
+        // Rebuilding is simpler than deleting from the open-addressing table
+        // and keeps every stored entry index valid after the left shift.
+        vantyx_map_index_rehash(map, map->index_cap, 0, 0);
+    }
+    return true;
 }
 
 static VantyxList* vantyx_map_keys(VantyxMap* map, int64_t elem_size,

@@ -1,6 +1,62 @@
 # Active Task
 
-## T-114 — Free nested native display temporaries
+## T-115 — Map key removal
+
+- Status: VERIFIED locally on 2026-11-27; commit pending; CI pending
+- Priority: P1 (standard library: map mutation)
+- Dependencies: T-044 (scalar-key hash index), T-106 (empty-list adoption pattern)
+
+### Implemented
+
+- `src/checker.rs` registers `remove` and checks `Map[K,V]` plus a key
+  assignable to `K`; a direct empty list literal key adopts the map key type.
+- `src/interp.rs` removes the first structurally equal entry from the
+  insertion-ordered vector and returns `Bool`.
+- `src/ir.rs` validates a native `Map` and key type.
+- `src/codegen_c.rs` binds the map and key in source order and adds
+  `vantyx_map_remove`, which compacts the entry buffers, decrements the length,
+  and rebuilds the scalar-key hash index. Native `ForMap` now snapshots the
+  keys with `vantyx_map_keys`, matching the interpreter after removal compacts
+  the entry buffers.
+- `tools/differential_fuzz.py` removes each visited map key in the control
+  shape.
+- `docs/language_specification.md`, `README.md`, `TASKS.md`,
+  `PROJECT_STATUS.md`, and the agent-state files are updated.
+
+### Evidence
+
+- Full gate on 2026-11-27: `cargo fmt --check --all` and
+  `cargo clippy --all-targets -- -D warnings` clean; debug and release builds
+  succeed.
+- `cargo test` — 743 passed (404 library unit + 15 CLI unit + 47 AI
+  integration + 123 e2e + 154 native).
+- Full 154-test native suite passed with `VANTYX_CC=gcc` and under clang
+  AddressSanitizer/UndefinedBehaviorSanitizer with leak detection disabled.
+- All five examples matched interpreter and native output.
+- 9 fuzzer self-tests; 100/100 differential cases on seeds 1 and 2; fuzz smoke
+  reported 9 depth/limit cases and 400 random/mutated inputs.
+- 13 skills validated; 129 relative links in 196 Markdown files resolve.
+- Focused probes covered insertion-order removal, missing keys, aliases,
+  evaluation order, scalar/structural/list keys, `-0.0`/`0.0`, `NaN`,
+  empty-list key adoption, a 500-entry map, nested loops, `break`/`continue`,
+  map-variable reassignment, structural-key mutation after insertion, and the
+  `R0008` error headline after a snapshotted key is removed.
+- The `Any` boundary matches: the interpreter raises `R0005` for a dynamic
+  non-map, while native rejects the binding with `E0401`.
+
+### Remaining
+
+- Commit T-115, record the hash, and commit the status sync.
+- Independent review remains unavailable (subagent free-usage limit).
+
+### Scope limits
+
+- One map and one key; no bulk, predicate, or clear operations.
+- Removed keys and values are not reclaimed in v0.1; map buffers do not shrink.
+- Scalar-key removal rebuilds the hash index in O(n); structural-key removal
+  remains linear.
+
+## T-114 — Free nested native display temporaries (completed)
 
 - Status: VERIFIED locally; commit `3617fe3`; CI pending
 - Priority: P1 (native memory efficiency)

@@ -21,6 +21,7 @@ pub const BUILTINS: &[&str] = &[
     "push",
     "pop",
     "contains",
+    "remove",
     "sorted",
     "keys",
     "values",
@@ -2641,6 +2642,35 @@ impl<'a> Checker<'a> {
                         self.diagnostics.push(Diagnostic::error(
                             "E0301",
                             format!("`contains` expects List, Str, or Map, found `{other}`"),
+                            args[0].span,
+                        ));
+                        arg_ty(self, 1, None);
+                    }
+                }
+                Type::Bool
+            }
+            "remove" => {
+                if !arity(self, 2, 2) {
+                    return Type::Bool;
+                }
+                let map_ty = arg_ty(self, 0, None);
+                match &map_ty {
+                    Type::Map(key, _) => {
+                        // The key argument gets the map's key type as its
+                        // expected type, so a direct empty list literal can
+                        // adopt a `List[T]` key type instead of defaulting to
+                        // `List[Any]`, which the native backend cannot
+                        // represent.
+                        let key_ty = arg_ty(self, 1, Some(key));
+                        self.expect(&key_ty, key, args[1].span, " as the key for `remove`");
+                    }
+                    Type::Any => {
+                        arg_ty(self, 1, None);
+                    }
+                    other => {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E0301",
+                            format!("`remove` expects a Map, found `{other}`"),
                             args[0].span,
                         ));
                         arg_ty(self, 1, None);

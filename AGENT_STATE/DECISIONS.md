@@ -862,3 +862,34 @@ file records operational choices.
 - Update the stale docstring count from ten to twelve instead of preserving an
   inaccurate count; the registered generator list is the source of truth.
 - This is verification work: no Rust, language, or native behavior changes.
+
+## T-115 — Map key removal
+
+- Add `remove` as a builtin instead of introducing methods or a new map type.
+  Builtins are the existing map mutation surface (`push`, `pop`, `keys`,
+  `values`, `contains`), and the checker already centralizes their arity and
+  type rules.
+- Return `Bool` instead of raising `R0008` for a missing key. `contains` is the
+  probe, removal is an action, and a missing key is a normal negative result;
+  callers can distinguish "removed" from "absent" without a try/catch-shaped
+  API that v0.1 does not have.
+- Remove the first structurally equal entry and preserve insertion order. Maps
+  are insertion-ordered in both engines, so compaction is the only behavior
+  that keeps iteration and `keys`/`values` consistent.
+- Rebuild the scalar-key hash index after compaction rather than deleting from
+  the open-addressing table in place. The rebuild is O(n), but it is simple and
+  cannot leave stale entry indices after the left shift. Structural-key maps
+  remain linear and need no index.
+- Let a direct empty list literal key adopt the map's key type, matching the
+  existing `contains`/`push` adoption rule and avoiding `List[Any]`, which the
+  native backend rejects.
+- Do not free removed keys or values and do not shrink the entry buffers.
+  v0.1 has no ownership or liveness analysis, and aliases may still reference
+  those values; reclamation remains a separate architectural task.
+- Snapshot map keys at native `for` loop start instead of reading the live
+  entry buffer. The interpreter already snapshots the key vector; reading live
+  entries after `remove` compacts the buffers would skip the key that moved
+  into the removed slot. `vantyx_map_keys` copies the key buffer, so removal
+  during iteration visits every key from the original sequence, including a
+  key removed later in the loop. Indexing such a removed key still raises
+  `R0008`, as it does in the interpreter.

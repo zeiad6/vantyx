@@ -75,7 +75,8 @@ fn main():
 The v0.1 language includes functions, recursion, `if`/`elif`/`else`, `while`,
 `for` over lists, strings, and maps, structs with reference semantics, closed
 enums with payloads, exhaustive `match` with literals and guards, `List[T]`,
-`Map[K,V]`, string interpolation, and file-based modules. Top-level or-patterns
+`Map[K,V]` with `keys`, `values`, `contains`, and `remove`, string interpolation,
+and file-based modules. Top-level or-patterns
 such as `Circle(size) | Square(size)` share one binding set across alternatives,
 nested payload patterns such as `Node(Leaf(value), _)` are checked by a
 recursive pattern matrix and lowered natively with short-circuit tag tests, and
@@ -569,8 +570,9 @@ or CI result without checking the recorded evidence there and in
 
 ## Known limits
 
-- No generics, traits, closures, iterators, `Result`/`?`, async, concurrency,
-  FFI, or package manager.
+- No generics, traits, closures, iterators, general `Result`/`Option` library
+  types, async, concurrency, FFI, or package manager. Postfix `?` propagation
+  exists only in statement positions for nominal two-variant result enums.
 - No tuple patterns. Nested payload patterns, top-level or-patterns, and
   integer range patterns (`low..high`, `low..=high`) run in both the
   interpreter and native builds.

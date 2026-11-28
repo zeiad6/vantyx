@@ -3,6 +3,16 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
+- T-115 — Map key removal (2026-11-27; verified locally; commit pending; CI
+  pending; 743-test gate; `remove(map, key) -> Bool` removes the first
+  structurally equal entry, preserves insertion order, returns `false` for a
+  missing key, evaluates both arguments left to right exactly once, adopts a
+  `List[T]` key type for a direct empty list literal, and supports scalar,
+  struct, enum, and list keys; native compacts the entry buffers and rebuilds
+  the scalar-key hash index, and snapshots keys for `for k in map`; five e2e
+  and two native tests; `E0301`/`E0302`/`R0005` and native `E0401` boundaries;
+  control-flow fuzz shape removes each visited key; GCC native 154, sanitized
+  native 154, 100/100 fuzz on seeds 1 and 2).
 - T-114 — Free nested native display temporaries (2026-11-27; verified
   locally; commit `3617fe3`; CI pending; 736-test gate; list, map, struct, and
   enum display bind each rendered element, key, value, and field, append it,

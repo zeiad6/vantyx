@@ -2590,6 +2590,24 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
+            "remove" => {
+                if lowered.len() != 2 {
+                    return Err(IrError::internal("`remove` arity was not validated", span));
+                }
+                let IrType::Map(key, _) = &lowered[0].ty else {
+                    return Err(IrError::unsupported(
+                        format!(
+                            "native `remove` requires a Map, found `{}`",
+                            lowered[0].ty.name()
+                        ),
+                        span,
+                        "run this program with `vantyx run`",
+                    ));
+                };
+                let key_ty = (**key).clone();
+                self.expect_assignable(&lowered[1].ty, &key_ty, args[1].value.span)?;
+                IrType::Bool
+            }
             "sorted" => {
                 if lowered.len() != 1 {
                     return Err(IrError::internal("`sorted` arity was not validated", span));

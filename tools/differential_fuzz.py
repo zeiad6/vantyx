@@ -851,11 +851,14 @@ fn main():
     print(matched)
     let m: Map[Str, Int] = {{"a": 1, "b": 2, "c": 3}}
     var keysum = 0
+    var removed = 0
     for k in m:
-        if k == "b":
-            continue
         keysum += m[k]
+        if remove(m, k):
+            removed += 1
     print(keysum)
+    print(removed)
+    print(m)
     let pair = Pair({left}, {right})
     pair.left += {delta}
     pair.right *= 2

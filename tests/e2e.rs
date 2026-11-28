@@ -278,6 +278,163 @@ fn float_min_max_ties_and_nan_are_stable() {
 }
 
 #[test]
+fn map_remove_deletes_entries_in_insertion_order() {
+    let run = run_file(
+        "map_remove",
+        "fn main():\n\
+         \x20   var m: Map[Str, Int] = {\"a\": 1, \"b\": 2, \"c\": 3}\n\
+         \x20   print(remove(m, \"b\"))\n\
+         \x20   print(m, len(m), keys(m), values(m))\n\
+         \x20   print(remove(m, \"missing\"))\n\
+         \x20   print(m, len(m))\n\
+         \x20   m[\"b\"] = 9\n\
+         \x20   print(m)\n\
+         \x20   let alias: Map[Str, Int] = m\n\
+         \x20   print(remove(alias, \"a\"), m, alias, len(m))\n\
+         \x20   print(remove(m, \"c\"), remove(m, \"b\"), remove(m, \"c\"))\n\
+         \x20   print(m, len(m), keys(m), values(m))\n\
+         \x20   let left: Map[Str, Int] = {\"a\": 1, \"b\": 2}\n\
+         \x20   remove(left, \"a\")\n\
+         \x20   let right: Map[Str, Int] = {\"b\": 2}\n\
+         \x20   print(left == right)\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "true\n\
+         {\"a\": 1, \"c\": 3} 2 [\"a\", \"c\"] [1, 3]\n\
+         false\n\
+         {\"a\": 1, \"c\": 3} 2\n\
+         {\"a\": 1, \"c\": 3, \"b\": 9}\n\
+         true {\"c\": 3, \"b\": 9} {\"c\": 3, \"b\": 9} 2\n\
+         true true false\n\
+         {} 0 [] []\n\
+         true\n"
+    );
+}
+
+#[test]
+fn map_remove_during_iteration_uses_a_key_snapshot() {
+    // `for k in map` snapshots the key sequence at loop start, so removing an
+    // earlier key does not skip the next key. A key removed later in the
+    // iteration is still visited because it was in the snapshot.
+    let run = run_file(
+        "map_remove_iteration",
+        "fn main():\n\
+         \x20   var m: Map[Str, Int] = {\"a\": 1, \"b\": 2, \"c\": 3, \"d\": 4}\n\
+         \x20   for k in m:\n\
+         \x20       print(\"visit\", k, len(m))\n\
+         \x20       if k == \"b\":\n\
+         \x20           remove(m, \"d\")\n\
+         \x20           remove(m, \"a\")\n\
+         \x20   print(m, len(m), keys(m), values(m))\n\
+         \x20   var n: Map[Int, Int] = {1: 1, 2: 2, 3: 3}\n\
+         \x20   for k in n:\n\
+         \x20       remove(n, k)\n\
+         \x20   print(n, len(n))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "visit a 4\n\
+         visit b 4\n\
+         visit c 2\n\
+         visit d 2\n\
+         {\"b\": 2, \"c\": 3} 2 [\"b\", \"c\"] [2, 3]\n\
+         {} 0\n"
+    );
+}
+
+#[test]
+fn map_remove_supports_scalar_and_structural_keys() {
+    let run = run_file(
+        "map_remove_keys",
+        "struct Key:\n\
+         \x20   n: Int\n\n\
+         fn main():\n\
+         \x20   var ints: Map[Int, Str] = {1: \"one\", 2: \"two\"}\n\
+         \x20   print(remove(ints, 1), ints)\n\
+         \x20   var floats: Map[Float, Str] = {-0.0: \"zero\", 1.5: \"one\"}\n\
+         \x20   print(remove(floats, 0.0), floats)\n\
+         \x20   var bools: Map[Bool, Int] = {true: 1, false: 2}\n\
+         \x20   print(remove(bools, false), bools)\n\
+         \x20   var structs: Map[Key, Str] = {Key(1): \"one\", Key(2): \"two\"}\n\
+         \x20   print(remove(structs, Key(1)), structs)\n\
+         \x20   var lists: Map[List[Int], Str] = {[1, 2]: \"a\", []: \"empty\"}\n\
+         \x20   print(remove(lists, []), lists)\n\
+         \x20   var big: Map[Int, Int] = {}\n\
+         \x20   var i: Int = 0\n\
+         \x20   while i < 500:\n\
+         \x20       big[i] = i\n\
+         \x20       i = i + 1\n\
+         \x20   var j: Int = 0\n\
+         \x20   while j < 500:\n\
+         \x20       if j % 2 == 0:\n\
+         \x20           remove(big, j)\n\
+         \x20       j = j + 1\n\
+         \x20   print(len(big), big[1], contains(big, 0), contains(big, 2))\n\
+         \x20   print(remove(big, 499), len(big), keys(big)[0], values(big)[0])\n\
+         \x20   print(remove(big, 499), len(big))\n",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "true {2: \"two\"}\n\
+         true {1.5: \"one\"}\n\
+         true {true: 1}\n\
+         true {Key(n=2): \"two\"}\n\
+         true {[1, 2]: \"a\"}\n\
+         250 1 false false\n\
+         true 249 1 1\n\
+         false 249\n"
+    );
+}
+
+#[test]
+fn map_remove_rejects_non_maps_and_wrong_key_types() {
+    let non_map = check_file("remove_non_map", "fn main():\n    remove([1], 1)\n");
+    assert_eq!(non_map.code, 1);
+    assert!(
+        non_map.stderr.contains("error[E0301]"),
+        "{}",
+        non_map.stderr
+    );
+
+    let wrong_key = check_file(
+        "remove_wrong_key",
+        "fn main():\n    remove({1: \"a\"}, \"1\")\n",
+    );
+    assert_eq!(wrong_key.code, 1);
+    assert!(
+        wrong_key.stderr.contains("error[E0301]"),
+        "{}",
+        wrong_key.stderr
+    );
+
+    let arity = check_file("remove_arity", "fn main():\n    remove({1: \"a\"})\n");
+    assert_eq!(arity.code, 1);
+    assert!(arity.stderr.contains("error[E0302]"), "{}", arity.stderr);
+
+    let extra = check_file(
+        "remove_arity_extra",
+        "fn main():\n    remove({1: \"a\"}, 1, 2)\n",
+    );
+    assert_eq!(extra.code, 1);
+    assert!(extra.stderr.contains("error[E0302]"), "{}", extra.stderr);
+}
+
+#[test]
+fn map_remove_on_dynamic_non_map_is_a_runtime_type_error() {
+    let run = run_file(
+        "remove_dynamic_non_map",
+        "fn main():\n    let x: Any = 1\n    remove(x, 1)\n",
+    );
+    assert_eq!(run.code, 2, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("error[R0005]"), "{}", run.stderr);
+    assert!(run.stderr.contains("in `remove`"), "{}", run.stderr);
+}
+
+#[test]
 fn print_evaluates_every_argument_before_writing() {
     // All arguments are evaluated, then all are rendered, then one line is
     // written. This makes later-argument mutations visible to the whole line

@@ -4,7 +4,10 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `3617fe3` (T-114); the T-113 status sync is `fc453cf`; the remote remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run 45936065460. T-114 is committed with CI pending.
+- Last commit: `1e406cf` (T-114 status sync); T-115 is verified locally with
+  the 743-test gate and is being committed. The remote remains at `a9a6d1a`;
+  CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run
+  45936065460. T-114 is committed as `3617fe3` with CI pending.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -18,6 +21,28 @@
 - Tag: `v0.1.0` at the rewritten-history commit
 
 ## Current task
+
+T-115 — Map key removal. Status: VERIFIED locally on 2026-11-27; commit
+pending; CI pending. `remove(map, key) -> Bool` deletes the first structurally
+equal entry, preserves insertion order, and returns whether an entry was
+removed. The checker registers the builtin, checks `Map[K,V]` and a key
+assignable to `K`, and lets a direct empty list literal adopt the map's
+`List[T]` key type. The interpreter removes the first matching entry from its
+insertion-ordered vector. The native backend binds the map and key in source
+order, compacts the entry buffers with `memmove`, decrements the length, and
+rebuilds the scalar-key hash index; native `for k in map` now snapshots the
+keys with `vantyx_map_keys`, matching the interpreter and fixing a divergence
+found during verification. Five e2e tests and two native tests cover scalar,
+`-0.0`/`0.0`, `NaN`, `Bool`, struct, and list keys, aliases, missing keys,
+reinsertion, evaluation order, empty-list key adoption, a 500-entry map with
+repeated removal, removal during iteration, `R0005`, `E0301`/`E0302`, and the
+native `E0401` boundary. The full gate passed: 743 tests (404 library unit + 15
+CLI unit + 47 AI integration + 123 e2e + 154 native), GCC native 154,
+sanitized native 154, fmt/clippy/builds clean, all five examples matched, 9
+fuzzer self-tests, 100/100 differential cases on seeds 1 and 2, fuzz smoke,
+13 skills, and 129 links in 196 Markdown files. Independent `qa-verifier`
+review remains unavailable because the provider returned a free-usage limit
+error; no independent result is claimed.
 
 T-114 — Free nested native display temporaries. Status: VERIFIED locally;
 commit `3617fe3`; CI pending. `src/codegen_c.rs` adds owned Bool/Unit display

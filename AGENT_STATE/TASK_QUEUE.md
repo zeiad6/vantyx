@@ -4,6 +4,21 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
+- None.
+
+## Verified locally, commit pending CI
+
+- T-115 — Map key removal. VERIFIED locally on 2026-11-27; commit pending; CI
+  pending. `remove(map, key)` deletes the first structurally equal entry,
+  preserves insertion order, and returns `Bool`; the native backend compacts
+  the entry buffers, rebuilds the scalar-key hash index, and snapshots keys for
+  `for k in map`; five e2e tests and two native tests cover
+  scalar/structural/list keys, aliases, missing keys, evaluation order,
+  empty-list key adoption, removal during iteration, `R0005`, `E0301`/`E0302`,
+  and the native `E0401` boundary; the control-flow fuzz shape removes each
+  visited key; 743-test gate, GCC native 154, sanitized native 154, 100/100
+  fuzz on seeds 1 and 2.
+
 - T-114 — Free nested native display temporaries. VERIFIED locally; commit
   `3617fe3`; CI pending. List, map, struct, and enum display now bind each
   rendered element, key, value, and field, append it, and free it through
@@ -11,8 +26,6 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
   result is heap-owned. Two new native tests; ADR-0054; 736-test gate;
   focused measurement 100k Int peak RSS 6,552 → 3,616 KiB and 50k
   Pair(Bool, Bool) 9,368 → 5,580 KiB.
-
-## Verified locally, commit pending CI
 
 - T-113 — Display-focused differential fuzz shape. VERIFIED locally; commit
   `d8a476d`; CI pending. `tools/differential_fuzz.py` adds a twelfth

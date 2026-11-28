@@ -1251,6 +1251,20 @@ fn dynamic_any_is_rejected_with_e0401() {
 }
 
 #[test]
+fn dynamic_map_remove_is_rejected_with_e0401() {
+    let Some(engines) = run_engines(
+        "remove-any-unsupported",
+        "fn main():\n    let m: Any = {\"a\": 1}\n    print(remove(m, \"a\"))\n",
+    ) else {
+        return;
+    };
+    assert_eq!(engines.build.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&engines.build.stderr);
+    assert!(stderr.contains("error[E0401]"), "{stderr}");
+    assert!(stderr.contains("Any"), "{stderr}");
+}
+
+#[test]
 fn value_return_without_annotation_is_rejected() {
     let Some(engines) = run_engines(
         "unannotated-return",
@@ -1471,6 +1485,57 @@ fn map_mutation_and_iteration_match() {
          \x20   alias[\"d\"] = 4\n\
          \x20   print(counts)\n\
          \x20   print(alias)\n",
+    );
+}
+
+#[test]
+fn map_remove_matches() {
+    assert_same(
+        "map-remove",
+        "struct Key:\n\
+         \x20   n: Int\n\n\
+         var calls: Int = 0\n\n\
+         fn next_key() -> Str:\n\
+         \x20   calls = calls + 1\n\
+         \x20   print(\"key\", calls)\n\
+         \x20   return \"a\"\n\n\
+         fn main():\n\
+         \x20   var m: Map[Str, Int] = {\"a\": 1, \"b\": 2, \"c\": 3}\n\
+         \x20   print(remove(m, \"b\"), m, len(m), keys(m), values(m))\n\
+         \x20   print(remove(m, \"missing\"), m)\n\
+         \x20   let alias: Map[Str, Int] = m\n\
+         \x20   print(remove(alias, \"a\"), m, alias)\n\
+         \x20   m[\"a\"] = 10\n\
+         \x20   print(remove(m, next_key()), calls, m)\n\
+         \x20   var structs: Map[Key, Str] = {Key(1): \"one\", Key(2): \"two\"}\n\
+         \x20   print(remove(structs, Key(1)), structs, remove(structs, Key(9)))\n\
+         \x20   var lists: Map[List[Int], Str] = {[1]: \"a\", []: \"empty\"}\n\
+         \x20   print(remove(lists, []), lists)\n\
+         \x20   var floats: Map[Float, Str] = {-0.0: \"zero\", 1.5: \"one\"}\n\
+         \x20   print(remove(floats, 0.0), floats)\n\
+         \x20   var big: Map[Int, Int] = {}\n\
+         \x20   var i: Int = 0\n\
+         \x20   while i < 500:\n\
+         \x20       big[i] = i * 10\n\
+         \x20       i = i + 1\n\
+         \x20   var j: Int = 0\n\
+         \x20   while j < 500:\n\
+         \x20       if j % 3 == 0:\n\
+         \x20           remove(big, j)\n\
+         \x20       j = j + 1\n\
+         \x20   print(len(big), big[1], big[199], contains(big, 0), contains(big, 3))\n\
+         \x20   print(remove(big, 1), remove(big, 199), len(big), keys(big)[0], values(big)[0])\n\
+         \x20   var iter: Map[Str, Int] = {\"a\": 1, \"b\": 2, \"c\": 3, \"d\": 4}\n\
+         \x20   for k in iter:\n\
+         \x20       print(\"visit\", k, len(iter))\n\
+         \x20       if k == \"b\":\n\
+         \x20           remove(iter, \"d\")\n\
+         \x20           remove(iter, \"a\")\n\
+         \x20   print(iter, len(iter), keys(iter))\n\
+         \x20   let left: Map[Str, Int] = {\"a\": 1, \"b\": 2}\n\
+         \x20   remove(left, \"a\")\n\
+         \x20   let right: Map[Str, Int] = {\"b\": 2}\n\
+         \x20   print(left == right)\n",
     );
 }
 

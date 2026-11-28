@@ -118,11 +118,12 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   734-test gate (CI pending); T-113 display-focused differential fuzz is
   committed in `d8a476d` with the 734-test gate (CI pending); T-114 nested
   native display-temporary reclamation is committed in `3617fe3` with the
-  736-test gate (CI pending)). The
+  736-test gate (CI pending); T-115 map key removal is committed in this
+  change with the 743-test gate (CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
-- `cargo test`: 736 passed (404 library unit + 15 CLI unit + 47 AI integration +
-  118 e2e + 152 native); the full native suite also passes with `VANTYX_CC=gcc`.
+- `cargo test`: 743 passed (404 library unit + 15 CLI unit + 47 AI integration +
+  123 e2e + 154 native); the full native suite also passes with `VANTYX_CC=gcc`.
 - Clippy clean; `cargo fmt --check --all` clean; debug and release builds succeed.
 - CI runs the native differential suite with generated programs compiled under
   AddressSanitizer and UndefinedBehaviorSanitizer via `tools/clang-sanitize.sh`
@@ -164,7 +165,8 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   T-085, ADR-0037). The checker no longer reports a false `E0309` for dead code
   after a reachable `return` (T-074, ADR-0037).
 - Native support: scalars, strings, `List[T]`, `Map[K,V]` with a scalar-key
-  hash index, structs, enums, `match` with nested payload patterns, top-level
+  hash index and `remove(map, key)` with insertion-order-preserving
+  compaction and a key-snapshot `for k in map` (T-115), structs, enums, `match` with nested payload patterns, top-level
   or-patterns, integer range patterns and guards, calls and short-circuit
   expressions in `if`/`elif`/`while` conditions, statement-position result-enum
   `?` propagation, `range(...)` as a `List[Int]` value outside `for` loops
@@ -229,8 +231,9 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   20:59Z using `MY_API_KEY` passed all 21 live checks after one transient 503,
   so cloud access can change and is not guaranteed. Evidence:
   `docs/ai/LIVE_VERIFICATION.md`.
-- Known gaps: no reclamation, O(n) structural-key native maps and a fixed hash
-  seed for scalar keys, no generics/closures/async/FFI, no formatter or LSP,
+- Known gaps: no reclamation, O(n) structural-key native maps, a fixed hash
+  seed for scalar keys, and O(n) scalar-key map-removal index rebuilds, no
+  generics/closures/async/FFI, no formatter or LSP,
   the linter has only four conservative rules with no suppression or fixes,
   basic whole-file I/O,
   single-level and recursive directory operations, lexical glob expansion,
