@@ -3,7 +3,7 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
-- T-117 — List reversal (2026-11-27; verified locally; commit pending; CI
+- T-117 — List reversal (2026-11-27; verified locally; commit `4108974`; CI
   pending; 759-test gate; `reverse(list: List[T]) -> List[T]` returns a new
   shallow-copied list in reverse order for any supported element type, leaves
   the input unchanged, evaluates its argument once, and reports

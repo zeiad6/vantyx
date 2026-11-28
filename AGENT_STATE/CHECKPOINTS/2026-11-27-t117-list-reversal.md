@@ -1,7 +1,7 @@
 # Checkpoint — T-117 list reversal
 
 Date: 2026-11-27
-Status: VERIFIED locally on 2026-11-27; commit pending; CI pending
+Status: VERIFIED locally on 2026-11-27; commit `4108974`; CI pending
 
 ## Objective
 

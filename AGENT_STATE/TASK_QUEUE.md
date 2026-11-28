@@ -4,7 +4,7 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## In progress
 
-- T-117 — List reversal. VERIFIED locally on 2026-11-27; commit pending;
+- T-117 — List reversal. VERIFIED locally on 2026-11-27; commit `4108974`;
   CI pending; 759-test gate (404 library unit + 15 CLI unit + 47 AI integration
   + 132 e2e + 161 native), GCC native 161, sanitized native 161, 100/100 fuzz
   on seeds 1 and 2, examples, fuzz smoke, 13 skills, and 130 links in 199

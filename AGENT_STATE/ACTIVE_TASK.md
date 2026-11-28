@@ -2,7 +2,7 @@
 
 ## T-117 — List reversal
 
-- Status: VERIFIED locally on 2026-11-27; commit pending; CI pending
+- Status: VERIFIED locally on 2026-11-27; commit `4108974`; CI pending
 - Priority: P1 (standard library: list transformation)
 - Dependencies: T-103 (list transformation conventions), T-112 (native list
   representation), T-115 (builtin registration and scope conventions)
@@ -37,7 +37,7 @@
 
 ### Remaining
 
-- Commit T-117 and record the hash in a status-sync commit.
+- Record the status-sync commit.
 - Independent review remains unavailable (subagent free-usage limit).
 
 ### Scope limits

@@ -121,7 +121,7 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   736-test gate (CI pending); T-115 map key removal is committed in `b6f3f11`
   with the 743-test gate (CI pending); T-116 atomic whole-file replacement adds
   `write_file_atomic` with the 754-test gate; commit `3e22628`; CI pending;
-  T-117 list reversal adds `reverse` with the 759-test gate; commit pending;
+  T-117 list reversal adds `reverse` with the 759-test gate; commit `4108974`;
   CI pending). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.

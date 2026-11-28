@@ -13,8 +13,8 @@
 
 ## Last recorded repository state (2026-11-27)
 
-- T-117 is verified locally on 2026-11-27 with the 759-test gate; commit
-  pending. `reverse(list: List[T]) -> List[T]` returns a new shallow-copied
+- T-117 is verified locally on 2026-11-27 with the 759-test gate and committed
+  as `4108974`; CI pending. `reverse(list: List[T]) -> List[T]` returns a new shallow-copied
   list with the elements in reverse order for any supported element type and
   leaves the input unchanged. The checker returns the same `List[T]` element
   type and reports non-lists as `E0301` and wrong arity as `E0302`; the

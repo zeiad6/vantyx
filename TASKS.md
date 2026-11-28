@@ -1172,7 +1172,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-117 — List reversal
 - Priority: P1 (standard library: list transformation)
-- Status: VERIFIED locally on 2026-11-27; commit pending; CI pending
+- Status: VERIFIED locally on 2026-11-27; commit `4108974`; CI pending
 - Description: Lists could be sorted when they held scalars but there was no way to reverse an arbitrary list. Callers had to rebuild one by index, and no builtin covered lists of structs, enums, or nested lists. Add `reverse(list: List[T]) -> List[T]` that returns a new list with the elements in reverse order and leaves the input unchanged.
 - Acceptance: `reverse(list: List[T]) -> List[T]` returns a new list whose elements are the input elements in reverse order; the input list and its length are unchanged; `T` may be any supported element type, including nested lists, maps, structs, and enums; elements are shallow-copied, so nested mutable values remain shared exactly as through any other list copy; the argument is evaluated exactly once and left to right; a non-list argument is `E0301` and wrong arity is `E0302`; a dynamically typed interpreter value that is not a list raises `R0005`, and a dynamically typed native argument is rejected with `E0401`; interpreter and native output, exit code, and first-line runtime diagnostics agree.
 - Dependencies: T-103 (list transformation conventions), T-112 (native list representation), T-115 (builtin registration and scope conventions).
