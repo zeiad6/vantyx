@@ -3,8 +3,8 @@
 Only tasks with an observed verification command and date are listed here.
 See `TASKS.md` for full acceptance criteria and evidence.
 
-- T-115 — Map key removal (2026-11-27; verified locally; commit pending; CI
-  pending; 743-test gate; `remove(map, key) -> Bool` removes the first
+- T-115 — Map key removal (2026-11-27; verified locally; commit `b6f3f11`;
+  CI pending; 743-test gate; `remove(map, key) -> Bool` removes the first
   structurally equal entry, preserves insertion order, returns `false` for a
   missing key, evaluates both arguments left to right exactly once, adopts a
   `List[T]` key type for a direct empty list literal, and supports scalar,

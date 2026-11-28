@@ -13,7 +13,8 @@
 
 ## Last recorded repository state (2026-11-27)
 
-- T-115 is verified locally with the 743-test gate and is being committed.
+- T-115 is verified locally and committed as `b6f3f11` with the 743-test
+  gate; CI pending.
   `remove(map, key) -> Bool` deletes the first structurally equal entry,
   preserves insertion order, and returns whether an entry was removed; missing
   keys return `false`. The native backend binds the map and key in source

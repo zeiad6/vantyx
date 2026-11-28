@@ -8,8 +8,8 @@ Ordered by priority. The orchestrator updates this file after each checkpoint.
 
 ## Verified locally, commit pending CI
 
-- T-115 — Map key removal. VERIFIED locally on 2026-11-27; commit pending; CI
-  pending. `remove(map, key)` deletes the first structurally equal entry,
+- T-115 — Map key removal. VERIFIED locally on 2026-11-27; commit `b6f3f11`;
+  CI pending. `remove(map, key)` deletes the first structurally equal entry,
   preserves insertion order, and returns `Bool`; the native backend compacts
   the entry buffers, rebuilds the scalar-key hash index, and snapshots keys for
   `for k in map`; five e2e tests and two native tests cover

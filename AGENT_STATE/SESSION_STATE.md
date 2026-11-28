@@ -4,10 +4,10 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `1e406cf` (T-114 status sync); T-115 is verified locally with
-  the 743-test gate and is being committed. The remote remains at `a9a6d1a`;
-  CI run 45936329476 green on it. T-105 is pushed in `779783c` and passed run
-  45936065460. T-114 is committed as `3617fe3` with CI pending.
+- Last commit: `b6f3f11` (T-115); the status sync is pending. The remote
+  remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in
+  `779783c` and passed run 45936065460. T-114 is committed as `3617fe3` with
+  CI pending.
 - Remote: `origin/main` at `a9a6d1a`; CI run 45936329476 green on `a9a6d1a`;
   CI run 45936065460 green on `779783c`;
   CI run 45934367601 green on `61cb9be`;
@@ -23,7 +23,7 @@
 ## Current task
 
 T-115 — Map key removal. Status: VERIFIED locally on 2026-11-27; commit
-pending; CI pending. `remove(map, key) -> Bool` deletes the first structurally
+`b6f3f11`; CI pending. `remove(map, key) -> Bool` deletes the first structurally
 equal entry, preserves insertion order, and returns whether an entry was
 removed. The checker registers the builtin, checks `Map[K,V]` and a key
 assignable to `K`, and lets a direct empty list literal adopt the map's

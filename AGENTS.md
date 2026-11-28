@@ -118,8 +118,8 @@ VANTYX_CC="$PWD/tools/clang-sanitize.sh" cargo test --test native
   734-test gate (CI pending); T-113 display-focused differential fuzz is
   committed in `d8a476d` with the 734-test gate (CI pending); T-114 nested
   native display-temporary reclamation is committed in `3617fe3` with the
-  736-test gate (CI pending); T-115 map key removal is committed in this
-  change with the 743-test gate (CI pending)). The
+  736-test gate (CI pending); T-115 map key removal is committed in `b6f3f11`
+  with the 743-test gate (CI pending)). The
   2026-11-24 history correction replaced the placeholder contributor identity
   and moved the `v0.1.0` tag.
 - `cargo test`: 743 passed (404 library unit + 15 CLI unit + 47 AI integration +

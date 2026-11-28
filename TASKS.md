@@ -1150,7 +1150,7 @@ A task is VERIFIED only after its acceptance criteria are exercised by real test
 
 ### T-115 — Map key removal
 - Priority: P1 (standard library: map mutation)
-- Status: VERIFIED locally on 2026-11-27; commit pending; CI pending
+- Status: VERIFIED locally on 2026-11-27; commit `b6f3f11`; CI pending
 - Description: Maps supported insertion, update, indexing, membership, and iteration but no way to remove an entry. Callers had to rebuild a map manually, which lost insertion order and was O(n) in source code. Add a `remove(map, key)` builtin that deletes one entry by structural key equality and reports whether it existed.
 - Acceptance: `remove(map: Map[K,V], key: K) -> Bool` removes the first entry whose key is structurally equal to `key`, returns `true`, and preserves the insertion order of the remaining entries; a missing key returns `false` and leaves the map unchanged; the map and key arguments are evaluated left to right exactly once; scalar keys use the native hash index correctly after removal and structural keys use linear equality; a direct empty list literal as the key adopts the map's `List[T]` key type; `for k in map` snapshots the key sequence so removing an earlier key during iteration does not skip later keys, and native matches the interpreter; non-map arguments and statically mismatched keys are `E0301` and wrong arity is `E0302`; interpreter and native output, exit codes, aliases, and evaluation order agree; the full gate passes.
 - Dependencies: T-044 (scalar-key hash index), T-106 (empty-list adoption pattern).

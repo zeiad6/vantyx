@@ -2,7 +2,7 @@
 
 ## T-115 — Map key removal
 
-- Status: VERIFIED locally on 2026-11-27; commit pending; CI pending
+- Status: VERIFIED locally on 2026-11-27; commit `b6f3f11`; CI pending
 - Priority: P1 (standard library: map mutation)
 - Dependencies: T-044 (scalar-key hash index), T-106 (empty-list adoption pattern)
 
@@ -46,7 +46,7 @@
 
 ### Remaining
 
-- Commit T-115, record the hash, and commit the status sync.
+- Commit the status sync that records `b6f3f11`.
 - Independent review remains unavailable (subagent free-usage limit).
 
 ### Scope limits
