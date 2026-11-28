@@ -4,7 +4,7 @@
 - Updated: 2026-11-27
 - Phase: Phase 6 native backend plus AI host Track B
 - Branch: `main`
-- Last commit: `3e22628` (T-116). The remote
+- Last commit: `dadfcfe` (T-116 status sync). The remote
   remains at `a9a6d1a`; CI run 45936329476 green on it. T-105 is pushed in
   `779783c` and passed run 45936065460. T-114 is committed as `3617fe3` with
   CI pending.
