@@ -2052,7 +2052,16 @@ impl<'a> Emitter<'a> {
                         calls.push("vantyx_print_sep()".to_string());
                     }
                     let rendered = self.display_value(&name, &arg.ty);
-                    calls.push(format!("vantyx_print_text({rendered})"));
+                    // `display_value` returns a fresh heap string for Int,
+                    // Float, List, Map, Struct, and Enum, but a borrowed user
+                    // string for Str and static literals for Bool/Unit. Free
+                    // only the provably owned renderings.
+                    let printer = if display_owned(&arg.ty) {
+                        "vantyx_print_owned"
+                    } else {
+                        "vantyx_print_text"
+                    };
+                    calls.push(format!("{printer}({rendered})"));
                 }
                 calls.push(format!("vantyx_print_end({line}, {column})"));
                 calls.push("(vantyx_unit)0".to_string());
@@ -2644,6 +2653,18 @@ fn part_has_effects(part: &IrStrPart) -> bool {
     match part {
         IrStrPart::Text(_) => false,
         IrStrPart::Value(value) => has_effects(value),
+    }
+}
+
+/// Whether `display_value` returns a fresh heap allocation for this type.
+/// `Str` renderings borrow the user's string and `Bool`/`Unit` renderings are
+/// static literals; freeing any of those would be undefined behavior. The
+/// match is deliberately exhaustive so a new `IrType` variant must decide.
+fn display_owned(ty: &IrType) -> bool {
+    match ty {
+        IrType::Int | IrType::Float | IrType::List(_) | IrType::Map(_, _) => true,
+        IrType::Struct(_) | IrType::Enum(_) => true,
+        IrType::Str | IrType::Bool | IrType::Unit => false,
     }
 }
 
@@ -3707,6 +3728,11 @@ static vantyx_unit vantyx_print_end(int line, int column) {
 }
 
 static void vantyx_print_text(vantyx_str text) { fputs(text, stdout); }
+/* The caller must pass a fresh heap string from a display function. */
+static void vantyx_print_owned(vantyx_str text) {
+    fputs(text, stdout);
+    free((void*)text);
+}
 static void vantyx_print_sep(void) { fputc(' ', stdout); }
 
 static vantyx_unit vantyx_check_init(bool initialized, const char* name, int line, int column) {

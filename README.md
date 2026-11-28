@@ -313,8 +313,8 @@ so `.bashrc` has no extension. See
 | Paths | Lexical POSIX-style `path_join`/`path_parent`/`path_name`/`path_stem`/`path_extension`/`path_is_absolute` in both engines; no filesystem access, normalization, or containment |
 | REPL | Persistent declarations, line editing, single-line history, top-level Tab completion, expression echo |
 | AI host | Offline providers, streamed text chat, structured extraction, embeddings, BM25/semantic/hybrid retrieval, incremental vector reuse, MMR diversity reranking, citations, retrieval evaluation, tools, bounded agents; live cloud verification on 2026-11-24 and a 21/21 re-verification at 20:59Z (local model still missing; cloud access not guaranteed) |
-| Memory | Interpreter is reference-counted; native allocations are leaked by design; no cycle collector |
-| Tooling | `vantyx lint` (three conservative rules), fuzz smoke, differential fuzzer, benchmarks, docs; no formatter, LSP, package manager, or debug info |
+| Memory | Interpreter is reference-counted; native allocations are leaked by design, except nested display temporaries (ADR-0054) and top-level `print` renderings for statically owned types (T-121); no cycle collector; ADR-0056 stages native reclamation but no stage from it is implemented |
+| Tooling | `vantyx lint` (four conservative rules), fuzz smoke, differential fuzzer, benchmarks, docs; no formatter, LSP, package manager, or debug info |
 | Production readiness | No stable ABI, no LTS, not recommended for production |
 
 ## Quick start
@@ -520,14 +520,17 @@ python3 tools/differential_fuzz.py --iterations 160 --seed 1
 python3 tools/fuzz_smoke.py --binary target/debug/vantyx
 ```
 
-Current local result (2026-11-27): **736 tests passed** (404 library unit +
-15 CLI unit + 47 AI integration + 118 end-to-end + 152 differential native),
+Current local result (2026-11-27): **770 tests passed** (413 library unit +
+15 CLI unit + 47 AI integration + 132 end-to-end + 163 differential native),
 Clippy clean, debug and release builds succeed, all five examples match between
 the interpreter and native binaries, and fuzz smoke reports controlled
-diagnostics. The full 152-test native suite also passes under
-`-fsanitize=address,undefined` with leak detection disabled because v0.1
-allocations are intentionally leaked; CI runs that suite in a dedicated
-sanitizer job and runs the bounded fuzz smoke. CI status
+diagnostics. The full 163-test native suite also passes under
+`-fsanitize=address,undefined` with leak detection disabled because general
+v0.1 allocations are intentionally leaked; nested display temporaries and
+top-level `print` renderings for statically owned types are reclaimed
+(ADR-0054, T-121). CI runs that suite in a dedicated
+sanitizer job, runs the bounded fuzz smoke, and runs a bounded 20-iteration
+sanitized differential fuzz on seed 1. CI status
 is tracked in [PROJECT_STATUS.md](PROJECT_STATUS.md); do not cite a test count
 or CI result without checking the recorded evidence there and in
 [TASKS.md](TASKS.md).

@@ -1,6 +1,9 @@
 # ADR-0056: Native memory reclamation strategy
 
-- Status: Accepted for the staged design; no new stage from this ADR is implemented yet (the local display-temporary frees from ADR-0054 already exist)
+- Status: Accepted for the staged design. Stage 2 is partially implemented by
+  T-121 for statically owned `print` renderings; no ownership-fact IR, escape
+  analysis, arena, reference counting, or tracing collector is implemented.
+  The local nested display-temporary frees from ADR-0054 already exist.
 - Date: 2026-11-27
 - Related: T-120, ADR-0005, ADR-0008, ADR-0009, ADR-0010, ADR-0054
 
@@ -84,6 +87,29 @@ cannot be observed afterwards:
 This stage does not free user bindings, arguments, container elements, or
 values returned from a call. The existing display rule is the model: append
 first, then free the temporary.
+
+Ownership must be proven from the runtime contract, not from the expression
+shape. Two current helpers are conditionally owned and must not be freed
+without an explicit owned flag:
+
+- `vantyx_text_trim` returns the original pointer when the input needs no
+  trimming, and a fresh copy otherwise. `print(trim(s))` would free a borrowed
+  or static string on the no-op path.
+- `str(x)` returns `x` itself when `x` is `Str`, and a fresh display string for
+  every other type.
+
+Stage 2 therefore needs an ownership fact that distinguishes `Fresh`,
+`Borrowed`, and `Conditional`, and the reclamation site must reject
+`Conditional` unless the helper is changed to return ownership explicitly (or
+to always copy). Syntactic whitelists of "string-producing calls" are not
+sufficient.
+
+T-121 is the first implemented slice: a `print` argument whose static type is
+`Int`, `Float`, `List`, `Map`, `Struct`, or `Enum` always produces a fresh
+display string, so it is written and freed immediately. `Str`, `Bool`, and
+`Unit` remain borrowed or static. `str(...)`, interpolation, and `trim(...)`
+inside a `Str` argument are still not reclaimed because their ownership is not
+yet proven at that site.
 
 ### Stage 3 — Non-escaping locals and arenas
 

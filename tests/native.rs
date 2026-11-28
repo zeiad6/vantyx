@@ -334,6 +334,97 @@ fn main():
 }
 
 #[test]
+fn print_owned_display_temporaries_match() {
+    // Freeing a statically owned print rendering must not change bytes,
+    // evaluation order, or exit behavior for any supported argument type.
+    assert_same(
+        "print-owned-display",
+        r#"enum Shape:
+    Circle(radius: Int)
+    Empty
+
+struct Point:
+    x: Int
+    y: Int
+
+fn nothing() -> Unit:
+    return
+
+fn main():
+    print(1, 2.5, [1, 2, 3])
+    print({"a": 1, "b": 2})
+    print(Point(x=1, y=2))
+    print(Circle(3), Empty())
+    print("text", true, nothing())
+    let items = [10, 20]
+    print(items, items)
+    print(0.0, -0.0, 1.0 / 3.0)
+"#,
+    );
+}
+
+#[test]
+fn print_reclaims_owned_display_temporaries_in_generated_c() {
+    // Pin the ownership split: Int/Float/List/Map/Struct/Enum renderings are
+    // fresh heap strings and must be freed after writing, while Str borrows
+    // the argument, Bool/Unit return static literals, and freeing those would
+    // be undefined behavior.
+    let source = r#"enum Shape:
+    Circle(radius: Int)
+    Empty
+
+struct Point:
+    x: Int
+    y: Int
+
+fn nothing() -> Unit:
+    return
+
+fn main():
+    print(1)
+    print(1.5)
+    print([1, 2])
+    print({"a": 1})
+    print(Point(x=1, y=2))
+    print(Circle(3))
+    print("text")
+    print(true)
+    print(nothing())
+"#;
+    let compiled = vantyx::compile(source);
+    assert!(
+        !compiled.has_errors(),
+        "codegen fixture failed to compile:\n{}",
+        compiled.render("main.vtx", source)
+    );
+    let program = compiled.program.expect("parsed program");
+    let model = compiled.model.expect("checked model");
+    let ir = vantyx::ir::build(&program, &model).expect("IR build");
+    let c = vantyx::codegen_c::emit(&ir, "main.vtx", source);
+
+    assert!(c.contains("static void vantyx_print_owned(vantyx_str text)"));
+    assert!(c.contains("vantyx_print_owned(vantyx_str_from_int("));
+    assert!(c.contains("vantyx_print_owned(vantyx_str_from_float("));
+    assert!(c.contains("vantyx_print_owned(vantyx_list_to_str("));
+    assert!(c.contains("vantyx_print_owned(vantyx_map_to_str("));
+    assert!(c.contains("vantyx_print_owned(vantyx_display_Point("));
+    assert!(c.contains("vantyx_print_owned(vantyx_display_Shape("));
+    assert!(
+        !c.contains("vantyx_print_owned(vantyx_str_from_bool("),
+        "Bool renderings are static literals and must not be freed"
+    );
+    assert!(
+        !c.contains("vantyx_print_owned(vantyx_str_from_unit("),
+        "Unit renderings are static literals and must not be freed"
+    );
+    let text_calls = c.matches("vantyx_print_text(vantyx_print_arg_").count();
+    assert_eq!(
+        text_calls, 1,
+        "only the Str argument should keep the borrowed printer"
+    );
+}
+
+#[test]
 fn functions_use_lexical_globals_matching() {
     // A callee resolves names against its own frame and the program's global
     // scope. Caller locals with the same name must not shadow the global.

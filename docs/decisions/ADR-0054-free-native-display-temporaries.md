@@ -1,8 +1,8 @@
 # ADR-0054: Free nested native display temporaries
 
-- Status: Accepted
+- Status: Accepted (amended by T-121)
 - Date: 2026-11-27
-- Related: T-114, ADR-0052, ADR-0053
+- Related: T-114, T-121, ADR-0052, ADR-0053
 
 ## Context
 
@@ -96,3 +96,37 @@ unreclaimed in v0.1.
   `List[Pair]` display with two `Bool` fields each fell from 9,368 KiB to
   5,580 KiB. Wall time also fell in those batches, but it is reported as
   observed data, not a stable speed claim.
+
+## Amendment: top-level `print` renderings (T-121)
+
+The original decision kept the static `Bool`/`Unit` helpers for top-level
+`print` because the final display result was not freed. That left a second,
+larger leak: `print` rendered every argument into a fresh heap string for
+`Int`, `Float`, `List`, `Map`, `Struct`, and `Enum`, wrote it, and never freed
+it. In a print-heavy loop this retained one string per printed value until
+process exit.
+
+`print` has a stronger ownership fact than an arbitrary display caller: the
+rendering is consumed immediately by `fputs`, which copies the bytes, and the
+rendered pointer is not observable afterward. The static type of each argument
+therefore decides ownership exactly:
+
+- `Int`, `Float`, `List`, `Map`, `Struct`, `Enum` renderings are fresh heap
+  strings and are written with `vantyx_print_owned`, which calls `fputs` and
+  then `free`.
+- `Str` renderings are the argument itself (borrowed), and `Bool`/`Unit`
+  renderings are static literals, so those keep `vantyx_print_text` and are
+  never freed.
+
+The ownership predicate is exhaustive over `IrType`, so a future type must
+decide explicitly. Evaluation order, separators, per-line flushing, output
+bytes, and `R0013` output-failure behavior are unchanged; only the lifetime of
+the already-dead rendering changes. `str(...)` and interpolation results remain
+caller-owned and are still not freed, because they can be bound or stored.
+
+Tests: `tests/native.rs::print_owned_display_temporaries_match` compares
+interpreter and native output for every owned type plus `Str`, `Bool`, and
+`Unit`; `print_reclaims_owned_display_temporaries_in_generated_c` pins the
+emitted printer choice and rejects freeing the borrowed/static renderings. The
+focused measurement is recorded in
+`benchmarks/results/2026-11-27-print-temporaries.md`.
