@@ -17,6 +17,7 @@ use super::provider::{
 use super::redact;
 use super::retry::retry_after_from_header;
 use super::sse::{SseEvent, SseParser};
+use super::stream::{StreamEvent, ToolCallAssembler, ToolCallDelta};
 use super::tokens::{
     check_context_limit, estimate_embedding_tokens, estimate_request_tokens, estimate_tokens,
 };
@@ -211,12 +212,13 @@ struct ChatStreamState<'a> {
     finish_reason: FinishReason,
     usage: Option<Usage>,
     done: bool,
-    on_delta: &'a mut dyn FnMut(&str),
+    tool_calls: ToolCallAssembler,
+    on_event: &'a mut dyn FnMut(StreamEvent),
     secrets: &'a [&'a str],
 }
 
 impl<'a> ChatStreamState<'a> {
-    fn new(model: &str, on_delta: &'a mut dyn FnMut(&str), secrets: &'a [&'a str]) -> Self {
+    fn new(model: &str, on_event: &'a mut dyn FnMut(StreamEvent), secrets: &'a [&'a str]) -> Self {
         Self {
             model: model.to_string(),
             id: None,
@@ -224,7 +226,8 @@ impl<'a> ChatStreamState<'a> {
             finish_reason: FinishReason::Stop,
             usage: None,
             done: false,
-            on_delta,
+            tool_calls: ToolCallAssembler::new(),
+            on_event,
             secrets,
         }
     }
@@ -296,20 +299,57 @@ impl<'a> ChatStreamState<'a> {
         let Some(delta) = choice.get("delta") else {
             return Ok(());
         };
-        if delta
-            .get("tool_calls")
-            .and_then(Json::as_array)
-            .is_some_and(|calls| !calls.is_empty())
-        {
-            return Err(AiError::unsupported("streaming tool calls", "openai"));
+        if let Some(calls) = delta.get("tool_calls").and_then(Json::as_array) {
+            for call in calls {
+                let delta = parse_streamed_tool_call(call)?;
+                self.tool_calls.push(delta.clone())?;
+                (self.on_event)(StreamEvent::ToolCallDelta(delta));
+            }
         }
         let content = parse_content(delta.get("content"));
         if !content.is_empty() {
             self.text.push_str(&content);
-            (self.on_delta)(&content);
+            (self.on_event)(StreamEvent::TextDelta(content));
         }
         Ok(())
     }
+}
+
+fn parse_streamed_tool_call(call: &Json) -> Result<ToolCallDelta, AiError> {
+    let index = call
+        .get("index")
+        .and_then(Json::as_u64)
+        .and_then(|index| usize::try_from(index).ok())
+        .ok_or_else(|| {
+            AiError::new(
+                AI_E_PROVIDER,
+                "streamed tool call frame is missing a valid index",
+            )
+        })?;
+    let id = call
+        .get("id")
+        .and_then(Json::as_str)
+        .filter(|id| !id.is_empty())
+        .map(ToString::to_string);
+    let function = call.get("function");
+    let name = function
+        .and_then(|function| function.get("name"))
+        .and_then(Json::as_str)
+        .filter(|name| !name.is_empty())
+        .map(ToString::to_string);
+    let arguments = function
+        .and_then(|function| function.get("arguments"))
+        .map_or_else(String::new, |arguments| {
+            arguments
+                .as_str()
+                .map_or_else(|| arguments.to_compact_string(), ToString::to_string)
+        });
+    Ok(ToolCallDelta {
+        index,
+        id,
+        name,
+        arguments,
+    })
 }
 
 impl Provider for OpenAiProvider {
@@ -426,13 +466,24 @@ impl Provider for OpenAiProvider {
         budget: &mut Budget,
         on_delta: &mut dyn FnMut(&str),
     ) -> Result<ChatResponse, AiError> {
+        let mut on_event = |event: StreamEvent| {
+            if let StreamEvent::TextDelta(text) = event {
+                on_delta(&text);
+            }
+        };
+        self.chat_stream_events(request, budget, &mut on_event)
+    }
+
+    fn chat_stream_events(
+        &self,
+        request: &ChatRequest,
+        budget: &mut Budget,
+        on_event: &mut dyn FnMut(StreamEvent),
+    ) -> Result<ChatResponse, AiError> {
         request.validate()?;
         self.check_capabilities(request)?;
         if !self.capabilities.streaming {
             return Err(AiError::unsupported("streaming", &self.id));
-        }
-        if !request.tools.is_empty() {
-            return Err(AiError::unsupported("streaming tool calls", &self.id));
         }
         check_context_limit(request, self.capabilities.max_context_tokens)?;
         let prompt_estimate = estimate_request_tokens(request) as u64;
@@ -450,7 +501,7 @@ impl Provider for OpenAiProvider {
         let mut error_body = String::new();
         let mut parser = SseParser::default();
         let secrets = self.secrets();
-        let mut state = ChatStreamState::new(&request.model, on_delta, &secrets);
+        let mut state = ChatStreamState::new(&request.model, on_event, &secrets);
         let mut on_start = |response_status: u16, headers: &[(String, String)]| {
             status.set(response_status);
             failed.set(!(200..300).contains(&response_status));
@@ -510,13 +561,19 @@ impl Provider for OpenAiProvider {
         for event in events {
             state.handle(event)?;
         }
+        let tool_calls = state.tool_calls.finish()?;
         let text = state.text;
         let prompt_tokens = state
             .usage
             .as_ref()
             .map_or(prompt_estimate, |usage| usage.prompt_tokens);
+        let completion_estimate = estimate_tokens(&text)
+            + tool_calls
+                .iter()
+                .map(|call| estimate_tokens(&call.arguments))
+                .sum::<usize>();
         let completion_tokens = state.usage.as_ref().map_or_else(
-            || estimate_tokens(&text) as u64,
+            || u64::try_from(completion_estimate).unwrap_or(u64::MAX),
             |usage| usage.completion_tokens,
         );
         let total_tokens = state.usage.as_ref().map_or_else(
@@ -536,7 +593,7 @@ impl Provider for OpenAiProvider {
                 },
                 name: None,
                 tool_call_id: None,
-                tool_calls: Vec::new(),
+                tool_calls,
             },
             finish_reason: state.finish_reason,
             usage: Usage {
@@ -1339,8 +1396,23 @@ mod tests {
     }
 
     #[test]
-    fn stream_rejects_tools_and_tool_call_deltas() {
-        let (provider, capture) = stream_provider(200, Vec::new());
+    fn streams_and_assembles_tool_call_arguments() {
+        let (provider, _) = stream_provider(
+            200,
+            vec![
+                sse(
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"word_count","arguments":""}}]},"finish_reason":null}]}"#,
+                ),
+                sse(
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"text\":"}}]},"finish_reason":null}]}"#,
+                ),
+                sse(
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"a b c\"}"}}]},"finish_reason":null}]}"#,
+                ),
+                sse(r#"{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#),
+                sse("[DONE]"),
+            ],
+        );
         let mut budget = Budget::default();
         let mut request = ChatRequest::new("m", vec![Message::user("hi")]);
         request.tools.push(ToolSpec {
@@ -1348,23 +1420,88 @@ mod tests {
             description: "count words".into(),
             parameters: Json::object([("type", Json::from("object"))]),
         });
+        let mut events = Vec::new();
+        let response = provider
+            .chat_stream_events(&request, &mut budget, &mut |event| events.push(event))
+            .unwrap();
+        assert_eq!(
+            response.message.tool_calls,
+            vec![ToolCall {
+                id: "call-1".into(),
+                name: "word_count".into(),
+                arguments: r#"{"text":"a b c"}"#.into(),
+            }]
+        );
+        assert_eq!(response.finish_reason, FinishReason::ToolCalls);
+        assert!(response.message.content.is_empty());
+        assert_eq!(events.len(), 3);
+        assert!(
+            events
+                .iter()
+                .all(|event| matches!(event, StreamEvent::ToolCallDelta(_)))
+        );
+        assert_eq!(budget.used_tokens(), response.usage.total_tokens);
+    }
+
+    #[test]
+    fn chat_stream_forwards_only_text_deltas_for_tool_calls() {
+        let (provider, _) = stream_provider(
+            200,
+            vec![
+                sse(r#"{"choices":[{"delta":{"content":"checking "},"finish_reason":null}]}"#),
+                sse(
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"word_count","arguments":"{}"}}]},"finish_reason":null}]}"#,
+                ),
+                sse(r#"{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#),
+                sse("[DONE]"),
+            ],
+        );
+        let mut budget = Budget::default();
+        let request = ChatRequest::new("m", vec![Message::user("hi")]);
+        let mut deltas = Vec::new();
+        let response = provider
+            .chat_stream(&request, &mut budget, &mut |delta| {
+                deltas.push(delta.to_string());
+            })
+            .unwrap();
+        assert_eq!(deltas, vec!["checking "]);
+        assert_eq!(response.message.text_content(), "checking ");
+        assert_eq!(response.message.tool_calls.len(), 1);
+    }
+
+    #[test]
+    fn stream_rejects_incomplete_tool_calls() {
+        let (provider, _) = stream_provider(
+            200,
+            vec![
+                sse(
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"word_count","arguments":"{}"}}]},"finish_reason":null}]}"#,
+                ),
+                sse("[DONE]"),
+            ],
+        );
+        let mut budget = Budget::default();
+        let request = ChatRequest::new("m", vec![Message::user("hi")]);
         let error = provider
-            .chat_stream(&request, &mut budget, &mut |_| {})
+            .chat_stream_events(&request, &mut budget, &mut |_| {})
             .unwrap_err();
-        assert_eq!(error.code, AI_E_UNSUPPORTED);
-        assert!(capture.borrow().is_empty());
+        assert_eq!(error.code, AI_E_PROVIDER);
+        assert!(error.message.contains("missing an id"));
 
         let (provider, _) = stream_provider(
             200,
-            vec![sse(
-                r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"x","arguments":"{}"}}]},"finish_reason":null}]}"#,
-            )],
+            vec![
+                sse(
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"word_count","arguments":"{\"text\":"}}]},"finish_reason":null}]}"#,
+                ),
+                sse("[DONE]"),
+            ],
         );
-        let request = ChatRequest::new("m", vec![Message::user("hi")]);
         let error = provider
-            .chat_stream(&request, &mut budget, &mut |_| {})
+            .chat_stream_events(&request, &mut budget, &mut |_| {})
             .unwrap_err();
-        assert_eq!(error.code, AI_E_UNSUPPORTED);
+        assert_eq!(error.code, AI_E_PROVIDER);
+        assert!(error.message.contains("invalid JSON"));
     }
 
     #[test]

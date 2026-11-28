@@ -240,6 +240,10 @@ target platform.
 | Agent steps | 8 | loop |
 | Tool calls per step | 4 | loop |
 | Tool calls per run | 16 | registry |
+| Streamed tool calls per response | 8 | assembler |
+| Streamed tool-call arguments | 64 KiB per call / 256 KiB total | assembler |
+| Streamed tool-call id / name | 256 B / 128 B | assembler |
+| Streamed tool-call delta frames | 4,096 | assembler |
 | Concurrent requests | 4 | semaphore/pool |
 | Retries | 2 (hard max 8) | provider decorator |
 | Retry delay | 4 s ceiling | retry policy |

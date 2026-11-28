@@ -11,8 +11,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use vantyx::ai::{
-    ChatRequest, EmbeddingRequest, HttpTransport, Message, NetworkPolicy, OpenAiProvider, Provider,
-    ProviderCapabilities,
+    Budget, ChatRequest, EmbeddingRequest, HttpTransport, Json, Message, NetworkPolicy,
+    OpenAiProvider, Provider, ProviderCapabilities, StreamEvent, ToolCall, ToolSpec,
 };
 
 struct Run {
@@ -1474,6 +1474,52 @@ fn streamed_chat_prints_deltas_and_sends_a_stream_request() {
     assert!(request.contains("\"stream\":true"));
     assert!(request.contains("\"include_usage\":true"));
     assert!(request.contains("\"stream_options\""));
+}
+
+#[test]
+fn streamed_tool_calls_assemble_over_loopback_http() {
+    let frame = |data: &str| format!("data: {data}\n\n");
+    let (endpoint, handle) = serve_sse_once(vec![
+        frame(
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"word_count","arguments":""}}]},"finish_reason":null}]}"#,
+        ),
+        frame(
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"text\":\"a b\"}"}}]},"finish_reason":null}]}"#,
+        ),
+        frame(r#"{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#),
+        frame("[DONE]"),
+    ]);
+    let transport = HttpTransport::new(NetworkPolicy::local_only());
+    let provider = OpenAiProvider::new(endpoint, Some("test-key".into()), Box::new(transport));
+    let mut request = ChatRequest::new("demo", vec![Message::user("count the words")]);
+    request.tools.push(ToolSpec {
+        name: "word_count".into(),
+        description: "count words".into(),
+        parameters: Json::object([("type", Json::from("object"))]),
+    });
+    let mut budget = Budget::default();
+    let mut events = Vec::new();
+    let response = provider
+        .chat_stream_events(&request, &mut budget, &mut |event| events.push(event))
+        .unwrap();
+    assert_eq!(
+        response.message.tool_calls,
+        vec![ToolCall {
+            id: "call-1".into(),
+            name: "word_count".into(),
+            arguments: r#"{"text":"a b"}"#.into(),
+        }]
+    );
+    assert!(
+        events
+            .iter()
+            .all(|event| matches!(event, StreamEvent::ToolCallDelta(_)))
+    );
+    assert_eq!(events.len(), 2);
+    let request = handle.join().unwrap();
+    assert!(request.contains("\"stream\":true"));
+    assert!(request.contains("\"word_count\""));
+    assert!(request.contains("Accept: text/event-stream"));
 }
 
 #[test]

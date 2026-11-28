@@ -33,6 +33,7 @@ pub mod redact;
 pub mod retry;
 pub mod schema;
 pub mod sse;
+pub mod stream;
 pub mod tokens;
 pub mod tools;
 
@@ -86,6 +87,11 @@ pub use retry::{
 };
 pub use schema::{SchemaError, validate as validate_schema};
 pub use sse::{SseEvent, SseParser};
+pub use stream::{
+    MAX_STREAM_TOOL_ARGUMENT_BYTES, MAX_STREAM_TOOL_ARGUMENTS_TOTAL_BYTES, MAX_STREAM_TOOL_CALLS,
+    MAX_STREAM_TOOL_DELTAS, MAX_STREAM_TOOL_ID_BYTES, MAX_STREAM_TOOL_NAME_BYTES, StreamEvent,
+    ToolCallAssembler, ToolCallDelta,
+};
 pub use tokens::{
     check_context_limit, estimate_embedding_tokens, estimate_request_tokens, estimate_tokens,
 };

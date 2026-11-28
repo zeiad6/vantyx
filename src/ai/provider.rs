@@ -3,6 +3,7 @@
 use super::budget::Budget;
 use super::embedding::Vector;
 use super::json::Json;
+use super::stream::StreamEvent;
 use std::fmt;
 use std::time::Duration;
 
@@ -678,6 +679,20 @@ pub trait Provider {
         _on_delta: &mut dyn FnMut(&str),
     ) -> Result<ChatResponse, AiError> {
         Err(AiError::unsupported("streaming", self.id()))
+    }
+
+    /// Sends a streaming chat request and delivers provider-neutral events.
+    /// Text and tool-call deltas arrive in source order; the returned response
+    /// aggregates the complete text and tool calls. A stream that ends with
+    /// incomplete tool-call arguments is rejected. Providers without event
+    /// streaming return a stable `AI_E_UNSUPPORTED` error by default.
+    fn chat_stream_events(
+        &self,
+        _request: &ChatRequest,
+        _budget: &mut Budget,
+        _on_event: &mut dyn FnMut(StreamEvent),
+    ) -> Result<ChatResponse, AiError> {
+        Err(AiError::unsupported("streaming events", self.id()))
     }
 
     /// Sends an embedding request. Providers that do not support embeddings

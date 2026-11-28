@@ -6,9 +6,9 @@
 //! validation, capability, schema, budget, and cancellation errors return
 //! immediately.
 //!
-//! Streaming calls are retried only before the first text delta. Once output
-//! has been delivered, retrying would duplicate it, so the error is returned
-//! to the caller instead.
+//! Streaming calls are retried only before the first streamed event (text or
+//! tool-call delta). Once output has been delivered, retrying would duplicate
+//! it, so the error is returned to the caller instead.
 //!
 //! `Retry-After` is honored in its integer-seconds form. HTTP-date values are
 //! ignored rather than guessed, and an oversized delay stops automatic retries
@@ -19,6 +19,7 @@ use super::provider::{
     AI_E_CANCELLED, AiError, ChatRequest, ChatResponse, EmbeddingRequest, EmbeddingResponse,
     Provider, ProviderCapabilities,
 };
+use super::stream::StreamEvent;
 use std::cell::Cell;
 use std::thread;
 use std::time::Duration;
@@ -294,6 +295,51 @@ impl Provider for RetryingProvider {
         }
     }
 
+    fn chat_stream_events(
+        &self,
+        request: &ChatRequest,
+        budget: &mut Budget,
+        on_event: &mut dyn FnMut(StreamEvent),
+    ) -> Result<ChatResponse, AiError> {
+        let mut retries = 0;
+        let mut emitted = false;
+        loop {
+            let result = {
+                let mut attempt_event = |event: StreamEvent| {
+                    emitted = true;
+                    on_event(event);
+                };
+                self.inner
+                    .chat_stream_events(request, budget, &mut attempt_event)
+            };
+            match result {
+                Ok(response) => {
+                    self.last_retries.set(retries);
+                    return Ok(response);
+                }
+                Err(error) => {
+                    if emitted || !self.policy.should_retry(retries + 1, &error) {
+                        self.last_retries.set(retries);
+                        return Err(error);
+                    }
+                    if let Err(budget_error) = budget.check_time() {
+                        self.last_retries.set(retries);
+                        return Err(budget_error);
+                    }
+                    retries += 1;
+                    let delay = self.policy.delay(retries, &error);
+                    if !delay.is_zero() {
+                        thread::sleep(delay);
+                    }
+                    if let Err(budget_error) = budget.check_time() {
+                        self.last_retries.set(retries);
+                        return Err(budget_error);
+                    }
+                }
+            }
+        }
+    }
+
     fn embed(
         &self,
         request: &EmbeddingRequest,
@@ -441,6 +487,105 @@ mod tests {
             vectors: vec![Vector::new(vec![1.0, 0.0]).unwrap()],
             usage: EmbeddingUsage::new(1),
         }
+    }
+
+    enum EventScript {
+        Ok(Vec<StreamEvent>),
+        Fail(AiError, Vec<StreamEvent>),
+    }
+
+    struct EventStubProvider {
+        attempts: RefCell<VecDeque<EventScript>>,
+        calls: Cell<u32>,
+    }
+
+    impl EventStubProvider {
+        fn new(attempts: Vec<EventScript>) -> Self {
+            Self {
+                attempts: RefCell::new(attempts.into()),
+                calls: Cell::new(0),
+            }
+        }
+    }
+
+    impl Provider for EventStubProvider {
+        fn id(&self) -> &str {
+            "event-stub"
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities::mock()
+        }
+
+        fn chat_stream_events(
+            &self,
+            _request: &ChatRequest,
+            _budget: &mut Budget,
+            on_event: &mut dyn FnMut(StreamEvent),
+        ) -> Result<ChatResponse, AiError> {
+            self.calls.set(self.calls.get() + 1);
+            match self
+                .attempts
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or(EventScript::Fail(
+                    AiError::new(AI_E_PROVIDER, "no scripted event stream"),
+                    Vec::new(),
+                )) {
+                EventScript::Ok(events) => {
+                    for event in events {
+                        on_event(event);
+                    }
+                    Ok(ChatResponse::text("stub", "complete"))
+                }
+                EventScript::Fail(error, events) => {
+                    for event in events {
+                        on_event(event);
+                    }
+                    Err(error)
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn retries_event_streams_before_the_first_event() {
+        let provider = RetryingProvider::new(
+            Box::new(EventStubProvider::new(vec![
+                EventScript::Fail(retryable(), Vec::new()),
+                EventScript::Ok(vec![StreamEvent::TextDelta("ok".into())]),
+            ])),
+            fast_policy(1),
+        );
+        let request = ChatRequest::new("stub", vec![Message::user("hi")]);
+        let mut budget = Budget::default();
+        let mut events = Vec::new();
+        let response = provider
+            .chat_stream_events(&request, &mut budget, &mut |event| events.push(event))
+            .unwrap();
+        assert_eq!(response.message.text_content(), "complete");
+        assert_eq!(events, vec![StreamEvent::TextDelta("ok".into())]);
+        assert_eq!(provider.last_retry_count(), 1);
+    }
+
+    #[test]
+    fn does_not_retry_event_streams_after_the_first_event() {
+        let provider = RetryingProvider::new(
+            Box::new(EventStubProvider::new(vec![
+                EventScript::Fail(retryable(), vec![StreamEvent::TextDelta("partial".into())]),
+                EventScript::Ok(vec![StreamEvent::TextDelta("duplicate".into())]),
+            ])),
+            fast_policy(1),
+        );
+        let request = ChatRequest::new("stub", vec![Message::user("hi")]);
+        let mut budget = Budget::default();
+        let mut events = Vec::new();
+        let error = provider
+            .chat_stream_events(&request, &mut budget, &mut |event| events.push(event))
+            .unwrap_err();
+        assert_eq!(error.code, AI_E_PROVIDER);
+        assert_eq!(events, vec![StreamEvent::TextDelta("partial".into())]);
+        assert_eq!(provider.last_retry_count(), 0);
     }
 
     #[test]

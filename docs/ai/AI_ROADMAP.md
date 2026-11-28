@@ -4,8 +4,8 @@ Status: AI-0 and AI-1 complete; AI-2 compatible adapters implemented and the
 cloud path verified live on 2026-11-24, with bounded provider retries and
 metadata-only agent traces added on 2026-11-28; local-model evidence remains
 blocked; AI-3 structured extraction
-and streamed text chat complete (streaming tool calls and cancellation open;
-cloud live evidence recorded); AI-4 host-side embeddings, retrieval, citations,
+and streamed text chat complete (interactive cancellation open;
+bounded streamed tool-call assembly complete; cloud live evidence recorded); AI-4 host-side embeddings, retrieval, citations,
 evaluation, and MMR diversity reranking complete
 Date: 2026-11-28
 Related: `AI_ARCHITECTURE.md`, `AI_RESEARCH.md`, `AI_SECURITY.md`,
@@ -142,7 +142,14 @@ transient 503, so continuous cloud access is not claimed.
       (`vantyx ai chat --stream`); loopback and HTTPS protocol tests.
 - [x] Retry-safe streaming: bounded retries before the first delta, and no
       retry after output has been delivered (ADR-0058).
-- [ ] Streaming tool calls and interactive cancellation.
+- [x] Bounded streamed tool-call assembly: provider-neutral text/tool-call
+      events, fragmented argument accumulation by index, strict id/name
+      consistency, complete-JSON validation at finish, and hard limits (8
+      calls, 64 KiB per call, 256 KiB total, 4096 frames). Nothing is executed
+      by the assembler; incomplete arguments are `AI_E_PROVIDER`. The bounded
+      agent loop still uses non-streaming chat; wiring streamed calls into it
+      remains open.
+- [ ] Interactive cancellation for streamed CLI output.
 - [x] JSON Schema subset validation.
 - [x] Typed extraction pipeline and `vantyx ai extract` command.
 - [ ] Server-native constrained decoding when advertised.
@@ -151,10 +158,11 @@ transient 503, so continuous cloud access is not claimed.
       usage; budgets enforce steps, tools, and tokens).
 
 Exit gate: streamed output matches non-streamed content; invalid JSON is rejected
-with a path; a repair retry is bounded and observable. Streamed text is
-implemented and tested offline; live cloud chat and streaming were verified on
-2026-11-24 (T-067) and re-verified at 20:59Z with 21/21 checks. Streaming tool
-calls, cancellation, and local-model evidence remain open.
+with a path; a repair retry is bounded and observable. Streamed text and
+bounded tool-call assembly are implemented and tested offline; live cloud chat
+and streaming were verified on 2026-11-24 (T-067) and re-verified at 20:59Z
+with 21/21 checks. Interactive cancellation and local-model evidence remain
+open.
 
 ## Phase AI-4 — Embeddings and retrieval ✅ (host-side; follow-ups open)
 
@@ -273,8 +281,9 @@ The host API is not blocked by these; language-level syntax is.
 
 1. **P0:** AI-1 foundation, secrets, capability policy, offline tests.
 2. **P1:** AI-2 local-model evidence (the cloud path was verified and
-   re-verified, but access is not guaranteed), streaming tool calls/cancellation, structured output,
-   embeddings, retrieval quality, bounded agents.
+   re-verified, but access is not guaranteed), interactive streaming
+   cancellation, structured output, embeddings, retrieval quality, bounded
+   agents.
 3. **P1 core:** native reclamation, async design, tuple patterns.
 4. **P2:** model manager, retrieval metadata/deduplication and measured
    reranking quality, observability, cross-platform CI.

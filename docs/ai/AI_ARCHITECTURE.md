@@ -1,6 +1,6 @@
 # AI Architecture
 
-Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented and the cloud path verified live on 2026-11-24 (local-model verification still blocked), with bounded provider retries and metadata-only agent traces added on 2026-11-28; AI-3 structured output and streamed text chat complete (streaming tool calls and cancellation pending); AI-4 host-side embeddings and retrieval complete (a cloud embedding model was exercised on 2026-11-24; local embedding models pending); offline GGUF/Safetensors inspection and Safetensors shard-index aggregation with SHA-256 provenance implemented (no weight loading); bounded JSONL dataset validation with optional schema validation, field/type summaries, and streamed SHA-256 implemented; deterministic train/held-out dataset splitting, label-stratified splitting, and exact duplicate-record removal implemented
+Status: AI-0 design complete; AI-1 host foundation implemented and verified offline; AI-2 compatible adapters implemented and the cloud path verified live on 2026-11-24 (local-model verification still blocked), with bounded provider retries and metadata-only agent traces added on 2026-11-28; AI-3 structured output, streamed text chat, and bounded streamed tool-call assembly complete (interactive cancellation pending); AI-4 host-side embeddings and retrieval complete (a cloud embedding model was exercised on 2026-11-24; local embedding models pending); offline GGUF/Safetensors inspection and Safetensors shard-index aggregation with SHA-256 provenance implemented (no weight loading); bounded JSONL dataset validation with optional schema validation, field/type summaries, and streamed SHA-256 implemented; deterministic train/held-out dataset splitting, label-stratified splitting, and exact duplicate-record removal implemented
 Date: 2026-11-28
 Related: `AI_RESEARCH.md`, `AI_SECURITY.md`, `AI_ROADMAP.md`, ADR-0007,
 ADR-0014, ADR-0015, ADR-0017, ADR-0018, ADR-0024, ADR-0025, ADR-0058
@@ -24,7 +24,7 @@ This avoids two failure modes:
 | Track | Scope | Current state |
 | --- | --- | --- |
 | A — Core Vantyx | Lexer, parser, checker, interpreter, native backend, memory, modules, tooling | v0.1 subset verified; modules implemented; async/generics missing |
-| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, streamed text chat, embedding providers/cache, local retrieval/evaluation, incremental vector reuse, and MMR diversity reranking implemented; a live cloud provider and embedding model were verified on 2026-11-24 and re-verified at 20:59Z with 21/21 checks, while local live providers, streaming tool calls, and grounded generation remain pending; cloud access is not guaranteed |
+| B — AI Vantyx | Providers, local inference, structured output, embeddings, RAG, tools, agents, evaluation | Offline foundation, compatible-endpoint adapter, structured extraction, streamed text chat and tool-call assembly, embedding providers/cache, local retrieval/evaluation, incremental vector reuse, and MMR diversity reranking implemented; a live cloud provider and embedding model were verified on 2026-11-24 and re-verified at 20:59Z with 21/21 checks, while local live providers, interactive cancellation, and grounded generation remain pending; cloud access is not guaranteed |
 
 Track B must not wait for the entire Track A roadmap. It may use the host CLI and
 Rust API while language-level integration remains blocked.
@@ -64,6 +64,7 @@ Rust API while language-level integration remains blocked.
 | `ai/openai.rs` | OpenAI-compatible request/response mapping | Log secrets or prompts by default |
 | `ai/http.rs` | Bounded HTTP transport (loopback std, HTTPS via curl) | Follow arbitrary redirects or exceed limits |
 | `ai/sse.rs` | Incremental server-sent-events parser | Buffer without bound |
+| `ai/stream.rs` | Provider-neutral stream events and bounded tool-call argument assembly | Execute a tool, truncate arguments, or accept incomplete JSON |
 | `ai/tokens.rs` | Labelled token estimate and budget checks | Claim exact model tokenization |
 | `ai/model.rs` | Bounded GGUF/Safetensors header inspection, Safetensors shard-index aggregation, tensor-range validation, streaming SHA-256 | Load weights, execute model code, or download anything |
 | `ai/dataset.rs` | Bounded JSONL validation, optional schema validation, top-level field/type summaries, numbered invalid lines, streaming SHA-256, deterministic train/held-out splits, label-stratified splits, exact duplicate-record removal, deterministic seeded shuffling | Tokenize, canonicalize, or modify datasets |
@@ -75,7 +76,7 @@ Rust API while language-level integration remains blocked.
 | `ai/agent.rs` | Bounded plan/act loop, cancellation, state | Run without step/token/time limits |
 | `ai/budget.rs` | Deterministic limits and errors | Silently truncate or overspend |
 | `ai/metrics.rs` | Opt-in JSONL metrics, redaction | Capture prompts by default |
-| `ai/retry.rs` | Provider-neutral bounded retries, `Retry-After`, streaming safety | Retry non-retryable errors or after emitted deltas |
+| `ai/retry.rs` | Provider-neutral bounded retries, `Retry-After`, streaming safety | Retry non-retryable errors or after emitted events |
 | `ai/config.rs` | Environment/file configuration and secret lookup | Write secrets to disk or logs |
 
 ## Core types (conceptual)
@@ -133,6 +134,15 @@ pub trait Provider {
     ) -> Result<ChatResponse, AiError> {
         let _ = (request, budget, on_delta);
         Err(AiError::unsupported("streaming", self.id()))
+    }
+    fn chat_stream_events(
+        &self,
+        request: &ChatRequest,
+        budget: &mut Budget,
+        on_event: &mut dyn FnMut(StreamEvent),
+    ) -> Result<ChatResponse, AiError> {
+        let _ = (request, budget, on_event);
+        Err(AiError::unsupported("streaming events", self.id()))
     }
 }
 ```
@@ -347,30 +357,42 @@ remains mandatory because server support varies and may be disabled.
 
 ```text
 validated ChatRequest
-  → provider capability check (streaming, no tools)
+  → provider capability check (streaming; tools when requested)
   → POST with stream: true, stream_options.include_usage,
     Accept: text/event-stream
   → transport bytes (content-length, chunked, or close-delimited;
     HTTPS via curl --include --no-buffer)
   → SSE parser (raw bytes, UTF-8 carry, bounded events)
-  → delta callback + final text/finish reason/usage
+  → StreamEvent::TextDelta / StreamEvent::ToolCallDelta callbacks
+  → bounded tool-call assembly (id, name, argument fragments)
+  → final text/tool calls/finish reason/usage
   → one budget record + optional redacted metric
 ```
 
-- `Provider::chat_stream` defaults to `AI_E_UNSUPPORTED`; only the
-  OpenAI-compatible adapter advertises `streaming = true` today.
+- `Provider::chat_stream_events` defaults to `AI_E_UNSUPPORTED`; the
+  OpenAI-compatible adapter implements it. `Provider::chat_stream` is the
+  text-only convenience wrapper and forwards only `TextDelta` events.
 - Text deltas are forwarded as they arrive. `[DONE]` stops processing; frames
   after it are ignored. A malformed frame is `AI_E_PROVIDER`, never a partial
   success.
-- Streaming tool calls are rejected before transport and on the wire with
-  `AI_E_UNSUPPORTED`; argument-fragment assembly and its permission model are
-  not implemented.
+- Tool-call fragments are appended by index in `ai/stream.rs` and are never
+  executed there. Every call needs an id, a name, and complete JSON arguments
+  before `finish()` returns it; incomplete or invalid arguments are
+  `AI_E_PROVIDER`. Tool schema validation and capability checks still happen in
+  the agent/tool layer.
+- Assembly is bounded: 8 calls, 256-byte ids, 128-byte names, 64 KiB of
+  arguments per call, 256 KiB total, and 4096 delta frames per response. The
+  assembler rejects instead of truncating, and error messages never echo
+  argument content.
+- Retries stop before the first event of either kind, so a tool call is never
+  emitted or executed twice (see the retry section below).
 - Error frames pass through secret redaction. Non-2xx bodies are bounded to
   64 KiB for status mapping, and the overall body remains bounded by the
   transport limit.
-- The CLI prints deltas with an explicit flush and rejects `--stream` with
+- The CLI prints text deltas with an explicit flush and rejects `--stream` with
   `--json` or a non-OpenAI provider before any request. There is no interactive
-  cancellation keybinding yet.
+  cancellation keybinding yet; the agent loop still uses non-streaming `chat`
+  with its step, tool, token, and wall-clock budgets.
 - HTTPS streaming depends on the system `curl`; the loopback path uses
   `std::net` and is covered by offline tests. Live first-token latency and
   throughput remain unmeasured until a real model is available.
@@ -500,8 +522,9 @@ same rules.
   requested delay exceeds the 4 s policy ceiling, the retry stops rather than
   retrying earlier than the server requested. HTTP-date values fall back to
   exponential backoff.
-- A streaming call is retried only before the first text delta. After any delta,
-  the error is returned so output is never duplicated.
+- A streaming call is retried only before the first streamed event (text or
+  tool-call delta). After any event, the error is returned so output is never
+  duplicated and a tool call is never executed twice.
 - For chat, streaming, and embedding calls the decorator checks the caller's
   wall-clock budget before and after each backoff. Token budgets are checked by
   the provider before each attempt and recorded only on success. Model listing
