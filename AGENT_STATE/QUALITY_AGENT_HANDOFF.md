@@ -1,9 +1,10 @@
 # Quality Agent Handoff
 
-- **Status:** independent audit complete. QA modified only the five
-  `AGENT_STATE/QUALITY_AGENT_*.md` files (plus the final report); no shared
-  source, test, doc, CI, or Cargo file was edited, no commit was made, and no
-  destructive Git operation was used.
+- **Status:** independent audit complete. QA modified only the six
+  `AGENT_STATE/QUALITY_AGENT_*.md` files; no shared source, test, doc, CI, or
+  Cargo file was edited, no commit was made during the audit, and no
+  destructive Git operation was used. The six records were committed and
+  pushed afterwards in `0b238bc` at the user's explicit request.
 - **Audited tree:** HEAD `150997d` (status sync) over `f1dbe36`, which commits
   T-123–T-127. The commits were pushed; **CI run 46113804180 passed
   789/789** on 2026-11-28, including the socket test in both native jobs.
@@ -155,8 +156,9 @@ Details, exact reproductions, root causes, and proposed fixes are in
   claimed.
 - The 10M `range` case is excluded from the default differential harness only
   because this host has 3.8 GiB RAM; it is not a language limit.
-- QA files are untracked records. Do not commit them or mix them into a
-  T-123–T-127 follow-up without explicit coordination.
+- The QA records were untracked during the audit and were committed in
+  `0b238bc` at the user's explicit request. Do not mix them into a
+  T-123–T-127 code follow-up without explicit coordination.
 - QA-F005 is test-only and latent: CI run 46113804180 is green, but a future
   runner with 7-digit PIDs and a 3-digit counter can fail the socket test.
   Fix it to keep CI deterministic; it does not affect any product behavior.
